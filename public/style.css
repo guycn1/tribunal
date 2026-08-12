@@ -1,0 +1,76 @@
+body {
+  font-family: system-ui, sans-serif;
+  max-width: 720px;
+  margin: 2rem auto;
+  padding: 0 1rem;
+  color: #1a1a1a;
+}
+
+h1 { margin-bottom: 0.5rem; }
+h2 { margin-top: 2rem; font-size: 1.1rem; }
+
+label {
+  display: block;
+  margin: 0.75rem 0;
+  font-size: 0.9rem;
+  color: #444;
+}
+
+input {
+  width: 100%;
+  padding: 0.5rem;
+  margin-top: 0.25rem;
+  box-sizing: border-box;
+  font-size: 1rem;
+}
+
+button {
+  margin-top: 1rem;
+  padding: 0.6rem 1.2rem;
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+.hidden { display: none; }
+
+.error { color: #b00020; }
+
+.verdict-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.75rem;
+}
+
+.verdict-card {
+  border-radius: 8px;
+  padding: 0.75rem;
+  text-align: center;
+}
+
+.verdict-guilty { background: #fdeaea; color: #8a1f1f; }
+.verdict-not-guilty { background: #eafaf0; color: #1f7a3f; }
+.verdict-error { background: #fdf3d9; color: #8a5a00; }
+
+.verdict-role { font-size: 0.75rem; display: block; margin-bottom: 0.25rem; }
+.verdict-label { font-weight: bold; }
+.verdict-reasoning { font-size: 0.8rem; margin-top: 0.5rem; }
+
+.argument-block {
+  border-left: 3px solid #ccc;
+  padding-left: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.argument-role { font-size: 0.75rem; color: #666; }
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+th, td {
+  text-align: left;
+  padding: 0.4rem;
+  border-bottom: 1px solid #eee;
+}

@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Tribunal</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main>
+    <h1>Tribunal</h1>
+
+    <section id="charge-form">
+      <h2>Charge sheet</h2>
+      <label>Defendant
+        <input id="defendant" type="text" placeholder="Jon Snow" />
+      </label>
+      <label>Act
+        <input id="act" type="text" placeholder="Broke the Night's Watch vow by leaving his post" />
+      </label>
+      <label>Question for the tribunal
+        <input id="question" type="text" placeholder="Was the desertion justified by circumstance?" />
+      </label>
+      <button id="submit-btn">Submit to the tribunal</button>
+      <p id="form-error" class="error hidden"></p>
+    </section>
+
+    <section id="loading" class="hidden">
+      <p>The tribunal is deliberating...</p>
+    </section>
+
+    <section id="result" class="hidden">
+      <h2>Verdict</h2>
+      <div id="verdicts" class="verdict-grid"></div>
+
+      <h2>Arguments</h2>
+      <div id="arguments"></div>
+
+      <h2>Call log</h2>
+      <table id="call-log">
+        <thead>
+          <tr><th>Agent</th><th>Model</th><th>Tokens</th><th>Cost</th><th>Status</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
