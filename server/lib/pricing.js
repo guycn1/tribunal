@@ -8,9 +8,20 @@
 
 const PRICING = {
   // Free-tier models (":free" suffix models on OpenRouter are $0)
+  // NOTE: 'meta-llama/llama-3.1-8b-instruct:free' and
+  // 'google/gemma-2-9b-it:free' were retired from the free tier as of
+  // Aug 2026 (OpenRouter now 404s them, pointing at the paid slug
+  // instead) — left here only as a historical note, do not rely on them.
   'meta-llama/llama-3.1-8b-instruct:free': { input: 0, output: 0 },
   'google/gemma-2-9b-it:free': { input: 0, output: 0 },
   'mistralai/mistral-7b-instruct:free': { input: 0, output: 0 },
+  // Verified live against OpenRouter's /api/v1/models on Aug 12, 2026:
+  'google/gemma-4-31b-it:free': { input: 0, output: 0 },
+  'google/gemma-4-26b-a4b-it:free': { input: 0, output: 0 },
+  // google/gemma-4-31b-it:free hit persistent 429s from its upstream
+  // (Google AI Studio's shared free pool) on Aug 12, 2026 — switched
+  // to an NVIDIA-served free model to use a different upstream pool.
+  'nvidia/nemotron-3-nano-30b-a3b:free': { input: 0, output: 0 },
 
   // Cheap paid models (illustrative rates — verify before relying on these)
   'meta-llama/llama-3.1-8b-instruct': { input: 0.00000005, output: 0.00000008 },
