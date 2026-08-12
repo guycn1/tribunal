@@ -47,8 +47,8 @@ button {
   text-align: center;
 }
 
-.verdict-guilty { background: #fdeaea; color: #8a1f1f; }
-.verdict-not-guilty { background: #eafaf0; color: #1f7a3f; }
+.verdict-justified { background: #eafaf0; color: #1f7a3f; }
+.verdict-not-justified { background: #fdeaea; color: #8a1f1f; }
 .verdict-error { background: #fdf3d9; color: #8a5a00; }
 
 .verdict-role { font-size: 0.75rem; display: block; margin-bottom: 0.25rem; }

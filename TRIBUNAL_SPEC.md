@@ -15,7 +15,7 @@
 Each criterion below must be checkable by someone who did not build the system, per Knuth's effectiveness criterion (a person should be able to follow it with paper).
 
 1. **Agent count and roles.** Exactly 7 agents run per trial: 4 advocates, 3 judges. Verify: the call log for any completed trial shows exactly 7 rows.
-2. **No verdict combination.** The protocol reports the three verdicts side by side without combining them. There is no majority vote, no aggregation logic, no single "final ruling." Verify: read the output schema — there must be no field representing a combined/aggregate verdict, only three independent judge verdicts.
+2. **No verdict combination.** The protocol reports the three verdicts side by side without combining them. There is no majority vote, no aggregation logic, no single "final ruling." Each verdict is one of exactly two values, `justified` or `not justified`. Verify: read the output schema — there must be no field representing a combined/aggregate verdict, only three independent judge verdicts.
 3. **Charge sheet is a specification, not free text.** The charge sheet is written precisely as a specification, not free text. Verify: the charge sheet input is structured (named fields), not a single open text box.
 4. **Seven prompts, versioned.** The seven agent prompts are written and versioned. Verify: each of the 7 prompts exists as its own tracked file with commit history showing changes over time.
 5. **Progression from one model to several is visible.** The progression from one model toward several must be visible as far as it's carried. Verify: the model used per agent role is configurable (not hardcoded to one value), and commit history shows at least one point where a single shared model was used, and (if carried further) a point where roles used different models.
@@ -42,7 +42,7 @@ Reach the models through OpenRouter's API. Leave interior implementation choices
 
 ## Part 4 — The validation approach
 
-**Named test case:** submit one complete example trial (a defendant, an act, and a specific question) and confirm all 8 success criteria in Part 2 pass against that single run before considering any feature "done."
+**Named test case:** submit one complete example trial (a defendant, an act, and a specific question) and confirm all 8 success criteria in Part 2 pass against that single run before considering any feature "done." A canonical test case: defendant Jon Snow, act "kills Daenerys," question "was it justified?" — defence advocates argue Jon Snow's side, prosecution advocates argue Daenerys's side. Use this as the reference run when it's next affordable to spend a live submission.
 
 **Additional validation (verification before trust):** no agent output enters the project without passing a defined gate. At minimum: does the code run, does it produce the required output shape (7 calls, 3 independent verdicts, full log), and does a human review of the diff make sense before it's committed.
 

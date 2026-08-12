@@ -80,7 +80,9 @@ async function runAgentCall({ trialId, role, model, systemPrompt, userMessage, i
   }
 }
 
-const VALID_VERDICTS = ['guilty', 'not guilty'];
+// "justified" / "not justified", not "guilty" / "not guilty" — see
+// TRIBUNAL_SPEC.md Part 2, criterion 2 for the confirmed vocabulary.
+const VALID_VERDICTS = ['justified', 'not justified'];
 
 function parseJudgeOutput(rawText) {
   // Judges are asked to return JSON, but per spec Part 5 pitfall,
@@ -89,12 +91,12 @@ function parseJudgeOutput(rawText) {
   //
   // Also validate the verdict value itself, not just that the JSON
   // parsed: a judge returning something off-spec (e.g. "innocent", or
-  // "Guilty" with different casing) must not be silently coerced into
-  // "not guilty" by a downstream binary check — that would misrepresent
-  // what the model actually said as a confident ruling it never gave.
-  // Case/whitespace are normalized (formatting noise, not a semantic
-  // difference); anything else falls back to unparsed, same as
-  // malformed JSON.
+  // "Justified" with different casing) must not be silently coerced
+  // into "not justified" by a downstream binary check — that would
+  // misrepresent what the model actually said as a confident ruling it
+  // never gave. Case/whitespace are normalized (formatting noise, not
+  // a semantic difference); anything else falls back to unparsed, same
+  // as malformed JSON.
   try {
     const cleaned = rawText.trim().replace(/^```json\s*/i, '').replace(/```$/, '');
     const parsed = JSON.parse(cleaned);

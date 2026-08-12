@@ -39,7 +39,7 @@ This is a first working scaffold — it runs end to end, but hasn't been run aga
 - **SQL vs NoSQL** was chosen as SQLite here as a working default — the spec leaves this as your judgment call to justify in your own words, not something to accept silently.
 - **Model choice** defaults to a free OpenRouter model as a placeholder — verify it's still available and actually free before relying on it, and replace with your own considered choice.
 - **Charge sheet validation** is minimal (non-empty fields only) — Part 5 of the spec flags this as something to harden.
-- The "protocol" concept (structured per-judge reasoning) is implemented as the `reasoning` field per verdict — worth double-checking this interpretation as the spec firms up.
+- **Protocol vocabulary.** The three-verdicts-side-by-side output is the "protocol"; each verdict is one of `justified` / `not justified`, not `guilty` / `not guilty` as this scaffold originally used. Propagated to the judge prompts, orchestration validation, and UI.
 
 ## Deploying
 

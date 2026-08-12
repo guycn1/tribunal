@@ -52,8 +52,8 @@ function renderResult(data) {
 
     if (v.status === 'ok') {
       if (v.parsed) {
-        cls = v.verdict === 'guilty' ? 'verdict-guilty' : 'verdict-not-guilty';
-        label = v.verdict === 'guilty' ? 'Guilty' : 'Not guilty';
+        cls = v.verdict === 'justified' ? 'verdict-justified' : 'verdict-not-justified';
+        label = v.verdict === 'justified' ? 'Justified' : 'Not justified';
         reasoning = v.reasoning;
       } else {
         cls = 'verdict-error';
