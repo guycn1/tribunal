@@ -6,7 +6,7 @@ Read `TRIBUNAL_SPEC.md` before changing anything — it's the actual spec this b
 
 ## Status
 
-This is a first working scaffold — it runs end to end, but hasn't been run against a real OpenRouter key yet. Treat it as a solid starting point to build on and verify, not a finished, battle-tested app.
+This runs end to end and has been exercised against a real OpenRouter key — see `tribunal.db` for logged trials. Treat it as a working scaffold to keep building on and verifying, not a finished, battle-tested app.
 
 ## Setup
 
@@ -35,11 +35,9 @@ This is a first working scaffold — it runs end to end, but hasn't been run aga
 
 ## Known gaps — read before treating this as done
 
-- **Not yet run against a real API key.** The orchestration logic, JSON parsing, and error handling are written to spec but unverified against live model output.
 - **SQL vs NoSQL** was chosen as SQLite here as a working default — the spec leaves this as your judgment call to justify in your own words, not something to accept silently.
-- **Model choice** defaults to a free OpenRouter model as a placeholder — verify it's still available and actually free before relying on it, and replace with your own considered choice.
 - **Charge sheet validation** is minimal (non-empty fields only) — Part 5 of the spec flags this as something to harden.
-- **Protocol vocabulary.** The three-verdicts-side-by-side output is the "protocol"; each verdict is one of `justified` / `not justified`, not `guilty` / `not guilty` as this scaffold originally used. Propagated to the judge prompts, orchestration validation, and UI.
+- **Model choice fallback.** The hardcoded default in `models.config.js` (`meta-llama/llama-3.1-8b-instruct:free`) is itself already retired — always set `DEFAULT_MODEL` in `.env` to a currently-live free model rather than relying on that fallback.
 
 ## Deploying
 
