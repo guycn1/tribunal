@@ -32,10 +32,16 @@ function validateChargeSheet({ defendant, act, question }) {
   return errors;
 }
 
-async function runAgentCall({ trialId, role, model, systemPrompt, userMessage }) {
+async function runAgentCall({ trialId, role, model, systemPrompt, userMessage, isJudge }) {
   try {
     const result = await callModel({ model, systemPrompt, userMessage });
     const cost = computeCost(model, result.promptTokens, result.completionTokens);
+
+    // Only judges rule; advocates argue. Parse here (once) so the same
+    // parsed verdict is both persisted to the DB (spec criterion 6) and
+    // reused below for the API response — no re-parsing, no drift
+    // between what's logged and what's shown.
+    const judgeOutput = isJudge ? parseJudgeOutput(result.text) : null;
 
     logCall({
       trialId,
@@ -47,9 +53,18 @@ async function runAgentCall({ trialId, role, model, systemPrompt, userMessage })
       cost,
       status: 'ok',
       outputText: result.text,
+      verdict: judgeOutput && judgeOutput.parsed ? judgeOutput.verdict : null,
     });
 
-    return { role, status: 'ok', text: result.text, model, tokens: result.totalTokens, cost };
+    return {
+      role,
+      status: 'ok',
+      text: result.text,
+      model,
+      tokens: result.totalTokens,
+      cost,
+      judgeOutput,
+    };
   } catch (err) {
     // Visible failure, per spec Part 2 criterion 8 — never silently
     // fabricate a result. Logged with status 'error' so the audit
@@ -65,15 +80,27 @@ async function runAgentCall({ trialId, role, model, systemPrompt, userMessage })
   }
 }
 
+const VALID_VERDICTS = ['guilty', 'not guilty'];
+
 function parseJudgeOutput(rawText) {
   // Judges are asked to return JSON, but per spec Part 5 pitfall,
   // a judge may return prose instead. Try to parse; fall back to
   // marking it unparsed rather than guessing at a verdict.
+  //
+  // Also validate the verdict value itself, not just that the JSON
+  // parsed: a judge returning something off-spec (e.g. "innocent", or
+  // "Guilty" with different casing) must not be silently coerced into
+  // "not guilty" by a downstream binary check — that would misrepresent
+  // what the model actually said as a confident ruling it never gave.
+  // Case/whitespace are normalized (formatting noise, not a semantic
+  // difference); anything else falls back to unparsed, same as
+  // malformed JSON.
   try {
     const cleaned = rawText.trim().replace(/^```json\s*/i, '').replace(/```$/, '');
     const parsed = JSON.parse(cleaned);
-    if (parsed.verdict && parsed.reasoning) {
-      return { parsed: true, verdict: parsed.verdict, reasoning: parsed.reasoning };
+    const verdict = typeof parsed.verdict === 'string' ? parsed.verdict.trim().toLowerCase() : null;
+    if (VALID_VERDICTS.includes(verdict) && parsed.reasoning) {
+      return { parsed: true, verdict, reasoning: parsed.reasoning };
     }
     return { parsed: false, raw: rawText };
   } catch {
@@ -123,19 +150,20 @@ async function runTrial({ defendant, act, question }) {
         model: MODELS[role],
         systemPrompt: loadPrompt(role),
         userMessage: judgeUserMessage,
+        isJudge: true,
       })
     )
   );
 
-  // Step 3: parse each judge's output. Verdicts are returned SIDE BY
-  // SIDE — no combination, no majority, no aggregate field. This is
-  // a deliberate, spec-mandated omission. See TRIBUNAL_SPEC.md Part 5.
+  // Step 3: build the response from each judge's (already-parsed, already
+  // logged to the DB) output. Verdicts are returned SIDE BY SIDE — no
+  // combination, no majority, no aggregate field. This is a deliberate,
+  // spec-mandated omission. See TRIBUNAL_SPEC.md Part 5.
   const verdicts = judgeResults.map((r) => {
     if (r.status === 'error') {
       return { role: r.role, status: 'error', error: r.error };
     }
-    const parsed = parseJudgeOutput(r.text);
-    return { role: r.role, status: 'ok', model: r.model, ...parsed };
+    return { role: r.role, status: 'ok', model: r.model, tokens: r.tokens, cost: r.cost, ...r.judgeOutput };
   });
 
   return {

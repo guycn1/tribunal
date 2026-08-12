@@ -37,10 +37,19 @@ CREATE TABLE IF NOT EXISTS calls (
   status TEXT NOT NULL,
   output_text TEXT,
   error_message TEXT,
+  verdict TEXT,
   timestamp TEXT NOT NULL,
   FOREIGN KEY (trial_id) REFERENCES trials(id)
 );
 `);
+
+// Migration for DBs created before the 'verdict' column existed.
+// CREATE TABLE IF NOT EXISTS above is a no-op on an already-existing
+// table, so this covers upgrading it in place without losing prior trials.
+const callsColumns = db.prepare(`PRAGMA table_info(calls)`).all();
+if (!callsColumns.some((c) => c.name === 'verdict')) {
+  db.exec(`ALTER TABLE calls ADD COLUMN verdict TEXT`);
+}
 
 function createTrial({ id, defendant, act, question }) {
   db.prepare(
@@ -59,11 +68,16 @@ function logCall({
   status,
   outputText,
   errorMessage,
+  verdict,
 }) {
+  // verdict is null for advocate calls (they argue, they don't rule) and
+  // for judge calls that errored or came back unparseable — see spec
+  // Part 5's "judge may return prose instead of a structured verdict"
+  // pitfall. Never fabricated to fill the column.
   db.prepare(
     `INSERT INTO calls
-      (trial_id, agent_role, model_used, prompt_tokens, completion_tokens, total_tokens, cost, status, output_text, error_message, timestamp)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      (trial_id, agent_role, model_used, prompt_tokens, completion_tokens, total_tokens, cost, status, output_text, error_message, verdict, timestamp)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     trialId,
     agentRole,
@@ -75,6 +89,7 @@ function logCall({
     status,
     outputText ?? null,
     errorMessage ?? null,
+    verdict ?? null,
     new Date().toISOString()
   );
 }
