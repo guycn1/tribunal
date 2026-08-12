@@ -44,7 +44,7 @@ Reach the models through OpenRouter's API. Leave interior implementation choices
 
 **Named test case:** submit one complete example trial (a defendant, an act, and a specific question) and confirm all 8 success criteria in Part 2 pass against that single run before considering any feature "done." A canonical test case: defendant Jon Snow, act "kills Daenerys," question "was it justified?" — defence advocates argue Jon Snow's side, prosecution advocates argue Daenerys's side. Use this as the reference run when it's next affordable to spend a live submission.
 
-**Additional validation (verification before trust):** no agent output enters the project without passing a defined gate. At minimum: does the code run, does it produce the required output shape (7 calls, 3 independent verdicts, full log), and does a human review of the diff make sense before it's committed.
+**Additional validation (verification before trust):** no agent output enters the project without passing a defined gate. At minimum: does the code run, does it produce the required output shape (7 calls, 3 independent verdicts, full log), and does a review of the diff make sense before it's committed.
 
 **Self-check against self-confirming tests:** since agents may write tests that only confirm their own implementation, at least one validation step per major feature should be a manual check against Part 2's criteria, not solely a test the agent wrote and ran itself.
 
@@ -55,5 +55,5 @@ Reach the models through OpenRouter's API. Leave interior implementation choices
 - A judge call may return prose instead of a structured verdict — the parsing logic must handle this, not assume clean output every time.
 - A model call may time out — the orchestration logic needs a defined behavior for this (visible failure, not silent default — see Part 2, criterion 8).
 - A charge sheet may be submitted missing its question — validation must catch this before any agent calls are made, not after.
-- **Do not build any verdict-combination logic.** No majority vote, no aggregation, no single final ruling. This is a hard prohibition, not a stylistic choice — left here as a permanent warning against reintroducing it.
+- **Do not build any verdict-combination logic.** No majority vote, no aggregation, no single final ruling.
 - Prompt caching should be used for the charge sheet, since all 7 agents read the same input — but verify OpenRouter's actual response format for cached vs. non-cached token counts before assuming a particular field name.

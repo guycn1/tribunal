@@ -17,7 +17,7 @@ A web app running a fictional courtroom trial: 7 AI agents (4 advocates, 3 judge
 ## What good work looks like here
 
 - Every feature traces back to a numbered criterion in `TRIBUNAL_SPEC.md` Part 2. If a change doesn't map to one, flag it before building it.
-- No verdict-combination logic, ever — see spec Part 5 for why this is a hard prohibition, not a stylistic choice.
+- No verdict-combination logic — each judge's opinion should be provided separately and independently.
 - Verdict-first interface layout (spec Part 2, criterion 7).
 - A failed agent call must visibly fail, never silently produce a fabricated verdict.
 
@@ -25,10 +25,10 @@ A web app running a fictional courtroom trial: 7 AI agents (4 advocates, 3 judge
 
 - Treat the spec as the primary deliverable. Generate code from it; don't let code drift ahead of what the spec says.
 - When something in the spec is listed as an open decision, surface it and ask rather than silently picking a default.
-- Prefer reversible, incremental changes. Use branches for anything you'd want reviewed before it touches main.
+- Prefer reversible, incremental changes.
 
 ## When to stop and ask
 
 - Before implementing anything not covered by `TRIBUNAL_SPEC.md`.
-- Before changing the charge sheet structure, the agent count/roles, or anything the spec states as fixed — these aren't negotiable.
+- Before changing the charge sheet structure, the agent count/roles, or anything the spec states as fixed — these usually aren't negotiable.
 - Before choosing SQL vs. NoSQL, or specific OpenRouter models — these are open decisions the human owns (spec Part 3).

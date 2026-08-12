@@ -1,13 +1,12 @@
-// Per-agent-role model assignment. Kept in one place and NOT hardcoded
-// into orchestration logic, per TRIBUNAL_SPEC.md Part 2 criterion 5:
-// "the progression from one model toward several must be visible."
+// Per-agent-role model assignment. Kept in one place and not hardcoded
+// into orchestration logic, so the model used per role stays
+// configurable.
 //
 // PHASE A (current default): every role uses the same single model.
 // PHASE B: give each advocate role its own MODEL_ADVOCATE_FOR_1 etc.
-// env var to override — see .env.example. This lets you demonstrate
-// the 1-model -> several-models progression without changing code,
-// only environment configuration, which is exactly what the spec asks
-// to be visible in commit history over time.
+// env var to override — see .env.example. This lets the progression
+// from one shared model to several happen through configuration
+// alone, with no code changes.
 
 const DEFAULT_MODEL = process.env.DEFAULT_MODEL || 'meta-llama/llama-3.1-8b-instruct:free';
 

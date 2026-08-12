@@ -1,5 +1,5 @@
 // Approximate per-token pricing for a handful of OpenRouter models,
-// used to compute the "cost" field required by TRIBUNAL_SPEC.md Part 2.
+// used to compute the per-call cost logged for each trial.
 //
 // IMPORTANT: these numbers are illustrative and WILL drift out of date.
 // OpenRouter publishes live pricing at https://openrouter.ai/models —

@@ -1,12 +1,11 @@
 // Database layer. Uses SQLite by default so the project runs standalone
-// with zero external setup. The schema is deliberately simple relational
-// data (one trial -> many calls, one trial -> up to 3 verdicts) which is
-// why SQL was chosen over a document store — see TRIBUNAL_SPEC.md Part 3.
+// with zero external setup. The schema is simple relational data (one
+// trial -> many calls, one trial -> up to 3 verdicts), which is why SQL
+// was chosen over a document store.
 //
-// Swap-out note: if you move to Supabase (Postgres) per the recommended
-// toolbox in TRIBUNAL_SPEC.md Part 3, only this file needs to change —
-// the rest of the app talks to these exported functions, not to SQL
-// directly.
+// Swap-out note: moving to Postgres (e.g. Supabase) only touches this
+// file — the rest of the app talks to these exported functions, not to
+// SQL directly.
 
 const path = require('path');
 const { DatabaseSync } = require('node:sqlite');
@@ -71,9 +70,8 @@ function logCall({
   verdict,
 }) {
   // verdict is null for advocate calls (they argue, they don't rule) and
-  // for judge calls that errored or came back unparseable — see spec
-  // Part 5's "judge may return prose instead of a structured verdict"
-  // pitfall. Never fabricated to fill the column.
+  // for judge calls that errored or came back unparseable. Never
+  // fabricated to fill the column.
   db.prepare(
     `INSERT INTO calls
       (trial_id, agent_role, model_used, prompt_tokens, completion_tokens, total_tokens, cost, status, output_text, error_message, verdict, timestamp)

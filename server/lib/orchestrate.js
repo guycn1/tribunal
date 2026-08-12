@@ -1,10 +1,9 @@
-// The core 7-agent workflow. Structure, per TRIBUNAL_SPEC.md:
-//   1. Validate the charge sheet (Part 2, criterion 3)
-//   2. Call the 4 advocates IN PARALLEL (they don't depend on each other)
+// The core 7-agent workflow:
+//   1. Validate the charge sheet
+//   2. Call the 4 advocates in parallel (they don't depend on each other)
 //   3. Wait for all 4, then call the 3 judges (each receives all 4
 //      advocate arguments — judges depend on advocate output)
-//   4. Return the 3 verdicts SIDE BY SIDE, never combined
-//      (this is a hard prohibition — see spec Part 5 for why)
+//   4. Return the 3 verdicts side by side, never combined
 //   5. Every call, successful or failed, is logged with tokens/cost
 
 const fs = require('fs');
@@ -38,9 +37,9 @@ async function runAgentCall({ trialId, role, model, systemPrompt, userMessage, i
     const cost = computeCost(model, result.promptTokens, result.completionTokens);
 
     // Only judges rule; advocates argue. Parse here (once) so the same
-    // parsed verdict is both persisted to the DB (spec criterion 6) and
-    // reused below for the API response — no re-parsing, no drift
-    // between what's logged and what's shown.
+    // parsed verdict is both persisted to the DB and reused below for
+    // the API response — no re-parsing, no drift between what's logged
+    // and what's shown.
     const judgeOutput = isJudge ? parseJudgeOutput(result.text) : null;
 
     logCall({
@@ -66,9 +65,9 @@ async function runAgentCall({ trialId, role, model, systemPrompt, userMessage, i
       judgeOutput,
     };
   } catch (err) {
-    // Visible failure, per spec Part 2 criterion 8 — never silently
-    // fabricate a result. Logged with status 'error' so the audit
-    // trail shows exactly what happened.
+    // Visible failure — never silently fabricate a result. Logged
+    // with status 'error' so the audit trail shows exactly what
+    // happened.
     logCall({
       trialId,
       agentRole: role,
@@ -80,14 +79,14 @@ async function runAgentCall({ trialId, role, model, systemPrompt, userMessage, i
   }
 }
 
-// "justified" / "not justified", not "guilty" / "not guilty" — see
-// TRIBUNAL_SPEC.md Part 2, criterion 2 for the confirmed vocabulary.
+// "justified" / "not justified" is the confirmed verdict vocabulary,
+// not "guilty" / "not guilty".
 const VALID_VERDICTS = ['justified', 'not justified'];
 
 function parseJudgeOutput(rawText) {
-  // Judges are asked to return JSON, but per spec Part 5 pitfall,
-  // a judge may return prose instead. Try to parse; fall back to
-  // marking it unparsed rather than guessing at a verdict.
+  // Judges are asked to return JSON, but a judge may return prose
+  // instead. Try to parse; fall back to marking it unparsed rather
+  // than guessing at a verdict.
   //
   // Also validate the verdict value itself, not just that the JSON
   // parsed: a judge returning something off-spec (e.g. "innocent", or
@@ -158,9 +157,9 @@ async function runTrial({ defendant, act, question }) {
   );
 
   // Step 3: build the response from each judge's (already-parsed, already
-  // logged to the DB) output. Verdicts are returned SIDE BY SIDE — no
-  // combination, no majority, no aggregate field. This is a deliberate,
-  // spec-mandated omission. See TRIBUNAL_SPEC.md Part 5.
+  // logged to the DB) output. Verdicts are returned side by side — no
+  // combination, no majority, no aggregate field. This omission is
+  // deliberate.
   const verdicts = judgeResults.map((r) => {
     if (r.status === 'error') {
       return { role: r.role, status: 'error', error: r.error };
