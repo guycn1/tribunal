@@ -176,4 +176,4 @@ async function runTrial({ defendant, act, question }) {
   };
 }
 
-module.exports = { runTrial };
+module.exports = { runTrial, validateChargeSheet, parseJudgeOutput };

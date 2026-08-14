@@ -48,6 +48,8 @@ Run against a live OpenRouter key, with all four advocates sharing `DEFAULT_MODE
 
 **Additional validation (verification before trust):** no agent output enters the project without passing a defined gate. At minimum: does the code run, does it produce the required output shape (7 calls, 3 independent verdicts, full log), and does a review of the diff make sense before it's committed.
 
+As of the automated gate added below, this minimum is now backed by a real, non-manual check: `npm test` runs an automated unit suite (`test/`, Node's built-in `node:test` runner — no new dependency) covering the two logic paths most likely to silently misbehave — charge sheet validation and judge-output parsing (`server/lib/orchestrate.js`), and cost computation for untracked models (`server/lib/pricing.js`). A GitHub Actions workflow (`.github/workflows/test.yml`) runs this suite on every push, so a broken build is visible on the repository itself rather than depending on someone remembering to run it locally. This covers pure logic only — it does not call OpenRouter live and does not replace the named live test case above.
+
 **Self-check against self-confirming tests:** since agents may write tests that only confirm their own implementation, at least one validation step per major feature should be a manual check against Part 2's criteria, not solely a test the agent wrote and ran itself.
 
 ---

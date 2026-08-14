@@ -26,6 +26,14 @@ This runs end to end and has been exercised against a real OpenRouter key — se
    ```
 4. Open http://localhost:3000
 
+## Tests
+
+```
+npm test
+```
+
+Runs the automated unit suite (`test/`, Node's built-in test runner — no extra dependency) covering charge sheet validation, judge-output parsing, and cost computation. This is a logic-only gate — it does not call OpenRouter live and does not substitute for the named live test case in `TRIBUNAL_SPEC.md` Part 4. Also runs automatically on every push via GitHub Actions (`.github/workflows/test.yml`).
+
 ## What's here
 
 - `server/` — Express backend. `index.js` is the entry point; `lib/orchestrate.js` runs the actual 7-call workflow; `lib/db.js` is the SQLite layer.
