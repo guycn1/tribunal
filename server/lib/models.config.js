@@ -8,7 +8,10 @@
 // from one shared model to several happen through configuration
 // alone, with no code changes.
 
-const DEFAULT_MODEL = process.env.DEFAULT_MODEL || 'meta-llama/llama-3.1-8b-instruct:free';
+// Fallback used only if DEFAULT_MODEL is unset in .env (e.g. .env is
+// missing entirely) -- kept as a currently-live, verified-reliable free
+// model, not the retired meta-llama slug this used to point to.
+const DEFAULT_MODEL = process.env.DEFAULT_MODEL || 'nvidia/nemotron-3-nano-30b-a3b:free';
 
 const MODELS = {
   advocate_for_1: process.env.MODEL_ADVOCATE_FOR_1 || DEFAULT_MODEL,
