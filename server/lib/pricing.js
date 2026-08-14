@@ -18,11 +18,22 @@ const PRICING = {
   // Verified live against OpenRouter's /api/v1/models on Aug 12, 2026:
   'google/gemma-4-31b-it:free': { input: 0, output: 0 },
   'google/gemma-4-26b-a4b-it:free': { input: 0, output: 0 },
-  'openai/gpt-oss-20b:free': { input: 0, output: 0 },
   // google/gemma-4-31b-it:free hit persistent 429s from its upstream
   // (Google AI Studio's shared free pool) on Aug 12, 2026 — switched
   // to an NVIDIA-served free model to use a different upstream pool.
   'nvidia/nemotron-3-nano-30b-a3b:free': { input: 0, output: 0 },
+  // openai/gpt-oss-20b:free hit a real 429 (upstream provider "Darkbloom",
+  // shared free pool) on Aug 14, 2026 during an actual trial run -- left
+  // here since it's still a valid free model, but don't assume it's
+  // reliable without your own fresh check.
+  'openai/gpt-oss-20b:free': { input: 0, output: 0 },
+  // Isolated single-call tests succeeded for all three on Aug 14, 2026:
+  'nvidia/nemotron-3.5-lightning:free': { input: 0, output: 0 },
+  'nvidia/nemotron-nano-9b-v2:free': { input: 0, output: 0 },
+  'nvidia/nemotron-3-super-120b-a12b:free': { input: 0, output: 0 },
+  // google/gemma-4-26b-a4b-it:free hit a real 429 on Aug 14, 2026 -- the
+  // SECOND different Google free model to fail that way in this project
+  // (see gemma-4-31b-it above). Not used for any role config anymore.
 
   // Cheap paid models (illustrative rates — verify before relying on these)
   'meta-llama/llama-3.1-8b-instruct': { input: 0.00000005, output: 0.00000008 },
