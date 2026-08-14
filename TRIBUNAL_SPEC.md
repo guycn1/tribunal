@@ -42,7 +42,9 @@ Reach the models through OpenRouter's API. Leave interior implementation choices
 
 ## Part 4 — The validation approach
 
-**Named test case:** submit one complete example trial (a defendant, an act, and a specific question) and confirm all 8 success criteria in Part 2 pass against that single run before considering any feature "done." A canonical test case: defendant Jon Snow, act "kills Daenerys," question "was it justified?" — defence advocates argue Jon Snow's side, prosecution advocates argue Daenerys's side. Use this as the reference run when it's next affordable to spend a live submission.
+**Named test case:** submit one complete example trial (a defendant, an act, and a specific question) and confirm all 8 success criteria in Part 2 pass against that single run before considering any feature "done." A canonical test case: defendant Jon Snow, act "kills Daenerys," question "was it justified?" — defence advocates argue Jon Snow's side, prosecution advocates argue Daenerys's side.
+
+Run against a live OpenRouter key, with the three judges each on a different model (`google/gemma-4-26b-a4b-it:free`, `openai/gpt-oss-20b:free`, `nvidia/nemotron-3-nano-30b-a3b:free`) and all four advocates sharing `DEFAULT_MODEL`. Result: judge_1 (`google/gemma-4-26b-a4b-it:free`) ruled `justified`; judge_3 (`nvidia/nemotron-3-nano-30b-a3b:free`) ruled `not justified`; judge_2 (`openai/gpt-oss-20b:free`) hit an upstream 429 from its provider and was logged as a visible failure — `verdict: null`, not a fabricated ruling — which happened to also confirm criterion 8 live. All 7 rows persisted correctly to the database with the model actually used, the verdict where one was reached, and populated tokens/cost. This exercised criteria 1, 2, 5, 6, and 8 against real model output in one run.
 
 **Additional validation (verification before trust):** no agent output enters the project without passing a defined gate. At minimum: does the code run, does it produce the required output shape (7 calls, 3 independent verdicts, full log), and does a review of the diff make sense before it's committed.
 
