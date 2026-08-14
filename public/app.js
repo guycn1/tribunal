@@ -46,20 +46,23 @@ function renderResult(data) {
   verdictsEl.innerHTML = '';
   data.verdicts.forEach((v) => {
     const card = document.createElement('div');
-    let cls = 'verdict-error';
-    let label = 'Failed';
-    let reasoning = v.error || '';
+    let cls, label, reasoning;
 
-    if (v.status === 'ok') {
-      if (v.parsed) {
-        cls = v.verdict === 'justified' ? 'verdict-justified' : 'verdict-not-justified';
-        label = v.verdict === 'justified' ? 'Justified' : 'Not justified';
-        reasoning = v.reasoning;
-      } else {
-        cls = 'verdict-error';
-        label = 'Unparsed response';
-        reasoning = v.raw;
-      }
+    if (v.status !== 'ok') {
+      // A failed call is a model/provider problem (rate limit, timeout,
+      // missing key, etc.) — never a fabricated ruling, and never the
+      // fault of whatever was typed into the charge sheet.
+      cls = 'verdict-error';
+      label = 'Model call failed';
+      reasoning = `This judge's model call failed — this is a problem with the model/provider, not with your charge sheet. Detail: ${v.error}`;
+    } else if (v.parsed) {
+      cls = v.verdict === 'justified' ? 'verdict-justified' : 'verdict-not-justified';
+      label = v.verdict === 'justified' ? 'Justified' : 'Not justified';
+      reasoning = v.reasoning;
+    } else {
+      cls = 'verdict-error';
+      label = 'Unparsed response';
+      reasoning = v.raw;
     }
 
     card.className = `verdict-card ${cls}`;
@@ -75,8 +78,11 @@ function renderResult(data) {
   argumentsEl.innerHTML = '';
   data.arguments.forEach((a) => {
     const block = document.createElement('div');
-    block.className = 'argument-block';
-    const text = a.status === 'ok' ? a.text : `(failed: ${a.error})`;
+    const failed = a.status !== 'ok';
+    block.className = failed ? 'argument-block argument-block-error' : 'argument-block';
+    const text = failed
+      ? `Model call failed — this is a problem with the model/provider, not with your charge sheet. Detail: ${a.error}`
+      : a.text;
     block.innerHTML = `<span class="argument-role">${a.role}</span><p>${escapeHtml(text)}</p>`;
     argumentsEl.appendChild(block);
   });

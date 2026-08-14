@@ -25,8 +25,21 @@ async function callModel({ model, systemPrompt, userMessage }) {
   });
 
   if (!response.ok) {
-    const errText = await response.text().catch(() => response.statusText);
-    throw new Error(`OpenRouter error (${response.status}): ${errText}`);
+    const bodyText = await response.text().catch(() => '');
+    let detail = bodyText || response.statusText;
+    // OpenRouter's error body is JSON with a human-readable message, plus
+    // sometimes a provider-specific "raw" string underneath it (e.g. a
+    // rate-limit notice). Extract just those instead of dumping the whole
+    // JSON blob into a message a user might end up reading.
+    try {
+      const parsed = JSON.parse(bodyText);
+      const message = parsed?.error?.message;
+      const raw = parsed?.error?.metadata?.raw;
+      if (message) detail = raw && raw !== message ? `${message} — ${raw}` : message;
+    } catch {
+      // Body wasn't JSON — keep the raw text/statusText fallback above.
+    }
+    throw new Error(`Model provider returned an error (HTTP ${response.status}): ${detail}`);
   }
 
   const data = await response.json();

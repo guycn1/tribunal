@@ -61,6 +61,13 @@ button {
   margin-bottom: 0.75rem;
 }
 
+.argument-block-error {
+  border-left-color: #8a5a00;
+  background: #fdf3d9;
+  padding: 0.5rem 0.75rem;
+  border-radius: 4px;
+}
+
 .argument-role { font-size: 0.75rem; color: #666; }
 
 table {
