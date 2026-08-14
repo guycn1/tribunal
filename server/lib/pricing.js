@@ -18,6 +18,7 @@ const PRICING = {
   // Verified live against OpenRouter's /api/v1/models on Aug 12, 2026:
   'google/gemma-4-31b-it:free': { input: 0, output: 0 },
   'google/gemma-4-26b-a4b-it:free': { input: 0, output: 0 },
+  'openai/gpt-oss-20b:free': { input: 0, output: 0 },
   // google/gemma-4-31b-it:free hit persistent 429s from its upstream
   // (Google AI Studio's shared free pool) on Aug 12, 2026 — switched
   // to an NVIDIA-served free model to use a different upstream pool.
