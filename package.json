@@ -4,9 +4,9 @@
   "description": "ASE-26 running project: a 7-agent GoT-themed courtroom tribunal via OpenRouter",
   "main": "server/index.js",
   "scripts": {
-    "start": "node server/index.js",
-    "dev": "node --watch server/index.js",
-    "test": "node --test"
+    "start": "node --experimental-sqlite server/index.js",
+    "dev": "node --experimental-sqlite --watch server/index.js",
+    "test": "node --experimental-sqlite --test"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
