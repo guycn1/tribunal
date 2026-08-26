@@ -2,7 +2,14 @@ import { getModelForRole } from './models';
 import { calculateCost } from './pricing';
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
-const MAX_RETRIES = 2;
+const MAX_RETRIES = 1;
+// fetch() had no timeout at all, so a free-tier model that hangs (rather
+// than erroring) blocked until Netlify's own platform-level timeout (30s,
+// observed) killed the entire function invocation - bypassing the retry
+// logic, failure logging, and DB write below entirely, and leaving no
+// trace of the failure anywhere. This keeps each attempt well under that
+// ceiling so the graceful-failure path always gets a chance to run.
+const FETCH_TIMEOUT_MS = 8000;
 
 export interface OpenRouterMessage {
   role: 'system' | 'user';
@@ -56,6 +63,7 @@ export async function callOpenRouter(
           // 60+ seconds by default.
           reasoning: { enabled: false },
         }),
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       });
 
       if (response.status === 429 || response.status >= 500) {
@@ -94,7 +102,12 @@ export async function callOpenRouter(
         cost: calculateCost(model, promptTokens, completionTokens),
       };
     } catch (err) {
-      lastError = err instanceof Error ? err.message : String(err);
+      const isTimeout = err instanceof Error && err.name === 'TimeoutError';
+      lastError = isTimeout
+        ? `OpenRouter did not respond within ${FETCH_TIMEOUT_MS}ms`
+        : err instanceof Error
+          ? err.message
+          : String(err);
       if (attempt < MAX_RETRIES) {
         await backoff(attempt);
         continue;
