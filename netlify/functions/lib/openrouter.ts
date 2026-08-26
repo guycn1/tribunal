@@ -72,7 +72,7 @@ export async function callOpenRouter(
         return failure(model, `OpenRouter returned HTTP ${response.status}: ${bodyText}`);
       }
 
-      const data = await response.json();
+      const data = (await response.json()) as any;
       const content: string | undefined = data?.choices?.[0]?.message?.content;
       const usage = data?.usage ?? {};
 
