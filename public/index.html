@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Tribunal — Case T-001</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <h1 class="app-title">Tribunal</h1>
+      <button id="new-trial-btn" class="btn btn-primary">Begin new trial</button>
+      <h2 class="sidebar-heading">Run history</h2>
+      <ul id="history-list" class="history-list"></ul>
+    </aside>
+
+    <main class="main">
+      <section class="case-card">
+        <p class="case-code">Case T-001</p>
+        <h2 id="case-title">The Realm v. Jon Snow</h2>
+        <dl class="case-meta">
+          <div><dt>Accused</dt><dd id="case-accused"></dd></div>
+          <div><dt>Deceased</dt><dd id="case-deceased"></dd></div>
+        </dl>
+        <p id="case-act-alleged" class="case-act-alleged"></p>
+
+        <details class="case-details">
+          <summary>Background</summary>
+          <p id="case-background" class="case-background"></p>
+        </details>
+
+        <details class="case-details">
+          <summary>Agreed factual record</summary>
+          <ol id="case-facts" class="case-facts"></ol>
+        </details>
+
+        <div class="case-question">
+          <p class="case-question-label">Question for judgment</p>
+          <p id="case-question"></p>
+          <p id="case-scope-note" class="case-scope-note"></p>
+        </div>
+      </section>
+
+      <section id="phase-representatives" class="phase hidden">
+        <h3>Representatives</h3>
+        <div id="representative-cards" class="card-grid"></div>
+      </section>
+
+      <section id="phase-judges" class="phase hidden">
+        <h3>Judges</h3>
+        <p class="judges-note">Each judge rules independently. The three verdicts below are never combined into a single outcome.</p>
+        <div id="judge-cards" class="card-grid"></div>
+      </section>
+
+      <section id="phase-log" class="phase hidden">
+        <h3>Call log</h3>
+        <div class="table-scroll">
+          <table class="call-log">
+            <colgroup>
+              <col style="width: 16%" />
+              <col style="width: 12%" />
+              <col style="width: 22%" />
+              <col style="width: 18%" />
+              <col style="width: 10%" />
+              <col style="width: 10%" />
+              <col style="width: 12%" />
+            </colgroup>
+            <thead>
+              <tr>
+                <th>Agent</th>
+                <th>Type</th>
+                <th>Model</th>
+                <th>Tokens (prompt / completion / total)</th>
+                <th>Cost</th>
+                <th>Status</th>
+                <th>Time</th>
+              </tr>
+            </thead>
+            <tbody id="call-log-body"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

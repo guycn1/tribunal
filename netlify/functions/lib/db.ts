@@ -25,6 +25,45 @@ export async function createTrial(caseCode: string): Promise<TrialRecord> {
   return mapTrial(data);
 }
 
+export interface TrialSummary extends TrialRecord {
+  hadFailures: boolean;
+}
+
+export async function listTrials(limit = 50): Promise<TrialSummary[]> {
+  const supabase = getSupabaseClient();
+  const { data: trials, error } = await supabase
+    .from('trials')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(limit);
+
+  if (error) {
+    throw new Error(`Failed to list trials: ${error.message}`);
+  }
+
+  const ids = (trials ?? []).map((t) => t.id);
+  let failedTrialIds = new Set<string>();
+
+  if (ids.length > 0) {
+    const { data: failedLogs, error: logsError } = await supabase
+      .from('api_call_logs')
+      .select('trial_id')
+      .eq('status', 'failed')
+      .in('trial_id', ids);
+
+    if (logsError) {
+      throw new Error(`Failed to list trial failures: ${logsError.message}`);
+    }
+
+    failedTrialIds = new Set((failedLogs ?? []).map((row) => row.trial_id as string));
+  }
+
+  return (trials ?? []).map((row) => ({
+    ...mapTrial(row),
+    hadFailures: failedTrialIds.has(row.id),
+  }));
+}
+
 export async function getTrial(trialId: string): Promise<TrialRecord | null> {
   const supabase = getSupabaseClient();
   const { data, error } = await supabase.from('trials').select('*').eq('id', trialId).maybeSingle();
