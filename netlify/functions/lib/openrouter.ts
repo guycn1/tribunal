@@ -2,7 +2,10 @@ import { getModelForRole } from './models';
 import { calculateCost } from './pricing';
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
-const MAX_RETRIES = 1;
+// 3 attempts (2 retries) at 8s each plus backoff (500ms + 1000ms) is a
+// 25.5s worst case, comfortably under Netlify's observed 30s platform
+// timeout with margin left for the DB writes around this call.
+const MAX_RETRIES = 2;
 // fetch() had no timeout at all, so a free-tier model that hangs (rather
 // than erroring) blocked until Netlify's own platform-level timeout (30s,
 // observed) killed the entire function invocation - bypassing the retry
@@ -83,23 +86,28 @@ export async function callOpenRouter(
       const data = (await response.json()) as any;
       const content: string | undefined = data?.choices?.[0]?.message?.content;
       const usage = data?.usage ?? {};
+      const promptTokens = usage.prompt_tokens ?? 0;
+      const completionTokens = usage.completion_tokens ?? 0;
+      const totalTokens = usage.total_tokens ?? promptTokens + completionTokens;
 
       if (!content) {
         // Observed as a real, transient response from this free-tier model
         // (HTTP 200, well-formed response, empty content) - a direct retry
         // with an equivalent prompt succeeded immediately after. Retry like
         // the 429/5xx cases above rather than failing permanently on it.
-        lastError = 'OpenRouter response contained no message content.';
+        // Keep the real usage/finish_reason instead of discarding them -
+        // this is exactly the diagnostic signal needed to tell "hidden
+        // reasoning consumed the whole token budget" (finish_reason=length,
+        // completion_tokens>0) apart from "provider returned nothing at
+        // all" (completion_tokens=0), instead of guessing at which it was.
+        const finishReason = data?.choices?.[0]?.finish_reason ?? 'unknown';
+        lastError = `OpenRouter response contained no message content (finish_reason=${finishReason}, prompt_tokens=${promptTokens}, completion_tokens=${completionTokens}).`;
         if (attempt < MAX_RETRIES) {
           await backoff(attempt);
           continue;
         }
-        return failure(model, lastError);
+        return failure(model, lastError, { promptTokens, completionTokens, totalTokens });
       }
-
-      const promptTokens = usage.prompt_tokens ?? 0;
-      const completionTokens = usage.completion_tokens ?? 0;
-      const totalTokens = usage.total_tokens ?? promptTokens + completionTokens;
 
       return {
         status: 'success',
@@ -128,14 +136,21 @@ export async function callOpenRouter(
   return failure(model, lastError);
 }
 
-function failure(model: string, errorMessage: string): OpenRouterResult {
+function failure(
+  model: string,
+  errorMessage: string,
+  usage?: { promptTokens: number; completionTokens: number; totalTokens: number }
+): OpenRouterResult {
   return {
     status: 'failed',
     model,
-    promptTokens: 0,
-    completionTokens: 0,
-    totalTokens: 0,
-    cost: 0,
+    promptTokens: usage?.promptTokens ?? 0,
+    completionTokens: usage?.completionTokens ?? 0,
+    totalTokens: usage?.totalTokens ?? 0,
+    // Real cost is 0 regardless on this free-tier model, but computing it
+    // properly (rather than hardcoding) keeps this correct if a paid
+    // MODEL_* override is ever configured for a role.
+    cost: usage ? calculateCost(model, usage.promptTokens, usage.completionTokens) : 0,
     errorMessage,
   };
 }
