@@ -2,7 +2,7 @@
 // model identifiers, not credentials — they intentionally are not treated as
 // secrets by the deploy pipeline.
 
-const DEFAULT_MODEL = process.env.DEFAULT_MODEL || 'nvidia/nemotron-3.5-lightning:free';
+const DEFAULT_MODEL = process.env.DEFAULT_MODEL || 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free';
 
 const ROLE_ENV_VAR: Record<string, string> = {
   jon_snow: 'MODEL_JON_SNOW',
