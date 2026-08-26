@@ -1,0 +1,19 @@
+{
+  "name": "tribunal",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A multi-agent tribunal that runs a fixed fictional case through four representative agents and three judge agents, each modeled on a distinct reasoning style.",
+  "scripts": {
+    "dev": "netlify dev",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@netlify/functions": "^2.8.1",
+    "@supabase/supabase-js": "^2.45.4"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.15",
+    "netlify-cli": "^17.36.3",
+    "typescript": "^5.5.4"
+  }
+}

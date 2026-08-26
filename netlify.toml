@@ -1,0 +1,29 @@
+[build]
+  publish = "public"
+  functions = "netlify/functions"
+
+[functions]
+  node_bundler = "esbuild"
+
+# Path segments are forwarded as extra path parts (not query string) — Netlify's
+# deployed redirect engine does not reliably rewrite named placeholders into a
+# target's query string, only into the target path.
+[[redirects]]
+  from = "/api/trials"
+  to = "/.netlify/functions/trials"
+  status = 200
+
+[[redirects]]
+  from = "/api/trials/:id"
+  to = "/.netlify/functions/trial/:id"
+  status = 200
+
+[[redirects]]
+  from = "/api/trials/:id/representatives/:role"
+  to = "/.netlify/functions/representative/:id/:role"
+  status = 200
+
+[[redirects]]
+  from = "/api/trials/:id/judges/:role"
+  to = "/.netlify/functions/judge/:id/:role"
+  status = 200
