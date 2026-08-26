@@ -81,6 +81,17 @@ async function beginTrial() {
   }
 }
 
+// In one real run, all 4 representative calls fired at the exact same
+// instant and only the first came back with real content — the other 3
+// (and, separately, all 3 concurrently-fired judges) failed. A small stagger
+// between kickoffs avoids bursting this free-tier model with simultaneous
+// requests from the same account while every call still runs concurrently
+// with the others (none waits for a prior one to finish) — still "in
+// parallel" in the sense that matters, just not all launched in the same
+// instant.
+const CONCURRENT_CALL_STAGGER_MS = 400;
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 async function runRepresentativesPhase() {
   for (const role of REPRESENTATIVE_ROLES) {
     state.representatives[role] = { status: 'loading' };
@@ -88,8 +99,9 @@ async function runRepresentativesPhase() {
   renderRepresentatives();
 
   await Promise.allSettled(
-    REPRESENTATIVE_ROLES.map(async (role) => {
+    REPRESENTATIVE_ROLES.map(async (role, index) => {
       try {
+        await sleep(index * CONCURRENT_CALL_STAGGER_MS);
         const res = await fetch(`/api/trials/${state.trialId}/representatives/${role}`, { method: 'POST' });
         const data = await res.json();
         if (!res.ok || data.status === 'failed') {
@@ -113,8 +125,9 @@ async function runJudgesPhase() {
   renderJudges();
 
   await Promise.allSettled(
-    JUDGE_ROLES.map(async (role) => {
+    JUDGE_ROLES.map(async (role, index) => {
       try {
+        await sleep(index * CONCURRENT_CALL_STAGGER_MS);
         const res = await fetch(`/api/trials/${state.trialId}/judges/${role}`, { method: 'POST' });
         const data = await res.json();
         if (!res.ok || data.status === 'failed') {
