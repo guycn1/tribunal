@@ -139,6 +139,14 @@ async function refreshFullTrial() {
   renderCallLog();
 }
 
+async function loadStaticCaseSheet() {
+  const res = await fetch('/api/case');
+  if (!res.ok) return;
+  const data = await res.json();
+  state.caseDef = data.caseDef;
+  renderCaseSheet();
+}
+
 async function refreshHistory() {
   const res = await fetch('/api/trials');
   if (!res.ok) return;
@@ -346,4 +354,5 @@ function renderHistory() {
   }
 }
 
+loadStaticCaseSheet();
 refreshHistory();

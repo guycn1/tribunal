@@ -9,6 +9,11 @@
 # deployed redirect engine does not reliably rewrite named placeholders into a
 # target's query string, only into the target path.
 [[redirects]]
+  from = "/api/case"
+  to = "/.netlify/functions/case"
+  status = 200
+
+[[redirects]]
   from = "/api/trials"
   to = "/.netlify/functions/trials"
   status = 200
