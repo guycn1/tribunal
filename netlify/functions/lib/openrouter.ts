@@ -85,7 +85,16 @@ export async function callOpenRouter(
       const usage = data?.usage ?? {};
 
       if (!content) {
-        return failure(model, 'OpenRouter response contained no message content.');
+        // Observed as a real, transient response from this free-tier model
+        // (HTTP 200, well-formed response, empty content) - a direct retry
+        // with an equivalent prompt succeeded immediately after. Retry like
+        // the 429/5xx cases above rather than failing permanently on it.
+        lastError = 'OpenRouter response contained no message content.';
+        if (attempt < MAX_RETRIES) {
+          await backoff(attempt);
+          continue;
+        }
+        return failure(model, lastError);
       }
 
       const promptTokens = usage.prompt_tokens ?? 0;
