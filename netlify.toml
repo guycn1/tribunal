@@ -32,3 +32,8 @@
   from = "/api/trials/:id/judges/:role"
   to = "/.netlify/functions/judge/:id/:role"
   status = 200
+
+[[redirects]]
+  from = "/api/trials/:id/abort"
+  to = "/.netlify/functions/abort/:id"
+  status = 200

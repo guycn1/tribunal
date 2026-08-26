@@ -193,6 +193,92 @@ export async function callOpenRouter(
   return failure(model, `${lastError} (gave up after ${attempt} attempt(s), ${TOTAL_BUDGET_MS}ms budget)`, lastUsage);
 }
 
+// One attempt, one specific model, no retry and no fallback array of its
+// own. Used exclusively for the frontend-orchestrated "last-ditch" call
+// once its own retry-until-success ceiling against the normal chain (above)
+// has been exhausted — at that point, spending more time retrying inside
+// this call too would just stack additional delay on an already long wait,
+// so this makes exactly one attempt and returns immediately either way.
+// Reuses the same timeout scaling and response-parsing rules as the main
+// loop, just without the loop around them.
+export async function callOpenRouterOnce(
+  messages: OpenRouterMessage[],
+  maxTokens: number,
+  model: string
+): Promise<OpenRouterResult> {
+  const apiKey = process.env.OPENROUTER_API_KEY;
+  if (!apiKey) {
+    return failure(model, 'OPENROUTER_API_KEY is not configured on the server.');
+  }
+
+  const attemptTimeout = attemptTimeoutFor(maxTokens);
+
+  try {
+    const response = await fetch(OPENROUTER_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+        'X-Title': 'Tribunal',
+      },
+      body: JSON.stringify({
+        model,
+        messages,
+        max_tokens: maxTokens,
+        reasoning: { enabled: false },
+      }),
+      signal: AbortSignal.timeout(attemptTimeout),
+    });
+
+    if (response.status === 429) {
+      const resetAt = Number(response.headers.get('x-ratelimit-reset'));
+      const resetIso = Number.isFinite(resetAt) && resetAt > 0 ? new Date(resetAt).toISOString() : 'unknown';
+      const limit = response.headers.get('x-ratelimit-limit') ?? 'the free-tier';
+      return failure(model, `Last-ditch attempt: OpenRouter returned HTTP 429 (limit ${limit}/day). Resets at ${resetIso}.`);
+    }
+
+    if (!response.ok) {
+      const bodyText = await safeReadText(response);
+      return failure(model, `Last-ditch attempt: OpenRouter returned HTTP ${response.status}: ${bodyText}`);
+    }
+
+    const data = (await response.json()) as any;
+    const content: string | undefined = data?.choices?.[0]?.message?.content;
+    const usage = data?.usage ?? {};
+    const promptTokens = usage.prompt_tokens ?? 0;
+    const completionTokens = usage.completion_tokens ?? 0;
+    const totalTokens = usage.total_tokens ?? promptTokens + completionTokens;
+
+    if (!content) {
+      const upstreamError = data?.error?.message;
+      const finishReason = data?.choices?.[0]?.finish_reason ?? 'unknown';
+      const message = upstreamError
+        ? `Last-ditch attempt, OpenRouter/upstream error: ${upstreamError}`
+        : `Last-ditch attempt: OpenRouter response contained no message content (finish_reason=${finishReason}).`;
+      return failure(model, message, { promptTokens, completionTokens, totalTokens });
+    }
+
+    const servingModel: string = data?.model ?? model;
+    return {
+      status: 'success',
+      content,
+      model: servingModel,
+      promptTokens,
+      completionTokens,
+      totalTokens,
+      cost: calculateCost(servingModel, promptTokens, completionTokens),
+    };
+  } catch (err) {
+    const isTimeout = err instanceof Error && err.name === 'TimeoutError';
+    const message = isTimeout
+      ? `Last-ditch attempt: OpenRouter did not respond within ${attemptTimeout}ms`
+      : err instanceof Error
+        ? err.message
+        : String(err);
+    return failure(model, message);
+  }
+}
+
 function failure(
   model: string,
   errorMessage: string,

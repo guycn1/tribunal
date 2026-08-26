@@ -5,7 +5,8 @@ import { extractParams } from './lib/extractParams';
 import { getChargeSheet } from './lib/chargeSheet';
 import { JUDGES } from './lib/judges';
 import { buildJudgeMessages, parseJudgeOutput } from './lib/prompts';
-import { callOpenRouter } from './lib/openrouter';
+import { callOpenRouter, callOpenRouterOnce } from './lib/openrouter';
+import { getLastDitchModelForRole } from './lib/models';
 import { getFullTrial, upsertJudgeRuling, logApiCall, markTrialCompletedIfJudgingDone } from './lib/db';
 import type { JudgeRole, RepresentativeRole } from './lib/types';
 
@@ -48,7 +49,12 @@ const rawHandler: Handler = async (event) => {
   }
 
   const messages = buildJudgeMessages(judgeRole, caseDef, availableArguments);
-  const result = await callOpenRouter(judgeRole, messages, MAX_TOKENS);
+
+  // ?lastDitch=true: see the matching comment in representative.ts.
+  const isLastDitch = event.queryStringParameters?.lastDitch === 'true';
+  const result = isLastDitch
+    ? await callOpenRouterOnce(messages, MAX_TOKENS, getLastDitchModelForRole(judgeRole))
+    : await callOpenRouter(judgeRole, messages, MAX_TOKENS);
 
   const parsed = result.status === 'success' && result.content ? parseJudgeOutput(result.content) : null;
   const callFailed = result.status === 'failed' || !result.content;

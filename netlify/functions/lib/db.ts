@@ -10,6 +10,21 @@ import type {
   Verdict,
 } from './types';
 
+// Written by abort.ts, one row per role still pending when the user clicked
+// Abort. This is a factual record of a client-side decision ("the browser
+// stopped waiting on this call, at the user's request") rather than a claim
+// about what happened server-side - the Netlify invocation for that role
+// may separately still complete on its own and log its own real outcome,
+// since aborting a fetch() client-side does not reliably stop the function
+// invocation it was talking to. Both rows are legitimate; this schema
+// already allows multiple api_call_logs rows per role per trial (each
+// retry attempt already produces its own row).
+//
+// No trials.status enum change needed for this - "aborted" is derived here
+// the same way hadFailures already is, by checking api_call_logs for this
+// exact marker, rather than adding a new stored status value.
+export const ABORTED_BY_USER_MESSAGE = 'Aborted by user before this call could complete.';
+
 export async function createTrial(caseCode: string): Promise<TrialRecord> {
   const supabase = getSupabaseClient();
   const { data, error } = await supabase
@@ -27,6 +42,7 @@ export async function createTrial(caseCode: string): Promise<TrialRecord> {
 
 export interface TrialSummary extends TrialRecord {
   hadFailures: boolean;
+  wasAborted: boolean;
 }
 
 export async function listTrials(limit = 50): Promise<TrialSummary[]> {
@@ -43,6 +59,7 @@ export async function listTrials(limit = 50): Promise<TrialSummary[]> {
 
   const ids = (trials ?? []).map((t) => t.id);
   let failedTrialIds = new Set<string>();
+  let abortedTrialIds = new Set<string>();
 
   if (ids.length > 0) {
     const { data: failedLogs, error: logsError } = await supabase
@@ -56,11 +73,24 @@ export async function listTrials(limit = 50): Promise<TrialSummary[]> {
     }
 
     failedTrialIds = new Set((failedLogs ?? []).map((row) => row.trial_id as string));
+
+    const { data: abortedLogs, error: abortedError } = await supabase
+      .from('api_call_logs')
+      .select('trial_id')
+      .eq('error_message', ABORTED_BY_USER_MESSAGE)
+      .in('trial_id', ids);
+
+    if (abortedError) {
+      throw new Error(`Failed to list aborted trials: ${abortedError.message}`);
+    }
+
+    abortedTrialIds = new Set((abortedLogs ?? []).map((row) => row.trial_id as string));
   }
 
   return (trials ?? []).map((row) => ({
     ...mapTrial(row),
     hadFailures: failedTrialIds.has(row.id),
+    wasAborted: abortedTrialIds.has(row.id),
   }));
 }
 

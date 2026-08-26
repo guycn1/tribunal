@@ -15,13 +15,21 @@ const DEFAULT_MODEL = process.env.DEFAULT_MODEL || 'nvidia/nemotron-3-nano-omni-
 //
 // Deliberately Nvidia-only: other providers' free tiers were tested and
 // found unreliably congested. nemotron-3.5-lightning is deliberately
-// excluded despite being an Nvidia free model - it was measured taking 25s+
-// to generate even a trivial reply, which would blow the per-call time
-// budget rather than help.
+// excluded from THIS chain despite being an Nvidia free model - measured at
+// 25s+ to generate even a trivial reply, which would consume most of a
+// single attempt's timeout budget on every normal call rather than help.
+// See LAST_DITCH_MODEL below for where it's actually used instead.
 const FALLBACK_MODELS = [
   'nvidia/nemotron-3-super-120b-a12b:free',
   'nvidia/nemotron-3-ultra-550b-a55b:free',
 ];
+
+// Tried exactly once, with no internal retry and no fallback array of its
+// own, and only after the frontend's own retry-until-success ceiling
+// against the normal chain above has been exhausted - a deliberate,
+// visible last resort rather than a silent addition to every call. See
+// callOpenRouterOnce in openrouter.ts.
+const LAST_DITCH_MODEL = 'nvidia/nemotron-3.5-lightning:free';
 
 const ROLE_ENV_VAR: Record<string, string> = {
   jon_snow: 'MODEL_JON_SNOW',
@@ -32,6 +40,10 @@ const ROLE_ENV_VAR: Record<string, string> = {
   elon: 'MODEL_ELON',
   shamgar: 'MODEL_SHAMGAR',
 };
+
+// All seven agent roles, for endpoints that report model configuration
+// across the whole roster (see case.ts) rather than one role at a time.
+export const ALL_AGENT_ROLES = Object.keys(ROLE_ENV_VAR);
 
 export function getModelForRole(role: string): string {
   const envVar = ROLE_ENV_VAR[role];
@@ -45,4 +57,12 @@ export function getModelForRole(role: string): string {
 export function getModelChainForRole(role: string): string[] {
   const primary = getModelForRole(role);
   return [primary, ...FALLBACK_MODELS.filter((m) => m !== primary)];
+}
+
+export function getLastDitchModelForRole(_role: string): string {
+  // No per-role override exists for the last-ditch escape hatch (none has
+  // been needed) - routed through a function anyway, rather than exporting
+  // the bare constant, so a future override slots in the same way
+  // getModelForRole's does.
+  return LAST_DITCH_MODEL;
 }

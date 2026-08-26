@@ -17,15 +17,18 @@ const JUDGE_META = {
 const state = {
   trialId: null,
   caseDef: null,
+  modelInfo: null, // { [role]: { chain: string[], lastDitch: string } }, from /api/case
   representatives: {},
   judges: {},
   callLog: [],
   history: [],
   running: false,
+  abortController: null,
 };
 
 const el = {
   newTrialBtn: document.getElementById('new-trial-btn'),
+  abortBtn: document.getElementById('abort-btn'),
   historyList: document.getElementById('history-list'),
   caseTitle: document.getElementById('case-title'),
   caseAccused: document.getElementById('case-accused'),
@@ -47,10 +50,35 @@ el.newTrialBtn.addEventListener('click', () => {
   beginTrial();
 });
 
+el.abortBtn.addEventListener('click', () => {
+  abortCurrentTrial();
+});
+
+// "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free" -> "nemotron-3-nano-omni-30b-a3b-reasoning"
+// Display only - the full id is what's actually sent to the backend/OpenRouter.
+function shortModelName(modelId) {
+  if (!modelId) return 'unknown model';
+  return modelId.replace(/^nvidia\//, '').replace(/:free$/, '');
+}
+
+function formatModelChain(role) {
+  const info = state.modelInfo && state.modelInfo[role];
+  if (!info) return 'the configured model chain';
+  return info.chain.map(shortModelName).join(' → ');
+}
+
+function formatLastDitchModel(role) {
+  const info = state.modelInfo && state.modelInfo[role];
+  return info ? shortModelName(info.lastDitch) : 'the last-ditch model';
+}
+
 async function beginTrial() {
   if (state.running) return;
   state.running = true;
   el.newTrialBtn.disabled = true;
+  el.abortBtn.classList.remove('hidden');
+  const controller = new AbortController();
+  state.abortController = controller;
 
   try {
     const res = await fetch('/api/trials', { method: 'POST' });
@@ -71,13 +99,58 @@ async function beginTrial() {
     el.phaseJudges.classList.add('hidden');
     el.phaseLog.classList.add('hidden');
 
-    await runRepresentativesPhase();
-    await runJudgesPhase();
+    await runRepresentativesPhase(controller.signal);
+    if (!controller.signal.aborted) {
+      await runJudgesPhase(controller.signal);
+    }
     await refreshFullTrial();
     await refreshHistory();
   } finally {
     state.running = false;
+    state.abortController = null;
     el.newTrialBtn.disabled = false;
+    el.abortBtn.classList.add('hidden');
+  }
+}
+
+// Records which roles were still pending, tells the in-flight calls to stop,
+// gives immediate visual feedback (doesn't wait on the network round trip
+// below), then persists the abort as a real, visible fact so the sidebar
+// reflects it later too - not just for this page view. Persisting matters
+// because aborting a fetch() client-side does not reliably stop the Netlify
+// invocation it was talking to, so without a persisted record a stray
+// success/failure logged after the fact could make an aborted run look
+// like an ordinary one.
+async function abortCurrentTrial() {
+  if (!state.abortController || !state.trialId) return;
+
+  const isPending = (status) => status === 'loading' || status === 'retrying' || status === 'last-ditch';
+  const pendingRoles = [
+    ...REPRESENTATIVE_ROLES.filter((r) => isPending(state.representatives[r] && state.representatives[r].status)),
+    ...JUDGE_ROLES.filter((r) => isPending(state.judges[r] && state.judges[r].status)),
+  ];
+
+  state.abortController.abort();
+
+  for (const role of pendingRoles) {
+    const bucket = role in REPRESENTATIVE_META ? state.representatives : state.judges;
+    bucket[role] = { status: 'aborted', error: 'Stopped by user.' };
+  }
+  renderRepresentatives();
+  renderJudges();
+
+  if (pendingRoles.length > 0 && state.trialId) {
+    try {
+      await fetch(`/api/trials/${state.trialId}/abort`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ roles: pendingRoles }),
+      });
+    } catch {
+      // Best-effort - the visible client-side state above already reflects
+      // the abort regardless of whether this logging call itself lands.
+    }
+    refreshHistory();
   }
 }
 
@@ -90,7 +163,29 @@ async function beginTrial() {
 // parallel" in the sense that matters, just not all launched in the same
 // instant.
 const CONCURRENT_CALL_STAGGER_MS = 400;
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Abort-aware: rejects immediately (rather than waiting out the delay) if
+// the signal fires mid-wait, so Abort actually stops things promptly even
+// during a stagger or backoff pause, not just between HTTP requests.
+function sleep(ms, signal) {
+  return new Promise((resolve, reject) => {
+    if (signal && signal.aborted) {
+      reject(new DOMException('Aborted', 'AbortError'));
+      return;
+    }
+    const timer = setTimeout(resolve, ms);
+    if (signal) {
+      signal.addEventListener(
+        'abort',
+        () => {
+          clearTimeout(timer);
+          reject(new DOMException('Aborted', 'AbortError'));
+        },
+        { once: true }
+      );
+    }
+  });
+}
 
 // Netlify's platform kills a standard function invocation at ~30s
 // regardless of anything our own code does (measured directly), and true
@@ -112,63 +207,106 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 // well past this project's submission deadline - there's no recovering a
 // month-long mistake in a few days. 100 seconds gives real room for a
 // saturated pool to clear without letting one stuck call run away with
-// meaningful compute time. The one failure this does NOT retry is the
-// daily OpenRouter quota being exhausted - that cannot succeed again before
-// the reset named in the error, no matter how many more attempts are made,
-// so it fails immediately instead of waiting out the full ceiling
-// pointlessly.
+// meaningful compute time. Once that ceiling is hit, exactly one further
+// attempt is made against a distinct, explicitly slower fallback model
+// (nemotron-3.5-lightning) via ?lastDitch=true, single-shot, no retry - see
+// callOpenRouterOnce on the backend. The one failure this does NOT retry at
+// all is the daily OpenRouter quota being exhausted - that cannot succeed
+// again before the reset named in the error, no matter how many more
+// attempts are made, so it fails immediately instead of waiting out the
+// full ceiling pointlessly.
 const RETRY_UNTIL_SUCCESS_MS = 100 * 1000;
 const RETRY_BACKOFF_BASE_MS = 2000;
 const RETRY_BACKOFF_MAX_MS = 6000;
 const isQuotaExhausted = (message) => /quota exhausted/i.test(message || '');
 
-async function callAgentWithRetry(url, onUpdate) {
-  const startedAt = Date.now();
-  let attempt = 0;
+function nextBackoff(attempt) {
+  return Math.min(RETRY_BACKOFF_BASE_MS * Math.pow(1.3, attempt - 1), RETRY_BACKOFF_MAX_MS) + Math.random() * 500;
+}
 
-  while (true) {
-    attempt += 1;
-    try {
-      const res = await fetch(url, { method: 'POST' });
-      const data = await res.json();
+// Drives one agent's call end to end: normal retrying against the main
+// model chain until RETRY_UNTIL_SUCCESS_MS, then exactly one last-ditch
+// attempt, then a real, terminal outcome. onUpdate fires on every phase
+// transition AND on a steady ~500ms tick throughout (via setInterval) so a
+// live countdown is possible even while a request is in flight and no
+// discrete event has fired - the alternative (only updating between
+// requests) would make the UI look frozen for however long the current
+// attempt takes, which is exactly the kind of silent-looking wait this
+// whole feature exists to avoid.
+async function callAgentWithRetry(url, onUpdate, signal) {
+  const startedAt = Date.now();
+  const local = { attempt: 0, error: null, phase: 'loading' };
+
+  const tick = () => {
+    const elapsedMs = Date.now() - startedAt;
+    const remainingMs = Math.max(0, RETRY_UNTIL_SUCCESS_MS - elapsedMs);
+    onUpdate({ status: local.phase, attempt: local.attempt, error: local.error, elapsedMs, remainingMs });
+  };
+
+  const intervalId = setInterval(tick, 500);
+  tick();
+
+  try {
+    while (true) {
+      if (signal && signal.aborted) {
+        return { status: 'aborted', error: 'Stopped by user.' };
+      }
+
+      local.attempt += 1;
+      const elapsedMs = Date.now() - startedAt;
+      const overCeiling = elapsedMs >= RETRY_UNTIL_SUCCESS_MS;
+      local.phase = overCeiling ? 'last-ditch' : local.attempt === 1 ? 'loading' : 'retrying';
+      tick();
+
+      const requestUrl = overCeiling ? `${url}?lastDitch=true` : url;
+      let res, data;
+      try {
+        res = await fetch(requestUrl, { method: 'POST', signal });
+        data = await res.json();
+      } catch (err) {
+        if ((err && err.name === 'AbortError') || (signal && signal.aborted)) {
+          return { status: 'aborted', error: 'Stopped by user.' };
+        }
+        local.error = String(err);
+        if (overCeiling) {
+          return { status: 'failed', error: local.error, lastDitchAttempted: true };
+        }
+        tick();
+        try {
+          await sleep(nextBackoff(local.attempt), signal);
+        } catch {
+          return { status: 'aborted', error: 'Stopped by user.' };
+        }
+        continue;
+      }
+
       if (res.ok && data.status !== 'failed') {
-        return { status: 'success', ...data };
+        return { status: 'success', ...data, wasLastDitch: overCeiling };
       }
 
       const error = data.error || `HTTP ${res.status}`;
-      if (isQuotaExhausted(error)) {
-        return { status: 'failed', error };
-      }
-      // A 4xx here means the request itself is malformed (missing trial id,
-      // unknown role, wrong method) - our own endpoints use 502 specifically
-      // for OpenRouter-side failures, which is what's actually worth
-      // retrying. An identical bad request will fail identically every
-      // time, so retrying it for the full ceiling would just waste calls.
-      if (res.status >= 400 && res.status < 500) {
-        return { status: 'failed', error };
+      local.error = error;
+
+      if (isQuotaExhausted(error) || (res.status >= 400 && res.status < 500) || overCeiling) {
+        // Quota-exhausted, a malformed request (4xx), or this WAS the
+        // last-ditch attempt itself - none of these are worth another
+        // round, for the reasons in the comment above this function.
+        return { status: 'failed', error, lastDitchAttempted: overCeiling };
       }
 
-      const elapsedMs = Date.now() - startedAt;
-      if (elapsedMs >= RETRY_UNTIL_SUCCESS_MS) {
-        return { status: 'failed', error: `Still failing after ${Math.round(elapsedMs / 1000)}s of retrying. Last error: ${error}` };
+      tick();
+      try {
+        await sleep(nextBackoff(local.attempt), signal);
+      } catch {
+        return { status: 'aborted', error: 'Stopped by user.' };
       }
-
-      onUpdate({ status: 'retrying', attempt, error, elapsedMs });
-      const backoff = Math.min(RETRY_BACKOFF_BASE_MS * Math.pow(1.3, attempt - 1), RETRY_BACKOFF_MAX_MS);
-      await sleep(backoff + Math.random() * 500);
-    } catch (err) {
-      const elapsedMs = Date.now() - startedAt;
-      if (elapsedMs >= RETRY_UNTIL_SUCCESS_MS) {
-        return { status: 'failed', error: `Still failing after ${Math.round(elapsedMs / 1000)}s of retrying. Last error: ${String(err)}` };
-      }
-      onUpdate({ status: 'retrying', attempt, error: String(err), elapsedMs });
-      const backoff = Math.min(RETRY_BACKOFF_BASE_MS * Math.pow(1.3, attempt - 1), RETRY_BACKOFF_MAX_MS);
-      await sleep(backoff + Math.random() * 500);
     }
+  } finally {
+    clearInterval(intervalId);
   }
 }
 
-async function runRepresentativesPhase() {
+async function runRepresentativesPhase(signal) {
   for (const role of REPRESENTATIVE_ROLES) {
     state.representatives[role] = { status: 'loading' };
   }
@@ -176,18 +314,28 @@ async function runRepresentativesPhase() {
 
   await Promise.allSettled(
     REPRESENTATIVE_ROLES.map(async (role, index) => {
-      await sleep(index * CONCURRENT_CALL_STAGGER_MS);
-      const result = await callAgentWithRetry(`/api/trials/${state.trialId}/representatives/${role}`, (progress) => {
-        state.representatives[role] = progress;
+      try {
+        await sleep(index * CONCURRENT_CALL_STAGGER_MS, signal);
+      } catch {
+        state.representatives[role] = { status: 'aborted', error: 'Stopped by user.' };
         renderRepresentatives();
-      });
+        return;
+      }
+      const result = await callAgentWithRetry(
+        `/api/trials/${state.trialId}/representatives/${role}`,
+        (progress) => {
+          state.representatives[role] = progress;
+          renderRepresentatives();
+        },
+        signal
+      );
       state.representatives[role] = result;
       renderRepresentatives();
     })
   );
 }
 
-async function runJudgesPhase() {
+async function runJudgesPhase(signal) {
   el.phaseJudges.classList.remove('hidden');
   for (const role of JUDGE_ROLES) {
     state.judges[role] = { status: 'loading' };
@@ -196,11 +344,21 @@ async function runJudgesPhase() {
 
   await Promise.allSettled(
     JUDGE_ROLES.map(async (role, index) => {
-      await sleep(index * CONCURRENT_CALL_STAGGER_MS);
-      const result = await callAgentWithRetry(`/api/trials/${state.trialId}/judges/${role}`, (progress) => {
-        state.judges[role] = progress;
+      try {
+        await sleep(index * CONCURRENT_CALL_STAGGER_MS, signal);
+      } catch {
+        state.judges[role] = { status: 'aborted', error: 'Stopped by user.' };
         renderJudges();
-      });
+        return;
+      }
+      const result = await callAgentWithRetry(
+        `/api/trials/${state.trialId}/judges/${role}`,
+        (progress) => {
+          state.judges[role] = progress;
+          renderJudges();
+        },
+        signal
+      );
       state.judges[role] = result;
       renderJudges();
     })
@@ -221,6 +379,7 @@ async function loadStaticCaseSheet() {
   if (!res.ok) return;
   const data = await res.json();
   state.caseDef = data.caseDef;
+  state.modelInfo = data.modelInfo || null;
   renderCaseSheet();
 }
 
@@ -291,6 +450,79 @@ function renderCaseSheet() {
   el.caseScopeNote.textContent = c.scopeNote;
 }
 
+// Builds the shared "what's happening with this call right now" block used
+// by both representative and judge cards - kept as one function so the two
+// card types can't quietly drift into showing different information for
+// the same underlying states.
+function buildAgentStatusBody(entry, role, verb) {
+  const body = document.createElement('div');
+
+  if (!entry || entry.status === 'loading') {
+    body.className = 'card-body dim';
+    body.innerHTML = `${verb}…<div class="model-chain">Trying: <span class="model-name">${formatModelChain(role)}</span></div>`;
+    return body;
+  }
+
+  if (entry.status === 'retrying') {
+    const secondsLeft = Math.max(0, Math.ceil((entry.remainingMs || 0) / 1000));
+    body.className = 'card-body dim';
+    // entry.error can echo a truncated raw response body from OpenRouter
+    // (see safeReadText in openrouter.ts), which is external, unpredictable
+    // text - built as its own text node below rather than interpolated
+    // into the innerHTML template with everything else, which is all
+    // either a number or a model id string we control.
+    body.innerHTML = `
+      Still trying (attempt ${entry.attempt}, ${Math.round(entry.elapsedMs / 1000)}s so far)…
+      <div class="model-chain">Trying: <span class="model-name">${formatModelChain(role)}</span></div>
+      <div class="model-chain">Last-ditch fallback in <span class="countdown">${secondsLeft}s</span> if this keeps failing</div>
+    `;
+    const errLine = document.createElement('div');
+    errLine.className = 'model-chain';
+    errLine.textContent = `Last attempt: ${entry.error}`;
+    body.appendChild(errLine);
+    return body;
+  }
+
+  if (entry.status === 'last-ditch') {
+    body.className = 'card-body dim';
+    body.innerHTML = `
+      Normal chain exhausted after 100s — making one final attempt with <span class="model-name">${formatLastDitchModel(role)}</span>…
+      <div class="model-chain">This model is known to be slower; this attempt may take longer than the others did.</div>
+    `;
+    return body;
+  }
+
+  if (entry.status === 'aborted') {
+    const wrap = document.createElement('div');
+    const badge = document.createElement('span');
+    badge.className = 'badge badge-aborted';
+    badge.textContent = 'Aborted';
+    wrap.appendChild(badge);
+    const note = document.createElement('p');
+    note.className = 'card-body dim';
+    note.textContent = 'Stopped by user before this could complete.';
+    wrap.appendChild(note);
+    return wrap;
+  }
+
+  if (entry.status === 'failed') {
+    const wrap = document.createElement('div');
+    const badge = document.createElement('span');
+    badge.className = 'badge badge-fail';
+    badge.textContent = 'Call failed';
+    wrap.appendChild(badge);
+    const err = document.createElement('p');
+    err.className = 'card-body dim';
+    err.textContent = entry.lastDitchAttempted
+      ? `${entry.error} (a last-ditch attempt with ${formatLastDitchModel(role)} was also tried and also failed)`
+      : entry.error;
+    wrap.appendChild(err);
+    return wrap;
+  }
+
+  return null; // success - caller renders its own content
+}
+
 function renderRepresentatives() {
   el.representativeCards.innerHTML = '';
   for (const role of REPRESENTATIVE_ROLES) {
@@ -307,27 +539,19 @@ function renderRepresentatives() {
     `;
     card.appendChild(header);
 
-    const body = document.createElement('div');
-    if (!entry || entry.status === 'loading') {
-      body.className = 'card-body dim';
-      body.textContent = 'Arguing…';
-    } else if (entry.status === 'retrying') {
-      body.className = 'card-body dim';
-      body.textContent = `Still trying (attempt ${entry.attempt}, ${Math.round(entry.elapsedMs / 1000)}s so far)… last attempt: ${entry.error}`;
-    } else if (entry.status === 'failed') {
-      body.innerHTML = `<span class="badge badge-fail">Call failed</span>`;
-      const err = document.createElement('p');
-      err.className = 'card-body dim';
-      err.textContent = entry.error;
-      card.appendChild(body);
-      card.appendChild(err);
-      el.representativeCards.appendChild(card);
-      continue;
-    } else {
+    if (entry && entry.status === 'success') {
+      const body = document.createElement('div');
       body.className = 'card-body';
       body.textContent = entry.argumentText;
+      card.appendChild(body);
+      const answeredBy = document.createElement('p');
+      answeredBy.className = 'model-chain';
+      answeredBy.innerHTML = `Answered by: <span class="model-name">${shortModelName(entry.modelUsed)}</span>${entry.wasLastDitch ? ' (last-ditch fallback)' : ''}`;
+      card.appendChild(answeredBy);
+    } else {
+      const statusBody = buildAgentStatusBody(entry, role, 'Arguing');
+      if (statusBody) card.appendChild(statusBody);
     }
-    card.appendChild(body);
     el.representativeCards.appendChild(card);
   }
 }
@@ -345,26 +569,7 @@ function renderJudges() {
     header.innerHTML = `<span class="card-name">${meta.name}</span>`;
     card.appendChild(header);
 
-    if (!entry || entry.status === 'loading') {
-      const body = document.createElement('div');
-      body.className = 'card-body dim';
-      body.textContent = 'Deliberating…';
-      card.appendChild(body);
-    } else if (entry.status === 'retrying') {
-      const body = document.createElement('div');
-      body.className = 'card-body dim';
-      body.textContent = `Still trying (attempt ${entry.attempt}, ${Math.round(entry.elapsedMs / 1000)}s so far)… last attempt: ${entry.error}`;
-      card.appendChild(body);
-    } else if (entry.status === 'failed') {
-      const badge = document.createElement('span');
-      badge.className = 'badge badge-fail';
-      badge.textContent = 'Call failed';
-      card.appendChild(badge);
-      const err = document.createElement('p');
-      err.className = 'card-body dim';
-      err.textContent = entry.error;
-      card.appendChild(err);
-    } else {
+    if (entry && entry.status === 'success') {
       const verdict = document.createElement('p');
       verdict.className = entry.verdict === 'justified' ? 'verdict-justified' : 'verdict-not-justified';
       verdict.textContent = entry.verdict === 'justified' ? 'Justified' : 'Not justified';
@@ -374,6 +579,14 @@ function renderJudges() {
       body.className = 'card-body';
       body.textContent = entry.reasoningText;
       card.appendChild(body);
+
+      const answeredBy = document.createElement('p');
+      answeredBy.className = 'model-chain';
+      answeredBy.innerHTML = `Answered by: <span class="model-name">${shortModelName(entry.modelUsed)}</span>${entry.wasLastDitch ? ' (last-ditch fallback)' : ''}`;
+      card.appendChild(answeredBy);
+    } else {
+      const statusBody = buildAgentStatusBody(entry, role, 'Deliberating');
+      if (statusBody) card.appendChild(statusBody);
     }
     el.judgeCards.appendChild(card);
   }
@@ -403,15 +616,19 @@ function renderCallLog() {
   }
 }
 
-// Representatives run concurrently as a group (worst case ~= one
-// RETRY_UNTIL_SUCCESS_MS, not 4x it, since they don't wait on each other),
-// then judges run as their own concurrent group after - so a genuinely
-// still-working trial takes at most roughly 2x RETRY_UNTIL_SUCCESS_MS end
-// to end. This threshold has to sit safely above that, or a trial that's
-// actually still retrying gets mislabeled as abandoned.
+// Representatives run concurrently as a group - worst case per group is
+// RETRY_UNTIL_SUCCESS_MS (100s) plus one last-ditch attempt (up to ~22s),
+// not 4x that, since roles don't wait on each other - then judges run as
+// their own concurrent group after, so a genuinely still-working trial
+// takes at most roughly 2x that per-group figure (~244s) end to end. This
+// threshold has to sit safely above that, or a trial that's actually still
+// retrying gets mislabeled as abandoned.
 const INTERRUPTED_THRESHOLD_MS = 5 * 60 * 1000;
 
 function trialStatusLabel(trial) {
+  if (trial.wasAborted) {
+    return trial.status === 'completed' ? 'Aborted (partial results)' : 'Aborted';
+  }
   if (trial.status === 'completed') {
     return trial.hadFailures ? 'Completed — with failures' : 'Completed';
   }
@@ -423,6 +640,9 @@ function trialStatusLabel(trial) {
 }
 
 function trialStatusClass(trial) {
+  if (trial.wasAborted) {
+    return 'badge-aborted';
+  }
   if (trial.status === 'completed') {
     return trial.hadFailures ? 'badge-warn' : 'badge-ok';
   }
