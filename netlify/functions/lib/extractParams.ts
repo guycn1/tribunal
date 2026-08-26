@@ -6,15 +6,23 @@ import type { HandlerEvent } from '@netlify/functions';
 // string is checked first regardless, since local dev's redirect simulator
 // does accept the query-string shape; this way the same code is correct in
 // both environments.
-export function extractParams(event: HandlerEvent, fnName: string): { id?: string; role?: string } {
+//
+// For the path fallback, params are read from the END of the path rather
+// than located by function name: production's redirect engine does not
+// consistently rewrite event.path to the target function's path, so it can
+// arrive as either the original /api/trials/:id/representatives/:role
+// (plural) or the rewritten /.netlify/functions/representative/:id/:role
+// (singular) - matching on the function name breaks on that mismatch. The
+// trailing segments are the same shape either way.
+export function extractParams(event: HandlerEvent, paramCount: 1 | 2): { id?: string; role?: string } {
   const qs = event.queryStringParameters || {};
   if (qs.id) {
     return { id: qs.id, role: qs.role ?? undefined };
   }
 
   const segments = event.path.split('/').filter(Boolean);
-  const fnIndex = segments.indexOf(fnName);
-  const rest = fnIndex >= 0 ? segments.slice(fnIndex + 1) : [];
-
-  return { id: rest[0], role: rest[1] };
+  if (paramCount === 1) {
+    return { id: segments[segments.length - 1] };
+  }
+  return { id: segments[segments.length - 2], role: segments[segments.length - 1] };
 }

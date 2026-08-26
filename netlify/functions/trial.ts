@@ -10,7 +10,7 @@ const rawHandler: Handler = async (event) => {
     return json(405, { error: 'Method not allowed' });
   }
 
-  const { id } = extractParams(event, 'trial');
+  const { id } = extractParams(event, 1);
   if (!id) {
     return json(400, { error: 'Missing trial id' });
   }

@@ -18,7 +18,7 @@ const rawHandler: Handler = async (event) => {
     return json(405, { error: 'Method not allowed' });
   }
 
-  const { id, role } = extractParams(event, 'representative');
+  const { id, role } = extractParams(event, 2);
   if (!id || !role) {
     return json(400, { error: 'Missing trial id or role' });
   }
