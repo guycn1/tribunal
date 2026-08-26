@@ -11,7 +11,14 @@ import type { JudgeRole, RepresentativeRole } from './lib/types';
 
 // Judges write the longest output of any agent in this system — a fuller
 // opinion plus the leading VERDICT line — so they get the largest cap.
-const MAX_TOKENS = 1600;
+//
+// Sized against the ~450-600 word target their prompt now sets (roughly
+// 600-800 tokens), leaving real headroom above it so a ruling is never
+// clipped mid-sentence. The previous 1600 predated that target: with no
+// length guidance at all, rulings ran to 1184-1317 tokens, and generating
+// that much text took 16-21s, which is what kept pushing judge calls past
+// the per-call time budget on a congested free tier.
+const MAX_TOKENS = 1100;
 
 const rawHandler: Handler = async (event) => {
   if (event.httpMethod !== 'POST') {

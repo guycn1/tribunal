@@ -14,7 +14,9 @@ export interface JudgeDefinition {
 
 const INDEPENDENCE_NOTE = `You are one of three judges deciding this case, each applying a different method. You do not know what the other two have concluded or will conclude, you cannot see their reasoning, and you must not speculate about or reference it. Reach your own conclusion using only your own method applied to the record in front of you. Your ruling stands entirely on its own — it is never combined, averaged, or reconciled with the other two.`;
 
-const OUTPUT_FORMAT_NOTE = `Begin your response with exactly one line reading either "VERDICT: justified" or "VERDICT: not justified" — nothing else on that line. Leave one blank line, then write your full opinion in your own voice and method. The Tribunal decides only justified/not justified and gives reasons; it does not impose any sentence.`;
+const OUTPUT_FORMAT_NOTE = `Begin your response with exactly one line reading either "VERDICT: justified" or "VERDICT: not justified" — nothing else on that line. Leave one blank line, then write your full opinion in your own voice and method, in roughly 450 to 600 words. The Tribunal decides only justified/not justified and gives reasons; it does not impose any sentence.
+
+Write a considered judicial opinion, not a summary: the length guide is a discipline on padding, not on rigour. Carry out your method properly — state the question, work through the steps your method actually requires, and answer the strongest argument against your conclusion. Reach your reasoning by cutting restatement of the facts, ceremonial preamble, and repetition, not by skipping analytical steps.`;
 
 const RECORD_NOTE = `You will be given the case record — background and the agreed factual record — together with the arguments submitted by each of the four representatives who appeared before you. If a representative's argument is marked as unavailable, treat it as simply absent; never guess at or invent what they might have argued.`;
 
