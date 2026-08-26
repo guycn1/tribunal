@@ -39,6 +39,24 @@ export async function callOpenRouter(
     return failure(model, 'OPENROUTER_API_KEY is not configured on the server.');
   }
 
+  // TEMPORARY diagnostic: isolate whether outbound HTTPS from this function
+  // works at all, or whether the failure is specific to openrouter.ai. Logs
+  // to the Netlify function log only - does not affect the returned result.
+  // Remove once the production timeout investigation is closed.
+  try {
+    const start = Date.now();
+    const controlResponse = await fetch('https://api.github.com', {
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
+    console.log(
+      `[diagnostic] control fetch to api.github.com: HTTP ${controlResponse.status} in ${Date.now() - start}ms`
+    );
+  } catch (controlErr) {
+    console.log(
+      `[diagnostic] control fetch to api.github.com FAILED: ${describeError(controlErr)}`
+    );
+  }
+
   let lastError = 'Unknown error';
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
@@ -108,6 +126,8 @@ export async function callOpenRouter(
         : err instanceof Error
           ? err.message
           : String(err);
+      // TEMPORARY diagnostic - see note above.
+      console.log(`[diagnostic] openrouter fetch attempt ${attempt} failed: ${describeError(err)}`);
       if (attempt < MAX_RETRIES) {
         await backoff(attempt);
         continue;
@@ -142,4 +162,12 @@ async function safeReadText(response: Response): Promise<string> {
 function backoff(attempt: number): Promise<void> {
   const delayMs = 500 * Math.pow(2, attempt);
   return new Promise((resolve) => setTimeout(resolve, delayMs));
+}
+
+// TEMPORARY diagnostic helper - see note above.
+function describeError(err: unknown): string {
+  if (!(err instanceof Error)) return String(err);
+  const cause = (err as { cause?: unknown }).cause;
+  const code = (err as { code?: unknown }).code;
+  return `name=${err.name} message=${err.message} code=${code ?? 'n/a'} cause=${cause ? String(cause) : 'n/a'}`;
 }
