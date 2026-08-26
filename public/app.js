@@ -106,13 +106,18 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 // Not truly unbounded, though: a wall-clock cap still applies, because
 // every retry is real, metered compute time on a free tier with a hard
 // monthly credit budget - a persistently broken model retried forever would
-// quietly burn through that budget for no benefit. 5 minutes comfortably
-// covers "a few full minutes" of real waiting while keeping worst-case cost
-// bounded. The one failure this does NOT retry is the daily OpenRouter
-// quota being exhausted - that cannot succeed again before the reset named
-// in the error, no matter how many more attempts are made, so it fails
-// immediately instead of waiting out the full 5 minutes pointlessly.
-const RETRY_UNTIL_SUCCESS_MS = 5 * 60 * 1000;
+// quietly burn through that budget for no benefit. The Netlify side of that
+// budget is the one to be most careful with: OpenRouter's quota resets
+// daily (a bad day recovers by tomorrow), but Netlify's resets monthly,
+// well past this project's submission deadline - there's no recovering a
+// month-long mistake in a few days. 100 seconds gives real room for a
+// saturated pool to clear without letting one stuck call run away with
+// meaningful compute time. The one failure this does NOT retry is the
+// daily OpenRouter quota being exhausted - that cannot succeed again before
+// the reset named in the error, no matter how many more attempts are made,
+// so it fails immediately instead of waiting out the full ceiling
+// pointlessly.
+const RETRY_UNTIL_SUCCESS_MS = 100 * 1000;
 const RETRY_BACKOFF_BASE_MS = 2000;
 const RETRY_BACKOFF_MAX_MS = 6000;
 const isQuotaExhausted = (message) => /quota exhausted/i.test(message || '');
@@ -138,7 +143,7 @@ async function callAgentWithRetry(url, onUpdate) {
       // unknown role, wrong method) - our own endpoints use 502 specifically
       // for OpenRouter-side failures, which is what's actually worth
       // retrying. An identical bad request will fail identically every
-      // time, so retrying it for up to 5 minutes would just waste calls.
+      // time, so retrying it for the full ceiling would just waste calls.
       if (res.status >= 400 && res.status < 500) {
         return { status: 'failed', error };
       }
@@ -398,13 +403,13 @@ function renderCallLog() {
   }
 }
 
-// A single agent call can now legitimately retry for up to 5 minutes
-// (RETRY_UNTIL_SUCCESS_MS), and a full trial runs up to 7 of them (4
-// representatives, then 3 judges) - so a genuinely still-working trial can
-// take close to 10 minutes end to end. This threshold has to sit safely
-// above that, or a trial that's actually still retrying gets mislabeled as
-// abandoned.
-const INTERRUPTED_THRESHOLD_MS = 12 * 60 * 1000;
+// Representatives run concurrently as a group (worst case ~= one
+// RETRY_UNTIL_SUCCESS_MS, not 4x it, since they don't wait on each other),
+// then judges run as their own concurrent group after - so a genuinely
+// still-working trial takes at most roughly 2x RETRY_UNTIL_SUCCESS_MS end
+// to end. This threshold has to sit safely above that, or a trial that's
+// actually still retrying gets mislabeled as abandoned.
+const INTERRUPTED_THRESHOLD_MS = 5 * 60 * 1000;
 
 function trialStatusLabel(trial) {
   if (trial.status === 'completed') {
