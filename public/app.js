@@ -92,6 +92,77 @@ async function beginTrial() {
 const CONCURRENT_CALL_STAGGER_MS = 400;
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// Netlify's platform kills a standard function invocation at ~30s
+// regardless of anything our own code does (measured directly), and true
+// background functions (no such ceiling) are a paid-plan-only feature - not
+// an option here. So a single server call cannot itself run for minutes.
+// Instead, each server call stays a short, safe, well-bounded attempt (it
+// already tries a 3-model fallback chain internally, ~25s worst case), and
+// *this* loop is what actually waits "however long it takes": on any
+// retryable failure it just calls the same endpoint again, from the
+// browser, which has no execution ceiling at all. A few minutes of waiting
+// is just several fresh ~25s server calls back to back.
+//
+// Not truly unbounded, though: a wall-clock cap still applies, because
+// every retry is real, metered compute time on a free tier with a hard
+// monthly credit budget - a persistently broken model retried forever would
+// quietly burn through that budget for no benefit. 5 minutes comfortably
+// covers "a few full minutes" of real waiting while keeping worst-case cost
+// bounded. The one failure this does NOT retry is the daily OpenRouter
+// quota being exhausted - that cannot succeed again before the reset named
+// in the error, no matter how many more attempts are made, so it fails
+// immediately instead of waiting out the full 5 minutes pointlessly.
+const RETRY_UNTIL_SUCCESS_MS = 5 * 60 * 1000;
+const RETRY_BACKOFF_BASE_MS = 2000;
+const RETRY_BACKOFF_MAX_MS = 6000;
+const isQuotaExhausted = (message) => /quota exhausted/i.test(message || '');
+
+async function callAgentWithRetry(url, onUpdate) {
+  const startedAt = Date.now();
+  let attempt = 0;
+
+  while (true) {
+    attempt += 1;
+    try {
+      const res = await fetch(url, { method: 'POST' });
+      const data = await res.json();
+      if (res.ok && data.status !== 'failed') {
+        return { status: 'success', ...data };
+      }
+
+      const error = data.error || `HTTP ${res.status}`;
+      if (isQuotaExhausted(error)) {
+        return { status: 'failed', error };
+      }
+      // A 4xx here means the request itself is malformed (missing trial id,
+      // unknown role, wrong method) - our own endpoints use 502 specifically
+      // for OpenRouter-side failures, which is what's actually worth
+      // retrying. An identical bad request will fail identically every
+      // time, so retrying it for up to 5 minutes would just waste calls.
+      if (res.status >= 400 && res.status < 500) {
+        return { status: 'failed', error };
+      }
+
+      const elapsedMs = Date.now() - startedAt;
+      if (elapsedMs >= RETRY_UNTIL_SUCCESS_MS) {
+        return { status: 'failed', error: `Still failing after ${Math.round(elapsedMs / 1000)}s of retrying. Last error: ${error}` };
+      }
+
+      onUpdate({ status: 'retrying', attempt, error, elapsedMs });
+      const backoff = Math.min(RETRY_BACKOFF_BASE_MS * Math.pow(1.3, attempt - 1), RETRY_BACKOFF_MAX_MS);
+      await sleep(backoff + Math.random() * 500);
+    } catch (err) {
+      const elapsedMs = Date.now() - startedAt;
+      if (elapsedMs >= RETRY_UNTIL_SUCCESS_MS) {
+        return { status: 'failed', error: `Still failing after ${Math.round(elapsedMs / 1000)}s of retrying. Last error: ${String(err)}` };
+      }
+      onUpdate({ status: 'retrying', attempt, error: String(err), elapsedMs });
+      const backoff = Math.min(RETRY_BACKOFF_BASE_MS * Math.pow(1.3, attempt - 1), RETRY_BACKOFF_MAX_MS);
+      await sleep(backoff + Math.random() * 500);
+    }
+  }
+}
+
 async function runRepresentativesPhase() {
   for (const role of REPRESENTATIVE_ROLES) {
     state.representatives[role] = { status: 'loading' };
@@ -100,18 +171,12 @@ async function runRepresentativesPhase() {
 
   await Promise.allSettled(
     REPRESENTATIVE_ROLES.map(async (role, index) => {
-      try {
-        await sleep(index * CONCURRENT_CALL_STAGGER_MS);
-        const res = await fetch(`/api/trials/${state.trialId}/representatives/${role}`, { method: 'POST' });
-        const data = await res.json();
-        if (!res.ok || data.status === 'failed') {
-          state.representatives[role] = { status: 'failed', error: data.error || `HTTP ${res.status}` };
-        } else {
-          state.representatives[role] = { status: 'success', ...data };
-        }
-      } catch (err) {
-        state.representatives[role] = { status: 'failed', error: String(err) };
-      }
+      await sleep(index * CONCURRENT_CALL_STAGGER_MS);
+      const result = await callAgentWithRetry(`/api/trials/${state.trialId}/representatives/${role}`, (progress) => {
+        state.representatives[role] = progress;
+        renderRepresentatives();
+      });
+      state.representatives[role] = result;
       renderRepresentatives();
     })
   );
@@ -126,18 +191,12 @@ async function runJudgesPhase() {
 
   await Promise.allSettled(
     JUDGE_ROLES.map(async (role, index) => {
-      try {
-        await sleep(index * CONCURRENT_CALL_STAGGER_MS);
-        const res = await fetch(`/api/trials/${state.trialId}/judges/${role}`, { method: 'POST' });
-        const data = await res.json();
-        if (!res.ok || data.status === 'failed') {
-          state.judges[role] = { status: 'failed', error: data.error || `HTTP ${res.status}` };
-        } else {
-          state.judges[role] = { status: 'success', ...data };
-        }
-      } catch (err) {
-        state.judges[role] = { status: 'failed', error: String(err) };
-      }
+      await sleep(index * CONCURRENT_CALL_STAGGER_MS);
+      const result = await callAgentWithRetry(`/api/trials/${state.trialId}/judges/${role}`, (progress) => {
+        state.judges[role] = progress;
+        renderJudges();
+      });
+      state.judges[role] = result;
       renderJudges();
     })
   );
@@ -247,6 +306,9 @@ function renderRepresentatives() {
     if (!entry || entry.status === 'loading') {
       body.className = 'card-body dim';
       body.textContent = 'Arguing…';
+    } else if (entry.status === 'retrying') {
+      body.className = 'card-body dim';
+      body.textContent = `Still trying (attempt ${entry.attempt}, ${Math.round(entry.elapsedMs / 1000)}s so far)… last attempt: ${entry.error}`;
     } else if (entry.status === 'failed') {
       body.innerHTML = `<span class="badge badge-fail">Call failed</span>`;
       const err = document.createElement('p');
@@ -282,6 +344,11 @@ function renderJudges() {
       const body = document.createElement('div');
       body.className = 'card-body dim';
       body.textContent = 'Deliberating…';
+      card.appendChild(body);
+    } else if (entry.status === 'retrying') {
+      const body = document.createElement('div');
+      body.className = 'card-body dim';
+      body.textContent = `Still trying (attempt ${entry.attempt}, ${Math.round(entry.elapsedMs / 1000)}s so far)… last attempt: ${entry.error}`;
       card.appendChild(body);
     } else if (entry.status === 'failed') {
       const badge = document.createElement('span');
@@ -331,12 +398,20 @@ function renderCallLog() {
   }
 }
 
+// A single agent call can now legitimately retry for up to 5 minutes
+// (RETRY_UNTIL_SUCCESS_MS), and a full trial runs up to 7 of them (4
+// representatives, then 3 judges) - so a genuinely still-working trial can
+// take close to 10 minutes end to end. This threshold has to sit safely
+// above that, or a trial that's actually still retrying gets mislabeled as
+// abandoned.
+const INTERRUPTED_THRESHOLD_MS = 12 * 60 * 1000;
+
 function trialStatusLabel(trial) {
   if (trial.status === 'completed') {
     return trial.hadFailures ? 'Completed — with failures' : 'Completed';
   }
   const ageMs = Date.now() - new Date(trial.createdAt).getTime();
-  if (ageMs > 2 * 60 * 1000) {
+  if (ageMs > INTERRUPTED_THRESHOLD_MS) {
     return 'Interrupted';
   }
   return 'In progress…';
@@ -347,7 +422,7 @@ function trialStatusClass(trial) {
     return trial.hadFailures ? 'badge-warn' : 'badge-ok';
   }
   const ageMs = Date.now() - new Date(trial.createdAt).getTime();
-  if (ageMs > 2 * 60 * 1000) {
+  if (ageMs > INTERRUPTED_THRESHOLD_MS) {
     return 'badge-fail';
   }
   return 'badge-progress';
