@@ -1,6 +1,12 @@
 const REPRESENTATIVE_ROLES = ['jon_snow', 'tyrion_lannister', 'daenerys_targaryen', 'grey_worm'];
 const JUDGE_ROLES = ['barak', 'elon', 'shamgar'];
 
+// Must match ABORTED_BY_USER_MESSAGE in netlify/functions/lib/db.ts exactly
+// - used to recognize an aborted call's log row when rebuilding history
+// (see loadTrial) so it renders with the distinct "Aborted" badge instead
+// of the generic "Call failed" one.
+const ABORTED_BY_USER_MESSAGE = 'Aborted by user before this call could complete.';
+
 const REPRESENTATIVE_META = {
   jon_snow: { name: 'Jon Snow', seat: 'defense' },
   tyrion_lannister: { name: 'Tyrion Lannister', seat: 'defense' },
@@ -498,6 +504,30 @@ async function loadTrial(trialId) {
   }
   state.callLog = data.apiCallLogs || [];
 
+  // Backfill a real 'failed' (or 'aborted') entry for any role that has no
+  // success above, from that role's own logged attempts - apiCallLogs is
+  // ordered ascending by timestamp (see getFullTrial in db.ts), so the last
+  // matching row for a role is its most recent, most relevant attempt.
+  // Without this, that role would have no state entry at all, and
+  // buildAgentStatusBody's "no entry" case would otherwise be the only
+  // thing rendered for it - a generic message with no real detail, even
+  // though the actual error is sitting right there in the log.
+  for (const log of state.callLog) {
+    if (log.status !== 'success') {
+      const store = log.callType === 'representative' ? state.representatives : state.judges;
+      if (store[log.agentRole] && store[log.agentRole].status === 'success') continue;
+      const lastDitchModel = state.modelInfo && state.modelInfo[log.agentRole] && state.modelInfo[log.agentRole].lastDitch;
+      store[log.agentRole] =
+        log.errorMessage === ABORTED_BY_USER_MESSAGE
+          ? { status: 'aborted', error: log.errorMessage }
+          : {
+              status: 'failed',
+              error: log.errorMessage || 'Unknown failure',
+              lastDitchAttempted: Boolean(lastDitchModel) && log.modelUsed === lastDitchModel,
+            };
+    }
+  }
+
   renderCaseSheet();
   el.phaseRepresentatives.classList.toggle('hidden', Object.keys(state.representatives).length === 0);
   el.phaseJudges.classList.toggle('hidden', Object.keys(state.judges).length === 0);
@@ -554,7 +584,21 @@ function spinnerHtml() {
 function buildAgentStatusBody(entry, role, verb) {
   const body = document.createElement('div');
 
-  if (!entry || entry.status === 'loading') {
+  // No entry at all is NOT "hasn't started yet" - a live run always seeds
+  // state.representatives/judges[role] with {status: 'loading'} the moment
+  // it begins (see beginTrial), before this ever renders. The only way
+  // this function sees a missing entry is loadTrial() viewing a completed,
+  // historical trial whose call log has nothing to show for this role at
+  // all (no logged attempt of any kind - loadTrial backfills a proper
+  // 'failed' entry from the call log whenever one exists, below). Showing
+  // the spinner here would claim this dead trial is still working.
+  if (!entry) {
+    body.className = 'card-body dim';
+    body.textContent = 'No result recorded for this role - nothing was logged for it in this trial.';
+    return body;
+  }
+
+  if (entry.status === 'loading') {
     body.className = 'card-body dim';
     body.innerHTML = `${spinnerHtml()}${verb}…<div class="model-chain">Trying: <span class="model-name">${formatModelChain(role)}</span></div>`;
     return body;
