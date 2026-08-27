@@ -43,8 +43,11 @@ body {
      until the single hard breakpoint below forces it full-width - gives
      the main content (including the call log table, which needs real
      width of its own) more room on viewports that are narrower than
-     "wide" but not yet narrow enough to stack. */
-  width: clamp(200px, 22vw, 280px);
+     "wide" but not yet narrow enough to stack. No horizontal scrollbar is
+     wanted anywhere on this page (see table.call-log below), so this is
+     load-bearing, not cosmetic - shrinking the sidebar is real width the
+     table gets to work with instead. */
+  width: clamp(170px, 20vw, 280px);
   flex-shrink: 0;
   background: var(--bg-raised);
   border-right: 1px solid var(--border);
@@ -432,16 +435,16 @@ body {
 }
 
 table.call-log {
+  /* Deliberately no min-width here, and nothing forcing any column to
+     nowrap - width: 100% plus table-layout: fixed guarantees the table
+     never exceeds its container no matter how narrow, so .table-scroll's
+     overflow-x: auto never actually has anything to scroll. A horizontal
+     scrollbar is explicitly not wanted here even as a fallback; wrapped
+     text, however imperfect, is the accepted outcome on a narrow viewport
+     instead. The rebalanced colgroup widths below and the responsive
+     font-size/padding reduction further down are what actually reduce how
+     often/how badly that wrapping happens - not a scroll escape hatch. */
   width: 100%;
-  /* table-layout: fixed gives each column a strict share of the table's
-     rendered width, which stops the table overflowing its container - but
-     at that fixed 100% width, a narrow container squeezes short,
-     fixed-format content (a cost, a status word, a timestamp) into ugly
-     mid-word wraps instead. This min-width guarantees real pixel room for
-     that content regardless of container width; below it, the .table-scroll
-     wrapper's overflow-x: auto takes over and scrolls the whole table
-     horizontally instead, which reads far better than wrapped fragments. */
-  min-width: 1050px;
   border-collapse: collapse;
   table-layout: fixed;
   font-size: 0.82rem;
@@ -455,18 +458,6 @@ table.call-log td {
   overflow-wrap: break-word;
 }
 
-/* Cost, Status, Time - short, fixed-format content that should never wrap
-   (a split "$0.000000" or "27/08/2026, 14:05:36" is unreadable); the
-   min-width above ensures these columns have enough real room to honor it. */
-table.call-log th:nth-child(5),
-table.call-log td:nth-child(5),
-table.call-log th:nth-child(6),
-table.call-log td:nth-child(6),
-table.call-log th:nth-child(7),
-table.call-log td:nth-child(7) {
-  white-space: nowrap;
-}
-
 table.call-log th {
   background: var(--bg-raised);
   color: var(--text-dim);
@@ -477,6 +468,24 @@ table.call-log th {
 
 table.call-log tbody tr:last-child td {
   border-bottom: none;
+}
+
+/* Smaller text and tighter padding buy real room back for the table's
+   fixed-percentage columns on a narrower viewport - the actual fix for
+   less wrapping here, rather than a horizontal scrollbar (deliberately not
+   used anywhere on this table) or forcing any column to nowrap (which,
+   without a scrollbar to fall back on, would just overflow its cell). */
+@media (max-width: 1000px) {
+  table.call-log {
+    font-size: 0.72rem;
+  }
+  table.call-log th,
+  table.call-log td {
+    padding: 6px 6px;
+  }
+  table.call-log th {
+    font-size: 0.62rem;
+  }
 }
 
 @media (max-width: 720px) {
