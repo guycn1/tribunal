@@ -381,6 +381,16 @@ body {
   color: var(--text);
 }
 
+/* The date and time fragments in formatDateTimeHtml() (app.js) - each one
+   individually protected from wrapping, while the <br /> between them is
+   the only break point allowed. No min-width/scroll fallback needed for
+   this: each fragment is short enough (max ~12 characters) to fit
+   realistic column widths on its own even where the full combined string
+   would not have. */
+.datetime-part {
+  white-space: nowrap;
+}
+
 .spinner {
   display: inline-block;
   width: 14px;

@@ -70,6 +70,18 @@ function formatDateTime(dateInput) {
   });
 }
 
+// The date and time deliberately go on their own lines, not just as a
+// narrow-viewport fallback - fitting "DD/MM/YYYY, HH:MM:SS" on one line
+// needs real column width, while the wider of the two fragments alone
+// ("DD/MM/YYYY,") needs much less, freeing width for other columns. Each
+// fragment is wrapped in its own non-wrapping span so the date and the
+// time are each protected from ever breaking internally - only the space
+// between them (the line break) is allowed to give.
+function formatDateTimeHtml(dateInput) {
+  const [datePart, timePart] = formatDateTime(dateInput).split(', ');
+  return `<span class="datetime-part">${datePart},</span><br /><span class="datetime-part">${timePart}</span>`;
+}
+
 // "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free" -> "nemotron-3-nano-omni-30b-a3b-reasoning"
 // Display only - the full id is what's actually sent to the backend/OpenRouter.
 function shortModelName(modelId) {
@@ -691,9 +703,9 @@ function renderCallLog() {
       <td>${entry.callType}</td>
       <td>${entry.modelUsed}</td>
       <td>${tokens}</td>
-      <td>$${Number(entry.cost).toFixed(6)}</td>
+      <td>$${Number(entry.cost).toFixed(1)}</td>
       <td><span class="badge ${statusBadge}">${entry.status}</span></td>
-      <td>${formatDateTime(entry.timestamp)}</td>
+      <td>${formatDateTimeHtml(entry.timestamp)}</td>
     `;
     el.callLogBody.appendChild(tr);
   }
@@ -754,7 +766,7 @@ function renderHistory() {
     const li = document.createElement('li');
     li.className = 'history-item' + (trial.id === state.trialId ? ' active' : '');
     li.innerHTML = `
-      <div class="history-item-date">${formatDateTime(trial.createdAt)}</div>
+      <div class="history-item-date">${formatDateTimeHtml(trial.createdAt)}</div>
       <span class="badge ${trialStatusClass(trial)}">${trialStatusLabel(trial)}</span>
     `;
     li.addEventListener('click', () => loadTrial(trial.id));
