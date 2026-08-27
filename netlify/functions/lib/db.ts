@@ -10,6 +10,21 @@ import type {
   Verdict,
 } from './types';
 
+// Written by abort.ts, one row per role still pending when the user clicked
+// Abort. This is a factual record of a client-side decision ("the browser
+// stopped waiting on this call, at the user's request") rather than a claim
+// about what happened server-side - the Netlify invocation for that role
+// may separately still complete on its own and log its own real outcome,
+// since aborting a fetch() client-side does not reliably stop the function
+// invocation it was talking to. Both rows are legitimate; this schema
+// already allows multiple api_call_logs rows per role per trial (each
+// retry attempt already produces its own row).
+//
+// No trials.status enum change needed for this - "aborted" is derived here
+// the same way hadFailures already is, by checking api_call_logs for this
+// exact marker, rather than adding a new stored status value.
+export const ABORTED_BY_USER_MESSAGE = 'Aborted by user before this call could complete.';
+
 export async function createTrial(caseCode: string): Promise<TrialRecord> {
   const supabase = getSupabaseClient();
   const { data, error } = await supabase
@@ -26,7 +41,23 @@ export async function createTrial(caseCode: string): Promise<TrialRecord> {
 }
 
 export interface TrialSummary extends TrialRecord {
+  // Whether any individual call for this trial ever logged status='failed'
+  // - including one that was immediately retried and fully recovered. Kept
+  // as a real, honest low-level fact, but deliberately NOT what the
+  // frontend's "Completed" vs "Completed - with failures" label is based
+  // on: on a free tier, a transient failure that self-heals within the
+  // retry ceiling is the expected case, not the exception, so a label
+  // driven by this would fire on most runs and stop meaning anything. See
+  // resultCount below for what the sidebar actually uses.
   hadFailures: boolean;
+  wasAborted: boolean;
+  // How many of the 7 expected results (4 representative_arguments + 3
+  // judge_rulings) this trial actually has, counted directly from those
+  // tables rather than from api_call_logs. Retries collapse to one row per
+  // role there (unique(trial_id, role)), so this reflects the real, final
+  // output regardless of how many attempts it took to get there - which is
+  // what "is this trial actually complete" should mean.
+  resultCount: number;
 }
 
 export async function listTrials(limit = 50): Promise<TrialSummary[]> {
@@ -43,6 +74,7 @@ export async function listTrials(limit = 50): Promise<TrialSummary[]> {
 
   const ids = (trials ?? []).map((t) => t.id);
   let failedTrialIds = new Set<string>();
+  let abortedTrialIds = new Set<string>();
 
   if (ids.length > 0) {
     const { data: failedLogs, error: logsError } = await supabase
@@ -56,11 +88,45 @@ export async function listTrials(limit = 50): Promise<TrialSummary[]> {
     }
 
     failedTrialIds = new Set((failedLogs ?? []).map((row) => row.trial_id as string));
+
+    const { data: abortedLogs, error: abortedError } = await supabase
+      .from('api_call_logs')
+      .select('trial_id')
+      .eq('error_message', ABORTED_BY_USER_MESSAGE)
+      .in('trial_id', ids);
+
+    if (abortedError) {
+      throw new Error(`Failed to list aborted trials: ${abortedError.message}`);
+    }
+
+    abortedTrialIds = new Set((abortedLogs ?? []).map((row) => row.trial_id as string));
+  }
+
+  const resultCounts = new Map<string, number>();
+  if (ids.length > 0) {
+    const [{ data: repRows, error: repError }, { data: judgeRows, error: judgeError }] = await Promise.all([
+      supabase.from('representative_arguments').select('trial_id').in('trial_id', ids),
+      supabase.from('judge_rulings').select('trial_id').in('trial_id', ids),
+    ]);
+
+    if (repError) {
+      throw new Error(`Failed to count representative results: ${repError.message}`);
+    }
+    if (judgeError) {
+      throw new Error(`Failed to count judge results: ${judgeError.message}`);
+    }
+
+    for (const row of [...(repRows ?? []), ...(judgeRows ?? [])]) {
+      const trialId = row.trial_id as string;
+      resultCounts.set(trialId, (resultCounts.get(trialId) ?? 0) + 1);
+    }
   }
 
   return (trials ?? []).map((row) => ({
     ...mapTrial(row),
     hadFailures: failedTrialIds.has(row.id),
+    wasAborted: abortedTrialIds.has(row.id),
+    resultCount: resultCounts.get(row.id) ?? 0,
   }));
 }
 

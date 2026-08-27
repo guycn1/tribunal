@@ -5,7 +5,8 @@ import { extractParams } from './lib/extractParams';
 import { getChargeSheet } from './lib/chargeSheet';
 import { REPRESENTATIVES } from './lib/representatives';
 import { buildRepresentativeMessages } from './lib/prompts';
-import { callOpenRouter } from './lib/openrouter';
+import { callOpenRouter, callOpenRouterOnce } from './lib/openrouter';
+import { getLastDitchModelForRole } from './lib/models';
 import { getTrial, upsertRepresentativeArgument, logApiCall } from './lib/db';
 import type { RepresentativeRole } from './lib/types';
 
@@ -36,7 +37,15 @@ const rawHandler: Handler = async (event) => {
 
   const caseDef = await getChargeSheet();
   const messages = buildRepresentativeMessages(repRole, caseDef);
-  const result = await callOpenRouter(repRole, messages, MAX_TOKENS);
+
+  // ?lastDitch=true: the frontend has already exhausted its own retry
+  // ceiling against the normal model chain and is making exactly one final
+  // attempt against a distinct, explicitly slower model before giving up
+  // for real. Single shot, no internal retry - see callOpenRouterOnce.
+  const isLastDitch = event.queryStringParameters?.lastDitch === 'true';
+  const result = isLastDitch
+    ? await callOpenRouterOnce(messages, MAX_TOKENS, getLastDitchModelForRole(repRole))
+    : await callOpenRouter(repRole, messages, MAX_TOKENS);
 
   await logApiCall({
     trialId: id,
