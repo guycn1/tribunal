@@ -54,6 +54,22 @@ el.abortBtn.addEventListener('click', () => {
   abortCurrentTrial();
 });
 
+// Explicit European format (DD/MM/YYYY, 24-hour) regardless of the
+// browser's own locale - bare toLocaleString() would otherwise follow
+// whatever the browser is configured to (commonly US-style M/D/YYYY,
+// 12-hour with AM/PM), which is not what's wanted here.
+function formatDateTime(dateInput) {
+  return new Date(dateInput).toLocaleString('en-GB', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  });
+}
+
 // "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free" -> "nemotron-3-nano-omni-30b-a3b-reasoning"
 // Display only - the full id is what's actually sent to the backend/OpenRouter.
 function shortModelName(modelId) {
@@ -677,7 +693,7 @@ function renderCallLog() {
       <td>${tokens}</td>
       <td>$${Number(entry.cost).toFixed(6)}</td>
       <td><span class="badge ${statusBadge}">${entry.status}</span></td>
-      <td>${new Date(entry.timestamp).toLocaleString()}</td>
+      <td>${formatDateTime(entry.timestamp)}</td>
     `;
     el.callLogBody.appendChild(tr);
   }
@@ -738,7 +754,7 @@ function renderHistory() {
     const li = document.createElement('li');
     li.className = 'history-item' + (trial.id === state.trialId ? ' active' : '');
     li.innerHTML = `
-      <div class="history-item-date">${new Date(trial.createdAt).toLocaleString()}</div>
+      <div class="history-item-date">${formatDateTime(trial.createdAt)}</div>
       <span class="badge ${trialStatusClass(trial)}">${trialStatusLabel(trial)}</span>
     `;
     li.addEventListener('click', () => loadTrial(trial.id));
