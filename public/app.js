@@ -54,6 +54,34 @@ el.abortBtn.addEventListener('click', () => {
   abortCurrentTrial();
 });
 
+// Explicit European format (DD/MM/YYYY, 24-hour) regardless of the
+// browser's own locale - bare toLocaleString() would otherwise follow
+// whatever the browser is configured to (commonly US-style M/D/YYYY,
+// 12-hour with AM/PM), which is not what's wanted here.
+function formatDateTime(dateInput) {
+  return new Date(dateInput).toLocaleString('en-GB', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  });
+}
+
+// The date and time deliberately go on their own lines, not just as a
+// narrow-viewport fallback - fitting "DD/MM/YYYY, HH:MM:SS" on one line
+// needs real column width, while the wider of the two fragments alone
+// ("DD/MM/YYYY,") needs much less, freeing width for other columns. Each
+// fragment is wrapped in its own non-wrapping span so the date and the
+// time are each protected from ever breaking internally - only the space
+// between them (the line break) is allowed to give.
+function formatDateTimeHtml(dateInput) {
+  const [datePart, timePart] = formatDateTime(dateInput).split(', ');
+  return `<span class="datetime-part">${datePart},</span><br /><span class="datetime-part">${timePart}</span>`;
+}
+
 // "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free" -> "nemotron-3-nano-omni-30b-a3b-reasoning"
 // Display only - the full id is what's actually sent to the backend/OpenRouter.
 function shortModelName(modelId) {
@@ -383,12 +411,57 @@ async function loadStaticCaseSheet() {
   renderCaseSheet();
 }
 
+function renderHistoryPlaceholder(message, showSpinner) {
+  el.historyList.innerHTML = `
+    <li class="history-loading">
+      ${showSpinner ? '<span class="spinner spinner-lg"></span>' : ''}
+      <span>${message}</span>
+    </li>
+  `;
+}
+
+// This endpoint only touches Supabase, no OpenRouter/Netlify quota at
+// stake, so a few quick retries on a transient failure are cheap and
+// worthwhile - a fetch failure here is much more likely to be a passing
+// blip (a real one was observed: this exact local dev setup is documented
+// to occasionally contend when many requests hit the same long-running
+// process, e.g. a manual test call landing at the same moment as a page
+// load) than a persistent problem, so it deserves the same "self-heal
+// before showing an alarming error" treatment representative/judge calls
+// already get - just on a much shorter, lighter budget suited to a small
+// metadata fetch rather than a real generation.
+const HISTORY_RETRY_ATTEMPTS = 3;
+const HISTORY_RETRY_BACKOFF_MS = 700;
+
 async function refreshHistory() {
-  const res = await fetch('/api/trials');
-  if (!res.ok) return;
-  const data = await res.json();
-  state.history = data.trials || [];
-  renderHistory();
+  // Only show the big "fetching" placeholder when there's genuinely
+  // nothing to look at yet - this is what was looking frozen on a slow
+  // fetch (observed up to ~10s, likely Supabase round-trip time, see the
+  // query-shape note on listTrials in db.ts). A refresh of an
+  // already-populated list leaves the existing items on screen rather than
+  // flickering them out while fresh data loads.
+  if (state.history.length === 0) {
+    renderHistoryPlaceholder('Fetching run history…', true);
+  }
+
+  for (let attempt = 1; attempt <= HISTORY_RETRY_ATTEMPTS; attempt++) {
+    try {
+      const res = await fetch('/api/trials');
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      state.history = data.trials || [];
+      renderHistory();
+      return;
+    } catch {
+      if (attempt === HISTORY_RETRY_ATTEMPTS) {
+        if (state.history.length === 0) {
+          renderHistoryPlaceholder('Could not load run history.', false);
+        }
+        return;
+      }
+      await sleep(HISTORY_RETRY_BACKOFF_MS * attempt);
+    }
+  }
 }
 
 async function loadTrial(trialId) {
@@ -454,12 +527,34 @@ function renderCaseSheet() {
 // by both representative and judge cards - kept as one function so the two
 // card types can't quietly drift into showing different information for
 // the same underlying states.
+// Prepended to every "still waiting on a response" status below - a purely
+// visual, CSS-animated indicator (see .spinner in styles.css) that there's
+// real, ongoing activity, distinct from the text-only states (aborted,
+// failed, success) where nothing is in flight anymore.
+//
+// Rendering here rebuilds each card's whole DOM wholesale on every ~500ms
+// tick (to update the live elapsed/countdown text), which recreates the
+// spinner element every time too - and a CSS animation restarts from 0%
+// whenever its element is torn down and recreated, so without this it
+// visibly snaps back after a fraction of a rotation instead of spinning
+// continuously. Fix: a negative animation-delay keyed to the real wall
+// clock tells the browser "this animation has already been running for X
+// ms," so a freshly created element starts at exactly the angle a
+// continuously running one would already be at - making the recreation
+// invisible no matter how often it happens. Must match the animation's
+// duration in styles.css (currently 0.8s / 800ms).
+const SPINNER_ANIMATION_MS = 800;
+function spinnerHtml() {
+  const offset = -(Date.now() % SPINNER_ANIMATION_MS);
+  return `<span class="spinner" style="animation-delay: ${offset}ms"></span>`;
+}
+
 function buildAgentStatusBody(entry, role, verb) {
   const body = document.createElement('div');
 
   if (!entry || entry.status === 'loading') {
     body.className = 'card-body dim';
-    body.innerHTML = `${verb}…<div class="model-chain">Trying: <span class="model-name">${formatModelChain(role)}</span></div>`;
+    body.innerHTML = `${spinnerHtml()}${verb}…<div class="model-chain">Trying: <span class="model-name">${formatModelChain(role)}</span></div>`;
     return body;
   }
 
@@ -472,7 +567,7 @@ function buildAgentStatusBody(entry, role, verb) {
     // into the innerHTML template with everything else, which is all
     // either a number or a model id string we control.
     body.innerHTML = `
-      Still trying (attempt ${entry.attempt}, ${Math.round(entry.elapsedMs / 1000)}s so far)…
+      ${spinnerHtml()}Still trying (attempt ${entry.attempt}, ${Math.round(entry.elapsedMs / 1000)}s so far)…
       <div class="model-chain">Trying: <span class="model-name">${formatModelChain(role)}</span></div>
       <div class="model-chain">Last-ditch fallback in <span class="countdown">${secondsLeft}s</span> if this keeps failing</div>
     `;
@@ -486,7 +581,7 @@ function buildAgentStatusBody(entry, role, verb) {
   if (entry.status === 'last-ditch') {
     body.className = 'card-body dim';
     body.innerHTML = `
-      Normal chain exhausted after 100s — making one final attempt with <span class="model-name">${formatLastDitchModel(role)}</span>…
+      ${spinnerHtml()}Normal chain exhausted after 100s — making one final attempt with <span class="model-name">${formatLastDitchModel(role)}</span>…
       <div class="model-chain">This model is known to be slower; this attempt may take longer than the others did.</div>
     `;
     return body;
@@ -608,9 +703,9 @@ function renderCallLog() {
       <td>${entry.callType}</td>
       <td>${entry.modelUsed}</td>
       <td>${tokens}</td>
-      <td>$${Number(entry.cost).toFixed(6)}</td>
+      <td>$${Number(entry.cost).toFixed(1)}</td>
       <td><span class="badge ${statusBadge}">${entry.status}</span></td>
-      <td>${new Date(entry.timestamp).toLocaleString()}</td>
+      <td>${formatDateTimeHtml(entry.timestamp)}</td>
     `;
     el.callLogBody.appendChild(tr);
   }
@@ -671,7 +766,7 @@ function renderHistory() {
     const li = document.createElement('li');
     li.className = 'history-item' + (trial.id === state.trialId ? ' active' : '');
     li.innerHTML = `
-      <div class="history-item-date">${new Date(trial.createdAt).toLocaleString()}</div>
+      <div class="history-item-date">${formatDateTime(trial.createdAt)}</div>
       <span class="badge ${trialStatusClass(trial)}">${trialStatusLabel(trial)}</span>
     `;
     li.addEventListener('click', () => loadTrial(trial.id));
