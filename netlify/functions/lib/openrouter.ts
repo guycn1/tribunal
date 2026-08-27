@@ -37,6 +37,32 @@ function attemptTimeoutFor(maxTokens: number): number {
   return Math.min(Math.max(estimateMs, 12000), 22000);
 }
 
+// The last-ditch call (callOpenRouterOnce, below) is a single attempt with
+// no retry loop and no TOTAL_BUDGET_MS wrapper around it, so - unlike
+// attemptTimeoutFor above, which in practice is always further clamped by
+// the main loop's remainingMs() - this ceiling really is the full time that
+// attempt gets. Real generations have been observed legitimately taking
+// 30-45s under load, well past attemptTimeoutFor's 22s ceiling, which is
+// what was cutting last-ditch attempts off before a genuine (if slow)
+// response could land. Flat rather than token-scaled deliberately: the
+// slowness observed here isn't proportional to output length (even a
+// trivial ~10-token reply from this same model was measured taking 25s+
+// under load — see the "Default model switched" bug log entry), so a
+// per-token formula doesn't model it; a flat ceiling close to the real
+// constraint below does.
+//
+// That constraint is Netlify's own platform-level timeout for this
+// function, observed at ~30s, which fires regardless of any AbortSignal
+// this code sets. If that kill happens first, the whole invocation dies
+// before any of this function's own error-logging or the Supabase writes
+// that follow it can run — a silent failure, not a clean one. 26000ms is
+// the most this can safely ask for while leaving real slack under that
+// ~30s wall for those writes. A single Netlify Function invocation
+// genuinely cannot wait a full 45s no matter what value this holds — that
+// needs a different architecture (e.g. a Background Function the frontend
+// polls for), not a larger number here.
+const LAST_DITCH_TIMEOUT_MS = 26000;
+
 export interface OpenRouterMessage {
   role: 'system' | 'user';
   content: string;
@@ -211,7 +237,7 @@ export async function callOpenRouterOnce(
     return failure(model, 'OPENROUTER_API_KEY is not configured on the server.');
   }
 
-  const attemptTimeout = attemptTimeoutFor(maxTokens);
+  const attemptTimeout = LAST_DITCH_TIMEOUT_MS;
 
   try {
     const response = await fetch(OPENROUTER_URL, {

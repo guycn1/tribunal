@@ -233,8 +233,10 @@ function sleep(ms, signal) {
 // budget is the one to be most careful with: OpenRouter's quota resets
 // daily (a bad day recovers by tomorrow), but Netlify's resets monthly,
 // well past this project's submission deadline - there's no recovering a
-// month-long mistake in a few days. 100 seconds gives real room for a
-// saturated pool to clear without letting one stuck call run away with
+// month-long mistake in a few days. 150 seconds gives real room for a
+// saturated pool to clear, and for a model that's just genuinely slow that
+// day (real generations have been observed legitimately taking 30-45s
+// under load) to finish, without letting one stuck call run away with
 // meaningful compute time. Once that ceiling is hit, exactly one further
 // attempt is made against a distinct, explicitly slower fallback model
 // (nemotron-3.5-lightning) via ?lastDitch=true, single-shot, no retry - see
@@ -243,7 +245,7 @@ function sleep(ms, signal) {
 // again before the reset named in the error, no matter how many more
 // attempts are made, so it fails immediately instead of waiting out the
 // full ceiling pointlessly.
-const RETRY_UNTIL_SUCCESS_MS = 100 * 1000;
+const RETRY_UNTIL_SUCCESS_MS = 150 * 1000;
 const RETRY_BACKOFF_BASE_MS = 2000;
 const RETRY_BACKOFF_MAX_MS = 6000;
 const isQuotaExhausted = (message) => /quota exhausted/i.test(message || '');
@@ -581,7 +583,7 @@ function buildAgentStatusBody(entry, role, verb) {
   if (entry.status === 'last-ditch') {
     body.className = 'card-body dim';
     body.innerHTML = `
-      ${spinnerHtml()}Normal chain exhausted after 100s — making one final attempt with <span class="model-name">${formatLastDitchModel(role)}</span>…
+      ${spinnerHtml()}Normal chain exhausted after 150s — making one final attempt with <span class="model-name">${formatLastDitchModel(role)}</span>…
       <div class="model-chain">This model is known to be slower; this attempt may take longer than the others did.</div>
     `;
     return body;
@@ -712,13 +714,13 @@ function renderCallLog() {
 }
 
 // Representatives run concurrently as a group - worst case per group is
-// RETRY_UNTIL_SUCCESS_MS (100s) plus one last-ditch attempt (up to ~22s),
+// RETRY_UNTIL_SUCCESS_MS (150s) plus one last-ditch attempt (up to ~26s),
 // not 4x that, since roles don't wait on each other - then judges run as
 // their own concurrent group after, so a genuinely still-working trial
-// takes at most roughly 2x that per-group figure (~244s) end to end. This
+// takes at most roughly 2x that per-group figure (~352s) end to end. This
 // threshold has to sit safely above that, or a trial that's actually still
 // retrying gets mislabeled as abandoned.
-const INTERRUPTED_THRESHOLD_MS = 5 * 60 * 1000;
+const INTERRUPTED_THRESHOLD_MS = 7 * 60 * 1000;
 
 // What "Completed - with failures" is based on: whether the trial's final,
 // persisted results are actually incomplete - NOT whether any individual
