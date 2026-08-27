@@ -766,7 +766,7 @@ function renderHistory() {
     const li = document.createElement('li');
     li.className = 'history-item' + (trial.id === state.trialId ? ' active' : '');
     li.innerHTML = `
-      <div class="history-item-date">${formatDateTimeHtml(trial.createdAt)}</div>
+      <div class="history-item-date">${formatDateTime(trial.createdAt)}</div>
       <span class="badge ${trialStatusClass(trial)}">${trialStatusLabel(trial)}</span>
     `;
     li.addEventListener('click', () => loadTrial(trial.id));
