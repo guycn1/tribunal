@@ -13,13 +13,20 @@ import type { JudgeRole, RepresentativeRole } from './lib/types';
 // Judges write the longest output of any agent in this system — a fuller
 // opinion plus the leading VERDICT line — so they get the largest cap.
 //
-// Sized against the ~450-600 word target their prompt now sets (roughly
-// 600-800 tokens), leaving real headroom above it so a ruling is never
-// clipped mid-sentence. The previous 1600 predated that target: with no
-// length guidance at all, rulings ran to 1184-1317 tokens, and generating
-// that much text took 16-21s, which is what kept pushing judge calls past
-// the per-call time budget on a congested free tier.
-const MAX_TOKENS = 1100;
+// Sized against the ~450-600 word target their prompt sets (roughly
+// 600-800 tokens), but with real headroom above the typical case: a real
+// run measured shamgar/elon comfortably under (617/882 completion tokens),
+// but barak, served by the nemotron-3-super-120b fallback rather than the
+// primary model, hit the previous 1100 cap exactly and was cut off
+// mid-sentence. Since which model in the chain actually answers isn't
+// something this app controls, the cap needs headroom for the most
+// verbose model that might serve the request, not just the typical one.
+// 1400 still sits below the old un-targeted 1600 (which corresponded to
+// 1184-1317 tokens with no length instruction at all), and doesn't cost
+// extra attempt-timeout budget beyond ~1357 tokens either way, since
+// attemptTimeoutFor() in openrouter.ts is already clamped to its 22s
+// ceiling by that point.
+const MAX_TOKENS = 1400;
 
 const rawHandler: Handler = async (event) => {
   if (event.httpMethod !== 'POST') {
