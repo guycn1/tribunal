@@ -458,14 +458,30 @@ function renderCaseSheet() {
 // visual, CSS-animated indicator (see .spinner in styles.css) that there's
 // real, ongoing activity, distinct from the text-only states (aborted,
 // failed, success) where nothing is in flight anymore.
-const SPINNER_HTML = '<span class="spinner"></span>';
+//
+// Rendering here rebuilds each card's whole DOM wholesale on every ~500ms
+// tick (to update the live elapsed/countdown text), which recreates the
+// spinner element every time too - and a CSS animation restarts from 0%
+// whenever its element is torn down and recreated, so without this it
+// visibly snaps back after a fraction of a rotation instead of spinning
+// continuously. Fix: a negative animation-delay keyed to the real wall
+// clock tells the browser "this animation has already been running for X
+// ms," so a freshly created element starts at exactly the angle a
+// continuously running one would already be at - making the recreation
+// invisible no matter how often it happens. Must match the animation's
+// duration in styles.css (currently 0.8s / 800ms).
+const SPINNER_ANIMATION_MS = 800;
+function spinnerHtml() {
+  const offset = -(Date.now() % SPINNER_ANIMATION_MS);
+  return `<span class="spinner" style="animation-delay: ${offset}ms"></span>`;
+}
 
 function buildAgentStatusBody(entry, role, verb) {
   const body = document.createElement('div');
 
   if (!entry || entry.status === 'loading') {
     body.className = 'card-body dim';
-    body.innerHTML = `${SPINNER_HTML}${verb}…<div class="model-chain">Trying: <span class="model-name">${formatModelChain(role)}</span></div>`;
+    body.innerHTML = `${spinnerHtml()}${verb}…<div class="model-chain">Trying: <span class="model-name">${formatModelChain(role)}</span></div>`;
     return body;
   }
 
@@ -478,7 +494,7 @@ function buildAgentStatusBody(entry, role, verb) {
     // into the innerHTML template with everything else, which is all
     // either a number or a model id string we control.
     body.innerHTML = `
-      ${SPINNER_HTML}Still trying (attempt ${entry.attempt}, ${Math.round(entry.elapsedMs / 1000)}s so far)…
+      ${spinnerHtml()}Still trying (attempt ${entry.attempt}, ${Math.round(entry.elapsedMs / 1000)}s so far)…
       <div class="model-chain">Trying: <span class="model-name">${formatModelChain(role)}</span></div>
       <div class="model-chain">Last-ditch fallback in <span class="countdown">${secondsLeft}s</span> if this keeps failing</div>
     `;
@@ -492,7 +508,7 @@ function buildAgentStatusBody(entry, role, verb) {
   if (entry.status === 'last-ditch') {
     body.className = 'card-body dim';
     body.innerHTML = `
-      ${SPINNER_HTML}Normal chain exhausted after 100s — making one final attempt with <span class="model-name">${formatLastDitchModel(role)}</span>…
+      ${spinnerHtml()}Normal chain exhausted after 100s — making one final attempt with <span class="model-name">${formatLastDitchModel(role)}</span>…
       <div class="model-chain">This model is known to be slower; this attempt may take longer than the others did.</div>
     `;
     return body;

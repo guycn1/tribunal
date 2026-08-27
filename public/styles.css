@@ -368,6 +368,9 @@ body {
   border: 2px solid color-mix(in srgb, var(--accent) 30%, transparent);
   border-top-color: var(--accent);
   border-radius: 50%;
+  /* Duration must match SPINNER_ANIMATION_MS in app.js — that value is
+     what keeps a freshly re-created spinner element visually in sync with
+     ones already on screen, via a computed negative animation-delay. */
   animation: spin 0.8s linear infinite;
 }
 
