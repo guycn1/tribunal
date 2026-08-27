@@ -39,7 +39,12 @@ body {
 }
 
 .sidebar {
-  width: 280px;
+  /* Shrinks fluidly with the viewport instead of staying a fixed 280px
+     until the single hard breakpoint below forces it full-width - gives
+     the main content (including the call log table, which needs real
+     width of its own) more room on viewports that are narrower than
+     "wide" but not yet narrow enough to stack. */
+  width: clamp(200px, 22vw, 280px);
   flex-shrink: 0;
   background: var(--bg-raised);
   border-right: 1px solid var(--border);
@@ -428,6 +433,15 @@ body {
 
 table.call-log {
   width: 100%;
+  /* table-layout: fixed gives each column a strict share of the table's
+     rendered width, which stops the table overflowing its container - but
+     at that fixed 100% width, a narrow container squeezes short,
+     fixed-format content (a cost, a status word, a timestamp) into ugly
+     mid-word wraps instead. This min-width guarantees real pixel room for
+     that content regardless of container width; below it, the .table-scroll
+     wrapper's overflow-x: auto takes over and scrolls the whole table
+     horizontally instead, which reads far better than wrapped fragments. */
+  min-width: 1050px;
   border-collapse: collapse;
   table-layout: fixed;
   font-size: 0.82rem;
@@ -439,6 +453,18 @@ table.call-log td {
   text-align: left;
   border-bottom: 1px solid var(--border);
   overflow-wrap: break-word;
+}
+
+/* Cost, Status, Time - short, fixed-format content that should never wrap
+   (a split "$0.000000" or "27/08/2026, 14:05:36" is unreadable); the
+   min-width above ensures these columns have enough real room to honor it. */
+table.call-log th:nth-child(5),
+table.call-log td:nth-child(5),
+table.call-log th:nth-child(6),
+table.call-log td:nth-child(6),
+table.call-log th:nth-child(7),
+table.call-log td:nth-child(7) {
+  white-space: nowrap;
 }
 
 table.call-log th {
