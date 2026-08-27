@@ -454,12 +454,18 @@ function renderCaseSheet() {
 // by both representative and judge cards - kept as one function so the two
 // card types can't quietly drift into showing different information for
 // the same underlying states.
+// Prepended to every "still waiting on a response" status below - a purely
+// visual, CSS-animated indicator (see .spinner in styles.css) that there's
+// real, ongoing activity, distinct from the text-only states (aborted,
+// failed, success) where nothing is in flight anymore.
+const SPINNER_HTML = '<span class="spinner"></span>';
+
 function buildAgentStatusBody(entry, role, verb) {
   const body = document.createElement('div');
 
   if (!entry || entry.status === 'loading') {
     body.className = 'card-body dim';
-    body.innerHTML = `${verb}…<div class="model-chain">Trying: <span class="model-name">${formatModelChain(role)}</span></div>`;
+    body.innerHTML = `${SPINNER_HTML}${verb}…<div class="model-chain">Trying: <span class="model-name">${formatModelChain(role)}</span></div>`;
     return body;
   }
 
@@ -472,7 +478,7 @@ function buildAgentStatusBody(entry, role, verb) {
     // into the innerHTML template with everything else, which is all
     // either a number or a model id string we control.
     body.innerHTML = `
-      Still trying (attempt ${entry.attempt}, ${Math.round(entry.elapsedMs / 1000)}s so far)…
+      ${SPINNER_HTML}Still trying (attempt ${entry.attempt}, ${Math.round(entry.elapsedMs / 1000)}s so far)…
       <div class="model-chain">Trying: <span class="model-name">${formatModelChain(role)}</span></div>
       <div class="model-chain">Last-ditch fallback in <span class="countdown">${secondsLeft}s</span> if this keeps failing</div>
     `;
@@ -486,7 +492,7 @@ function buildAgentStatusBody(entry, role, verb) {
   if (entry.status === 'last-ditch') {
     body.className = 'card-body dim';
     body.innerHTML = `
-      Normal chain exhausted after 100s — making one final attempt with <span class="model-name">${formatLastDitchModel(role)}</span>…
+      ${SPINNER_HTML}Normal chain exhausted after 100s — making one final attempt with <span class="model-name">${formatLastDitchModel(role)}</span>…
       <div class="model-chain">This model is known to be slower; this attempt may take longer than the others did.</div>
     `;
     return body;
