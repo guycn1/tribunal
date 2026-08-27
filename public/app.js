@@ -383,12 +383,41 @@ async function loadStaticCaseSheet() {
   renderCaseSheet();
 }
 
+function renderHistoryPlaceholder(message, showSpinner) {
+  el.historyList.innerHTML = `
+    <li class="history-loading">
+      ${showSpinner ? '<span class="spinner spinner-lg"></span>' : ''}
+      <span>${message}</span>
+    </li>
+  `;
+}
+
 async function refreshHistory() {
-  const res = await fetch('/api/trials');
-  if (!res.ok) return;
-  const data = await res.json();
-  state.history = data.trials || [];
-  renderHistory();
+  // Only show the big "fetching" placeholder when there's genuinely
+  // nothing to look at yet - this is what was looking frozen on a slow
+  // fetch (observed up to ~10s, likely Supabase round-trip time, see the
+  // query-shape note on listTrials in db.ts). A refresh of an
+  // already-populated list leaves the existing items on screen rather than
+  // flickering them out while fresh data loads.
+  if (state.history.length === 0) {
+    renderHistoryPlaceholder('Fetching run history…', true);
+  }
+  try {
+    const res = await fetch('/api/trials');
+    if (!res.ok) {
+      if (state.history.length === 0) {
+        renderHistoryPlaceholder('Could not load run history.', false);
+      }
+      return;
+    }
+    const data = await res.json();
+    state.history = data.trials || [];
+    renderHistory();
+  } catch {
+    if (state.history.length === 0) {
+      renderHistoryPlaceholder('Could not load run history.', false);
+    }
+  }
 }
 
 async function loadTrial(trialId) {

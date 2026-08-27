@@ -75,45 +75,42 @@ export async function listTrials(limit = 50): Promise<TrialSummary[]> {
   const ids = (trials ?? []).map((t) => t.id);
   let failedTrialIds = new Set<string>();
   let abortedTrialIds = new Set<string>();
-
-  if (ids.length > 0) {
-    const { data: failedLogs, error: logsError } = await supabase
-      .from('api_call_logs')
-      .select('trial_id')
-      .eq('status', 'failed')
-      .in('trial_id', ids);
-
-    if (logsError) {
-      throw new Error(`Failed to list trial failures: ${logsError.message}`);
-    }
-
-    failedTrialIds = new Set((failedLogs ?? []).map((row) => row.trial_id as string));
-
-    const { data: abortedLogs, error: abortedError } = await supabase
-      .from('api_call_logs')
-      .select('trial_id')
-      .eq('error_message', ABORTED_BY_USER_MESSAGE)
-      .in('trial_id', ids);
-
-    if (abortedError) {
-      throw new Error(`Failed to list aborted trials: ${abortedError.message}`);
-    }
-
-    abortedTrialIds = new Set((abortedLogs ?? []).map((row) => row.trial_id as string));
-  }
-
   const resultCounts = new Map<string, number>();
+
+  // Four follow-up queries, none of which depend on each other's results -
+  // only on `ids` from the trials query above - so there is no reason for
+  // them to run one after another. They previously did (three sequential
+  // round trips, one of them two separate queries against the same table),
+  // which was a real, measured contributor to the run-history sidebar
+  // occasionally taking several seconds to populate. Now: one combined
+  // query against api_call_logs (status and error_message both pulled in
+  // one pass, since failedTrialIds and abortedTrialIds are both derived
+  // from it) plus the two result-count queries, all fired together.
   if (ids.length > 0) {
-    const [{ data: repRows, error: repError }, { data: judgeRows, error: judgeError }] = await Promise.all([
+    const [
+      { data: logs, error: logsError },
+      { data: repRows, error: repError },
+      { data: judgeRows, error: judgeError },
+    ] = await Promise.all([
+      supabase.from('api_call_logs').select('trial_id, status, error_message').in('trial_id', ids),
       supabase.from('representative_arguments').select('trial_id').in('trial_id', ids),
       supabase.from('judge_rulings').select('trial_id').in('trial_id', ids),
     ]);
 
+    if (logsError) {
+      throw new Error(`Failed to list trial call logs: ${logsError.message}`);
+    }
     if (repError) {
       throw new Error(`Failed to count representative results: ${repError.message}`);
     }
     if (judgeError) {
       throw new Error(`Failed to count judge results: ${judgeError.message}`);
+    }
+
+    for (const row of logs ?? []) {
+      const trialId = row.trial_id as string;
+      if (row.status === 'failed') failedTrialIds.add(trialId);
+      if (row.error_message === ABORTED_BY_USER_MESSAGE) abortedTrialIds.add(trialId);
     }
 
     for (const row of [...(repRows ?? []), ...(judgeRows ?? [])]) {
