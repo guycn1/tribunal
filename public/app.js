@@ -392,6 +392,19 @@ function renderHistoryPlaceholder(message, showSpinner) {
   `;
 }
 
+// This endpoint only touches Supabase, no OpenRouter/Netlify quota at
+// stake, so a few quick retries on a transient failure are cheap and
+// worthwhile - a fetch failure here is much more likely to be a passing
+// blip (a real one was observed: this exact local dev setup is documented
+// to occasionally contend when many requests hit the same long-running
+// process, e.g. a manual test call landing at the same moment as a page
+// load) than a persistent problem, so it deserves the same "self-heal
+// before showing an alarming error" treatment representative/judge calls
+// already get - just on a much shorter, lighter budget suited to a small
+// metadata fetch rather than a real generation.
+const HISTORY_RETRY_ATTEMPTS = 3;
+const HISTORY_RETRY_BACKOFF_MS = 700;
+
 async function refreshHistory() {
   // Only show the big "fetching" placeholder when there's genuinely
   // nothing to look at yet - this is what was looking frozen on a slow
@@ -402,20 +415,23 @@ async function refreshHistory() {
   if (state.history.length === 0) {
     renderHistoryPlaceholder('Fetching run history…', true);
   }
-  try {
-    const res = await fetch('/api/trials');
-    if (!res.ok) {
-      if (state.history.length === 0) {
-        renderHistoryPlaceholder('Could not load run history.', false);
-      }
+
+  for (let attempt = 1; attempt <= HISTORY_RETRY_ATTEMPTS; attempt++) {
+    try {
+      const res = await fetch('/api/trials');
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      state.history = data.trials || [];
+      renderHistory();
       return;
-    }
-    const data = await res.json();
-    state.history = data.trials || [];
-    renderHistory();
-  } catch {
-    if (state.history.length === 0) {
-      renderHistoryPlaceholder('Could not load run history.', false);
+    } catch {
+      if (attempt === HISTORY_RETRY_ATTEMPTS) {
+        if (state.history.length === 0) {
+          renderHistoryPlaceholder('Could not load run history.', false);
+        }
+        return;
+      }
+      await sleep(HISTORY_RETRY_BACKOFF_MS * attempt);
     }
   }
 }
