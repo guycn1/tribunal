@@ -41,8 +41,23 @@ export async function createTrial(caseCode: string): Promise<TrialRecord> {
 }
 
 export interface TrialSummary extends TrialRecord {
+  // Whether any individual call for this trial ever logged status='failed'
+  // - including one that was immediately retried and fully recovered. Kept
+  // as a real, honest low-level fact, but deliberately NOT what the
+  // frontend's "Completed" vs "Completed - with failures" label is based
+  // on: on a free tier, a transient failure that self-heals within the
+  // retry ceiling is the expected case, not the exception, so a label
+  // driven by this would fire on most runs and stop meaning anything. See
+  // resultCount below for what the sidebar actually uses.
   hadFailures: boolean;
   wasAborted: boolean;
+  // How many of the 7 expected results (4 representative_arguments + 3
+  // judge_rulings) this trial actually has, counted directly from those
+  // tables rather than from api_call_logs. Retries collapse to one row per
+  // role there (unique(trial_id, role)), so this reflects the real, final
+  // output regardless of how many attempts it took to get there - which is
+  // what "is this trial actually complete" should mean.
+  resultCount: number;
 }
 
 export async function listTrials(limit = 50): Promise<TrialSummary[]> {
@@ -87,10 +102,31 @@ export async function listTrials(limit = 50): Promise<TrialSummary[]> {
     abortedTrialIds = new Set((abortedLogs ?? []).map((row) => row.trial_id as string));
   }
 
+  const resultCounts = new Map<string, number>();
+  if (ids.length > 0) {
+    const [{ data: repRows, error: repError }, { data: judgeRows, error: judgeError }] = await Promise.all([
+      supabase.from('representative_arguments').select('trial_id').in('trial_id', ids),
+      supabase.from('judge_rulings').select('trial_id').in('trial_id', ids),
+    ]);
+
+    if (repError) {
+      throw new Error(`Failed to count representative results: ${repError.message}`);
+    }
+    if (judgeError) {
+      throw new Error(`Failed to count judge results: ${judgeError.message}`);
+    }
+
+    for (const row of [...(repRows ?? []), ...(judgeRows ?? [])]) {
+      const trialId = row.trial_id as string;
+      resultCounts.set(trialId, (resultCounts.get(trialId) ?? 0) + 1);
+    }
+  }
+
   return (trials ?? []).map((row) => ({
     ...mapTrial(row),
     hadFailures: failedTrialIds.has(row.id),
     wasAborted: abortedTrialIds.has(row.id),
+    resultCount: resultCounts.get(row.id) ?? 0,
   }));
 }
 

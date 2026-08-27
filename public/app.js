@@ -625,12 +625,23 @@ function renderCallLog() {
 // retrying gets mislabeled as abandoned.
 const INTERRUPTED_THRESHOLD_MS = 5 * 60 * 1000;
 
+// What "Completed - with failures" is based on: whether the trial's final,
+// persisted results are actually incomplete - NOT whether any individual
+// call ever logged a failure along the way. On a free tier, a transient
+// failure that the retry loop recovers from within its ceiling is the
+// expected case, not the exception - a label driven by hadFailures would
+// fire on most runs and stop meaning anything. The call log table still
+// shows every real attempt, success or failure, in full; this only changes
+// what the one-line sidebar summary reports.
+const TOTAL_EXPECTED_RESULTS = REPRESENTATIVE_ROLES.length + JUDGE_ROLES.length;
+
 function trialStatusLabel(trial) {
+  const missing = TOTAL_EXPECTED_RESULTS - (trial.resultCount ?? 0);
   if (trial.wasAborted) {
-    return trial.status === 'completed' ? 'Aborted (partial results)' : 'Aborted';
+    return trial.status === 'completed' ? `Aborted (${trial.resultCount ?? 0} of ${TOTAL_EXPECTED_RESULTS} completed)` : 'Aborted';
   }
   if (trial.status === 'completed') {
-    return trial.hadFailures ? 'Completed — with failures' : 'Completed';
+    return missing > 0 ? `Completed — missing ${missing} of ${TOTAL_EXPECTED_RESULTS}` : 'Completed';
   }
   const ageMs = Date.now() - new Date(trial.createdAt).getTime();
   if (ageMs > INTERRUPTED_THRESHOLD_MS) {
@@ -640,11 +651,12 @@ function trialStatusLabel(trial) {
 }
 
 function trialStatusClass(trial) {
+  const missing = TOTAL_EXPECTED_RESULTS - (trial.resultCount ?? 0);
   if (trial.wasAborted) {
     return 'badge-aborted';
   }
   if (trial.status === 'completed') {
-    return trial.hadFailures ? 'badge-warn' : 'badge-ok';
+    return missing > 0 ? 'badge-warn' : 'badge-ok';
   }
   const ageMs = Date.now() - new Date(trial.createdAt).getTime();
   if (ageMs > INTERRUPTED_THRESHOLD_MS) {
