@@ -19,7 +19,7 @@ const ABORTED_BY_USER_MESSAGE = 'Aborted by user before this call could complete
 // isSiteGateOk() fails open (allows everything through) rather than
 // locking out real users, so this constant being "wrong" server-side is a
 // silent no-op, not an outage.
-const SITE_GATE_TOKEN = '54NTHGDUqBsx5LnoclA41qGr';
+const SITE_GATE_TOKEN = 'g8YdtIo_-n2zLFDsgWqqfuQmVKaNsHQaQtruTybqlvY';
 const SITE_GATE_HEADERS = { 'X-Site-Gate': SITE_GATE_TOKEN };
 
 const REPRESENTATIVE_META = {
