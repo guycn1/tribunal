@@ -21,10 +21,22 @@ const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 // Background Function the frontend polls for, which has no such ceiling
 // but isn't available on every plan).
 const TOTAL_BUDGET_MS = 26000;
-// Don't start an attempt the remaining budget cannot plausibly finish - an
-// attempt that gets aborted partway through generation spends real cost to
-// produce nothing usable.
-const MIN_REMAINING_TO_ATTEMPT_MS = 8000;
+// Don't start an attempt the remaining budget cannot plausibly finish. This
+// mostly exists to admit a *fast* retry - 429/5xx/empty-content responses
+// have consistently resolved in well under a second in every real call this
+// project has logged - not to guarantee a second full generation: real
+// successful completions at the current AGENT_MAX_TOKENS (1400) have taken
+// as little as ~11.9s and as much as ~17.6s (see the per-attempt
+// console.log lines below), both already well above what a fixed 26s
+// budget can spare for a second attempt once a meaningful first one has
+// run. A real, measured case confirmed the old 8000ms value here was
+// actually too high for its own stated purpose: a genuine attempt-1 hang
+// left just over 8000ms remaining, but backoff()'s own delay (up to
+// ~1100ms) plus normal overhead pushed the loop's next check just under
+// that floor, so the retry this constant exists to admit never actually
+// started. Lowered to 3000ms, which is still ample for the fast-failure
+// case this is really for.
+const MIN_REMAINING_TO_ATTEMPT_MS = 3000;
 
 // Per-attempt ceiling, scaled to how much text the call actually asked for
 // - a single flat value can't serve both call types here, since judges
@@ -54,16 +66,19 @@ function attemptTimeoutFor(maxTokens: number): number {
   // Never let a single attempt's ceiling claim the entire remaining budget.
   // Both role types now share AGENT_MAX_TOKENS (1400), and at that value
   // the raw estimate (31200ms) already exceeds TOTAL_BUDGET_MS - so without
-  // this reserve, attempt 1 gets clamped to the full 26000ms with nothing
-  // left over. A real attempt that times out at exactly that ceiling then
-  // leaves remainingMs() at ~0, which fails the retry loop's own
-  // MIN_REMAINING_TO_ATTEMPT_MS floor - so a single genuine hang gives up
-  // after exactly one attempt, with no chance for the fast-retry path
-  // (429/5xx/empty-content) that this whole budget system exists to allow.
-  // Reserving that same floor here guarantees the opposite: even a
-  // worst-case full-length timeout on attempt 1 leaves exactly enough
-  // budget for the loop to admit a real retry.
-  const ceiling = TOTAL_BUDGET_MS - MIN_REMAINING_TO_ATTEMPT_MS;
+  // a reserve, attempt 1 gets clamped to the full 26000ms with nothing left
+  // over, and a real attempt that genuinely times out at that ceiling
+  // leaves the retry loop with no budget to admit a second attempt at all.
+  // The reserve is MIN_REMAINING_TO_ATTEMPT_MS itself plus real headroom
+  // for the backoff() delay and general overhead that happen between a
+  // failed attempt and the loop's next remainingMs() check - a first
+  // version of this reserved only the bare floor and, measured live, still
+  // gave up after one attempt, because that gap alone was enough to push
+  // the post-backoff remainder just under it. 20500ms leaves real margin
+  // (2900ms+) above every representative/judge completion measured so far
+  // at this max_tokens value (11.9s-17.6s), while still guaranteeing a
+  // genuine retry gets attempted after a worst-case full-length timeout.
+  const ceiling = TOTAL_BUDGET_MS - MIN_REMAINING_TO_ATTEMPT_MS - 2500;
   return Math.min(Math.max(estimateMs, 12000), ceiling);
 }
 
@@ -256,7 +271,15 @@ export async function callOpenRouter(
           ? err.message
           : String(err);
       console.log(`[openrouter] ${label}: attempt ${attempt} - ${lastError}, retrying`);
-      await backoff(attempt);
+      // backoff()'s delay exists to avoid hammering a rate limiter that
+      // will keep refusing for a moment - a real reason to wait for the
+      // 429/5xx/empty-content branches above, but not for a timeout, where
+      // nothing suggests waiting helps and every remaining millisecond of a
+      // fixed, already-tight budget matters more than a precautionary
+      // pause. A genuine timeout skips straight to the retry check instead.
+      if (!isTimeout) {
+        await backoff(attempt);
+      }
     }
   }
 
