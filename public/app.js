@@ -7,6 +7,21 @@ const JUDGE_ROLES = ['barak', 'elon', 'shamgar'];
 // of the generic "Call failed" one.
 const ABORTED_BY_USER_MESSAGE = 'Aborted by user before this call could complete.';
 
+// Sent as the X-Site-Gate header on every call that creates a trial or
+// spends OpenRouter quota (see isSiteGateOk in
+// netlify/functions/lib/siteGate.ts). This is NOT a real secret and isn't
+// meant to be one - it's shipped in this public, unauthenticated file, so
+// anyone who looks can read it. Its only job is to reject automated
+// traffic that never loaded this page at all; a caller who did look
+// defeats it trivially. Must match the SITE_GATE_TOKEN environment
+// variable configured on the Netlify Functions side exactly, or every
+// gated call fails with 401 - if that env var is left unset there,
+// isSiteGateOk() fails open (allows everything through) rather than
+// locking out real users, so this constant being "wrong" server-side is a
+// silent no-op, not an outage.
+const SITE_GATE_TOKEN = '54NTHGDUqBsx5LnoclA41qGr';
+const SITE_GATE_HEADERS = { 'X-Site-Gate': SITE_GATE_TOKEN };
+
 const REPRESENTATIVE_META = {
   jon_snow: { name: 'Jon Snow', seat: 'defense' },
   tyrion_lannister: { name: 'Tyrion Lannister', seat: 'defense' },
@@ -115,7 +130,7 @@ async function beginTrial() {
   state.abortController = controller;
 
   try {
-    const res = await fetch('/api/trials', { method: 'POST' });
+    const res = await fetch('/api/trials', { method: 'POST', headers: SITE_GATE_HEADERS });
     const data = await res.json();
     if (!res.ok) {
       alert(`Failed to create trial: ${data.error || res.status}`);
@@ -255,6 +270,14 @@ const RETRY_UNTIL_SUCCESS_MS = 150 * 1000;
 const RETRY_BACKOFF_BASE_MS = 2000;
 const RETRY_BACKOFF_MAX_MS = 6000;
 const isQuotaExhausted = (message) => /quota exhausted/i.test(message || '');
+// Matches the message callOpenRouter()/callOpenRouterOnce() produce for a
+// real HTTP 402 from OpenRouter (the paid account's credit balance is
+// genuinely at $0) - see openrouter.ts. representative.ts/judge.ts always
+// wrap an OpenRouter-layer failure as a 502, so the res.status-based 4xx
+// check below never catches this on its own; like isQuotaExhausted above,
+// it needs its own text match. Running out of real money won't resolve
+// itself by retrying, so this is treated as non-retryable the same way.
+const isOutOfCredits = (message) => /out of credits/i.test(message || '');
 
 function nextBackoff(attempt) {
   return Math.min(RETRY_BACKOFF_BASE_MS * Math.pow(1.3, attempt - 1), RETRY_BACKOFF_MAX_MS) + Math.random() * 500;
@@ -297,9 +320,11 @@ async function callAgentWithRetry(url, onUpdate, signal) {
       const requestUrl = overCeiling ? `${url}?lastDitch=true` : url;
       let res, data;
       try {
-        res = await fetch(requestUrl, { method: 'POST', signal });
-        data = await res.json();
+        res = await fetch(requestUrl, { method: 'POST', signal, headers: SITE_GATE_HEADERS });
       } catch (err) {
+        // A genuine network-level failure - offline, DNS, connection
+        // refused, or the AbortController firing. Nothing came back at
+        // all, so there's no response to inspect.
         if ((err && err.name === 'AbortError') || (signal && signal.aborted)) {
           return { status: 'aborted', error: 'Stopped by user.' };
         }
@@ -316,6 +341,27 @@ async function callAgentWithRetry(url, onUpdate, signal) {
         continue;
       }
 
+      try {
+        data = await res.json();
+      } catch {
+        // A response DID come back, but its body wasn't the JSON this
+        // app's own functions always return. The one real way that
+        // happens is Netlify's own per-IP rate limiter (see the
+        // rateLimit config on representative.ts/judge.ts) blocking the
+        // request before this app's function code ever runs, returning a
+        // plain error page instead - give a specific, honest reason for
+        // that recognizable case rather than surfacing a raw "Unexpected
+        // token" parse error, and a generic-but-still-honest one for any
+        // other unrecognized non-JSON response.
+        data = {
+          status: 'failed',
+          error:
+            res.status === 429
+              ? "Too many requests from this network in a short time (Netlify's own per-IP rate limit, separate from this app's own call cap). Wait a few minutes and try again."
+              : `Server returned an unexpected non-JSON response (HTTP ${res.status}).`,
+        };
+      }
+
       if (res.ok && data.status !== 'failed') {
         return { status: 'success', ...data, wasLastDitch: overCeiling };
       }
@@ -323,10 +369,11 @@ async function callAgentWithRetry(url, onUpdate, signal) {
       const error = data.error || `HTTP ${res.status}`;
       local.error = error;
 
-      if (isQuotaExhausted(error) || (res.status >= 400 && res.status < 500) || overCeiling) {
-        // Quota-exhausted, a malformed request (4xx), or this WAS the
-        // last-ditch attempt itself - none of these are worth another
-        // round, for the reasons in the comment above this function.
+      if (isQuotaExhausted(error) || isOutOfCredits(error) || (res.status >= 400 && res.status < 500) || overCeiling) {
+        // Quota-exhausted, out of real credits, a malformed request (4xx),
+        // or this WAS the last-ditch attempt itself - none of these are
+        // worth another round, for the reasons in the comment above this
+        // function.
         return { status: 'failed', error, lastDitchAttempted: overCeiling };
       }
 

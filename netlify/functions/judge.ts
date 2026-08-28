@@ -7,7 +7,15 @@ import { JUDGES } from './lib/judges';
 import { buildJudgeMessages, parseJudgeOutput } from './lib/prompts';
 import { callOpenRouter, callOpenRouterOnce } from './lib/openrouter';
 import { getLastDitchModelForRole } from './lib/models';
-import { getFullTrial, upsertJudgeRuling, logApiCall, markTrialCompletedIfJudgingDone } from './lib/db';
+import {
+  getFullTrial,
+  upsertJudgeRuling,
+  logApiCall,
+  markTrialCompletedIfJudgingDone,
+  isGlobalCallCapExceeded,
+  GLOBAL_CALL_CAP,
+} from './lib/db';
+import { isSiteGateOk } from './lib/siteGate';
 import type { JudgeRole, RepresentativeRole } from './lib/types';
 
 // Judges write the longest output of any agent in this system — a fuller
@@ -42,6 +50,21 @@ const rawHandler: Handler = async (event) => {
     return json(400, { error: `Unknown judge role: ${role}` });
   }
   const judgeRole = role as JudgeRole;
+
+  // See the matching comment in representative.ts - both checks run before
+  // any Supabase trial lookup or OpenRouter call.
+  if (!isSiteGateOk(event.headers)) {
+    return json(401, { role: judgeRole, status: 'failed', error: 'Missing or invalid site gate header.' });
+  }
+
+  const cap = await isGlobalCallCapExceeded();
+  if (cap.exceeded) {
+    return json(429, {
+      role: judgeRole,
+      status: 'failed',
+      error: `Site-wide call cap reached (${cap.count}/${GLOBAL_CALL_CAP} calls in the last 24h). Refusing to spend further API budget - try again later.`,
+    });
+  }
 
   const full = await getFullTrial(id);
   if (!full) {
@@ -124,3 +147,17 @@ const rawHandler: Handler = async (event) => {
 };
 
 export const handler = safeHandler(rawHandler);
+
+// See the matching config on representative.ts for the reasoning behind
+// every choice here (the numbers, the path glob, the missing `: Config`
+// annotation, and the "unverified in production" caveat) - the only
+// difference is the function name in the path, matching how netlify.toml
+// routes here.
+export const config = {
+  path: '/.netlify/functions/judge/*',
+  rateLimit: {
+    windowLimit: 30,
+    windowSize: 300,
+    aggregateBy: ['ip'],
+  },
+};

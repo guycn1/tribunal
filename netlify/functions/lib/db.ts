@@ -237,6 +237,51 @@ export async function upsertJudgeRuling(params: {
   }
 }
 
+// A hard, site-wide ceiling on how many agent calls (representative or
+// judge, successful or failed) are allowed to reach OpenRouter in any
+// rolling window - independent of which trial, which role, or which IP
+// they come from. This is what actually bounds worst-case spend on a
+// public URL with no login: per-IP measures (see the rateLimit config on
+// representative.ts/judge.ts) slow down a single source, but only this
+// count-against-real-persisted-state check can't be defeated by spreading
+// requests across many IPs or by reading/replaying the site-gate header
+// (see siteGate.ts) - it's checked against what actually happened, not
+// against anything the caller can present.
+//
+// Sized generously above any realistic legitimate day (manual testing plus
+// a grader running the trial repeatedly) while staying well short of
+// meaningfully denting a small prepaid balance - tune GLOBAL_CALL_CAP down
+// once the real per-call cost of whichever paid model is in use is known.
+export const GLOBAL_CALL_CAP = 150;
+const GLOBAL_CALL_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+// Deliberately does NOT log anything when the cap is hit (unlike every
+// other outcome in this file) - a logged row here would itself count
+// toward the very total this function checks, which would make a trip of
+// the cap self-perpetuating: once tripped, every subsequent check would
+// see its own past rejections and stay tripped for the rest of the
+// window even if real traffic had stopped. The caller still returns a
+// clear, real error to the client either way (see representative.ts /
+// judge.ts) - it just isn't persisted.
+export async function isGlobalCallCapExceeded(): Promise<{ exceeded: boolean; count: number }> {
+  const supabase = getSupabaseClient();
+  const since = new Date(Date.now() - GLOBAL_CALL_WINDOW_MS).toISOString();
+  const { count, error } = await supabase
+    .from('api_call_logs')
+    .select('*', { count: 'exact', head: true })
+    .gte('timestamp', since);
+
+  if (error) {
+    // Fail open: a Supabase hiccup here must not take the whole app down.
+    // The other two layers (per-IP rate limiting, the site-gate header)
+    // still stand even if this particular check can't run for a moment.
+    console.error('isGlobalCallCapExceeded: count query failed, failing open:', error.message);
+    return { exceeded: false, count: 0 };
+  }
+
+  return { exceeded: (count ?? 0) >= GLOBAL_CALL_CAP, count: count ?? 0 };
+}
+
 export async function logApiCall(params: {
   trialId: string;
   agentRole: string;
