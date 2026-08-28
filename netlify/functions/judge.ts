@@ -43,13 +43,18 @@ const rawHandler: Handler = async (event) => {
   const judgeRole = role as JudgeRole;
 
   // See the matching comment in representative.ts - both checks run before
-  // any Supabase trial lookup or OpenRouter call.
+  // any Supabase trial lookup or OpenRouter call, and (now that this runs
+  // as a Background Function - see config.background below) neither
+  // rejection reaches the polling frontend directly, only Netlify's
+  // function logs, for the same disclosed reasons as representative.ts.
   if (!isSiteGateOk(event.headers)) {
+    console.warn(`judge:${judgeRole}: rejected - missing or invalid site gate header.`);
     return json(401, { role: judgeRole, status: 'failed', error: 'Missing or invalid site gate header.' });
   }
 
   const cap = await isGlobalCallCapExceeded();
   if (cap.exceeded) {
+    console.warn(`judge:${judgeRole}: rejected - global call cap reached (${cap.count}/${GLOBAL_CALL_CAP}).`);
     return json(429, {
       role: judgeRole,
       status: 'failed',
@@ -136,12 +141,14 @@ const rawHandler: Handler = async (event) => {
 export const handler = safeHandler(rawHandler);
 
 // See the matching config on representative.ts for the reasoning behind
-// every choice here (the numbers, the path glob, the missing `: Config`
+// every choice here (the numbers, background:true and why it's now
+// required rather than optional, the path glob, the missing `: Config`
 // annotation, and the "unverified in production" caveat) - the only
 // difference is the function name in the path, matching how netlify.toml
 // routes here.
 export const config = {
   path: '/.netlify/functions/judge/*',
+  background: true,
   rateLimit: {
     windowLimit: 30,
     windowSize: 300,

@@ -38,12 +38,27 @@ const rawHandler: Handler = async (event) => {
   // fast count query at most. See siteGate.ts and isGlobalCallCapExceeded
   // in db.ts for what each actually protects against and why neither
   // alone is sufficient.
+  //
+  // As a Background Function (see config.background below), this JSON
+  // response is no longer what the real caller sees - Netlify responds 202
+  // to the client immediately and runs this handler asynchronously, so a
+  // rejection here now only reaches the frontend if it's discoverable by
+  // polling GET /api/trials/:id. Deliberately NOT writing either rejection
+  // to api_call_logs to reach that poll: the site-gate check exists to
+  // reject automated traffic for near-zero cost, which a Supabase write
+  // here would undercut for exactly the traffic it's meant to filter; the
+  // call-cap check has its own, separate, already-documented reason never
+  // to log its own trip (self-perpetuation - see isGlobalCallCapExceeded).
+  // console.warn keeps both visible in Netlify's function logs, just not
+  // in the poll-driven UI - a real, disclosed trade-off, not an oversight.
   if (!isSiteGateOk(event.headers)) {
+    console.warn(`representative:${repRole}: rejected - missing or invalid site gate header.`);
     return json(401, { role: repRole, status: 'failed', error: 'Missing or invalid site gate header.' });
   }
 
   const cap = await isGlobalCallCapExceeded();
   if (cap.exceeded) {
+    console.warn(`representative:${repRole}: rejected - global call cap reached (${cap.count}/${GLOBAL_CALL_CAP}).`);
     return json(429, {
       role: repRole,
       status: 'failed',
@@ -122,13 +137,29 @@ export const handler = safeHandler(rawHandler);
 // a short window, or retrying after a transient failure, must keep
 // working.
 //
-// UNVERIFIED IN PRODUCTION: local netlify dev does not simulate rate
-// limiting, and this project has separately, repeatedly found that its
-// redirect-based routing behaves differently locally than once deployed
-// (see the "Production deployment" bug log entries). Whether this exact
-// path glob is what Netlify's rate limiter actually matches against - the
-// redirect's source path or the function's resolved path - is confirmed
-// only by a real deploy, not by anything checked here.
+// background: true is the real fix for a verified, load-bearing problem:
+// Netlify's free-tier synchronous function limit is 10 seconds (confirmed
+// against Netlify's own docs and support forum - not the ~30s this file
+// used to assume), while every real OpenRouter call measured on this
+// project has taken 8-18s+ per attempt. A standard invocation could not
+// reliably survive that gap regardless of any retry/timeout tuning inside
+// callOpenRouter() - only a genuinely different execution model
+// (Background Functions, up to 15 minutes) closes it. The tradeoff: the
+// client no longer receives this handler's return value directly (Netlify
+// responds 202 immediately) - the frontend now discovers the real outcome
+// by polling GET /api/trials/:id instead of awaiting this call's response
+// body. See the comment above the site-gate/call-cap checks for the one
+// real, disclosed gap this introduces (those two rejections are no longer
+// visible to the poller, only in function logs).
+//
+// UNVERIFIED IN PRODUCTION: local netlify dev's emulation of Background
+// Functions has not been confirmed to match real deployed behavior -
+// this project has separately, repeatedly found that its redirect-based
+// routing behaves differently locally than once deployed (see the
+// "Production deployment" bug log entries), so the same caution applies
+// here until checked against a real deploy. Whether the rate-limit path
+// glob below is what Netlify's rate limiter actually matches against is
+// similarly unconfirmed locally, unchanged from before.
 // No `: Config` type annotation here on purpose: the RateLimitConfig type
 // shipped by the installed @netlify/functions version (2.8.1) is missing
 // `windowLimit` entirely, even though it's a real, required field in
@@ -141,6 +172,7 @@ export const handler = safeHandler(rawHandler);
 // type would only fight the type-checker over something already correct.
 export const config = {
   path: '/.netlify/functions/representative/*',
+  background: true,
   rateLimit: {
     windowLimit: 30,
     windowSize: 300,

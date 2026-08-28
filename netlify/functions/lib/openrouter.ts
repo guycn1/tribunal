@@ -7,79 +7,45 @@ const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 // under a second) gets more attempts than one where each try genuinely
 // takes most of the budget.
 //
-// 26000ms is the most this can safely ask for, not an arbitrary round
-// number: Netlify's own platform-level timeout for a standard function
-// invocation was directly observed at ~30s, and it fires regardless of any
-// AbortSignal this code sets - if that kill happens first, the whole
-// invocation dies before any of this function's own error-logging or the
-// Supabase writes that run after callOpenRouter() resolves can execute,
-// which is a silent failure rather than a clean one. The ~4s of margin
-// below the observed ceiling is deliberately kept, not spent, for exactly
-// those writes plus general timing imprecision - there is no larger safe
-// value to raise this to on this platform; genuinely accommodating a
-// longer wait would need a different architecture (e.g. a Netlify
-// Background Function the frontend polls for, which has no such ceiling
-// but isn't available on every plan).
-const TOTAL_BUDGET_MS = 26000;
-// Don't start an attempt the remaining budget cannot plausibly finish. This
-// mostly exists to admit a *fast* retry - 429/5xx/empty-content responses
-// have consistently resolved in well under a second in every real call this
-// project has logged - not to guarantee a second full generation: real
-// successful completions at the current AGENT_MAX_TOKENS (1400) have taken
-// as little as ~11.9s and as much as ~17.6s (see the per-attempt
-// console.log lines below), both already well above what a fixed 26s
-// budget can spare for a second attempt once a meaningful first one has
-// run. A real, measured case confirmed the old 8000ms value here was
-// actually too high for its own stated purpose: a genuine attempt-1 hang
-// left just over 8000ms remaining, but backoff()'s own delay (up to
-// ~1100ms) plus normal overhead pushed the loop's next check just under
-// that floor, so the retry this constant exists to admit never actually
-// started. Lowered to 3000ms, which is still ample for the fast-failure
-// case this is really for.
-const MIN_REMAINING_TO_ATTEMPT_MS = 3000;
+// representative.ts/judge.ts now run as Netlify Background Functions
+// (config.background = true), not standard synchronous invocations - the
+// real, verified reason this whole file used to budget against a tight
+// ~26s ceiling. That number was calibrated against a *standard* Netlify
+// Function invocation limit that turned out to be wrong for what this
+// project actually runs on: the real free-tier synchronous limit is 10
+// seconds (verified directly against Netlify's own docs and support
+// forum, not assumed), which every real completion measured on this
+// project (consistently 8-18s+ per call) would have been at serious risk
+// of blowing through regardless of how carefully the old budget was
+// tuned - no amount of constant-tuning fixes an architecture mismatch.
+// Background Functions get up to 15 minutes instead. 120000ms (2 minutes)
+// is still a small fraction of that real ceiling - real margin for
+// multiple genuine full-length retries, not just fast-failure ones - while
+// staying far short of ever risking the actual 15-minute wall.
+const TOTAL_BUDGET_MS = 120000;
+// Don't start an attempt the remaining budget cannot plausibly finish.
+// With a 2-minute total budget instead of a ~26s one, this no longer has
+// to be tuned razor-close to the floor the way it did before (a real,
+// measured mistake at the old tight budget: 8000ms turned out to be
+// exactly big enough to get eaten by backoff()'s own delay between
+// attempts, silently preventing the retry it existed to allow). 10000ms
+// here has real slack in both directions - comfortably enough for a fast
+// 429/5xx/empty-content retry, and enough margin that ordinary timing
+// jitter can't quietly cancel it out again.
+const MIN_REMAINING_TO_ATTEMPT_MS = 10000;
 
-// Per-attempt ceiling, scaled to how much text the call actually asked for
-// - a single flat value can't serve both call types here, since judges
-// (whose prompt also carries all four representative arguments, and whose
-// max_tokens is set higher) need more generation time than representatives
-// do. A timeout signal passed to fetch() stays armed while the response
+// Per-attempt ceiling, scaled to how much text the call actually asked
+// for. A timeout signal passed to fetch() stays armed while the response
 // body is read, so this has to cover generation time, not just
-// time-to-headers. In practice a single attempt's timeout is also always
-// further clamped by whatever's left of TOTAL_BUDGET_MS (see remainingMs()
-// below), so this upper bound only matters for how long the very first
-// attempt is allowed to run.
-//
-// Calibrated against real measured calls against the currently configured
-// model (see the per-attempt console.log lines below), not assumed -
-// three successful representative calls (max_tokens 1000) landed at
-// 13858/14461/16289ms, and three successful judge calls (max_tokens 1400)
-// landed at 10899/12311/16741ms. That's roughly 20-31ms per completion
-// token including connection and prompt-processing overhead, well above
-// what an earlier, un-measured estimate assumed - which is exactly what
-// let a representative call whose real length happened to land on the
-// slow side of that range get cut off by a timeout that had as little as
-// ~700ms of real margin over an otherwise-successful call. The fixed
-// allowance and per-token rate below are sized with real margin above the
-// slowest of those six measurements, not just the average.
+// time-to-headers. Real successful completions at the current
+// AGENT_MAX_TOKENS (1400) have measured 8.2s-18.5s across every real call
+// logged on this project so far - the values below give real multiples of
+// margin above that range, not just enough to scrape by, since the whole
+// point of moving to a background function was to stop cutting this close.
 function attemptTimeoutFor(maxTokens: number): number {
-  const estimateMs = 6000 + maxTokens * 18;
-  // Never let a single attempt's ceiling claim the entire remaining budget.
-  // Both role types now share AGENT_MAX_TOKENS (1400), and at that value
-  // the raw estimate (31200ms) already exceeds TOTAL_BUDGET_MS - so without
-  // a reserve, attempt 1 gets clamped to the full 26000ms with nothing left
-  // over, and a real attempt that genuinely times out at that ceiling
-  // leaves the retry loop with no budget to admit a second attempt at all.
-  // The reserve is MIN_REMAINING_TO_ATTEMPT_MS itself plus real headroom
-  // for the backoff() delay and general overhead that happen between a
-  // failed attempt and the loop's next remainingMs() check - a first
-  // version of this reserved only the bare floor and, measured live, still
-  // gave up after one attempt, because that gap alone was enough to push
-  // the post-backoff remainder just under it. 20500ms leaves real margin
-  // (2900ms+) above every representative/judge completion measured so far
-  // at this max_tokens value (11.9s-17.6s), while still guaranteeing a
-  // genuine retry gets attempted after a worst-case full-length timeout.
-  const ceiling = TOTAL_BUDGET_MS - MIN_REMAINING_TO_ATTEMPT_MS - 2500;
-  return Math.min(Math.max(estimateMs, 12000), ceiling);
+  const estimateMs = 8000 + maxTokens * 25;
+  const ceiling = TOTAL_BUDGET_MS - MIN_REMAINING_TO_ATTEMPT_MS;
+  return Math.min(Math.max(estimateMs, 30000), ceiling);
 }
 
 export interface OpenRouterMessage {

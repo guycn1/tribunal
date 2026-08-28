@@ -230,7 +230,12 @@ async function abortCurrentTrial() {
 // (MAX_CONCURRENT_CALLS below, via runWithConcurrencyLimit), not just a
 // stagger on when each one starts - the stagger is kept underneath it as a
 // cheap extra precaution against the pool's initial batch still landing in
-// the same instant, but it is not what does the real work here.
+// the same instant, but it is not what does the real work here. This is
+// about OpenRouter's own account-level concurrency limit specifically, and
+// still applies regardless of the trigger/poll rewrite below - moving
+// representative.ts/judge.ts to Background Functions changes how this app
+// waits for a result, not how many calls the OpenRouter account can take
+// at once.
 const CONCURRENT_CALL_STAGGER_MS = 400;
 const MAX_CONCURRENT_CALLS = 3;
 
@@ -277,60 +282,170 @@ function sleep(ms, signal) {
   });
 }
 
-// Netlify's platform kills a standard function invocation at ~30s
-// regardless of anything our own code does (measured directly), so a
-// single server call is itself internally retried against a time budget
-// (see TOTAL_BUDGET_MS in openrouter.ts, ~26s) rather than trying to retry
-// from the browser across several separate invocations - the previous
-// design of this function did exactly that, which made sense while
-// transient failures were frequent enough to need several fresh attempts
-// in a row, but adds real complexity that isn't earning its keep once the
-// server-side budget alone is expected to cover the normal case.
-//
-// So this makes exactly one request and reports whatever comes back,
-// success or failure - no client-driven retry loop, no separate fallback
-// model, no elapsed-time countdown to render while waiting.
-async function callAgent(url, signal) {
+// representative.ts/judge.ts now run as Netlify Background Functions (see
+// config.background in each) - the fix for a verified, load-bearing
+// problem: Netlify's real free-tier synchronous function limit is 10
+// seconds, while every real OpenRouter call measured on this project has
+// taken 8-18s+ per attempt, before any retry. A standard invocation could
+// not reliably survive that gap no matter how the internal retry/timeout
+// budget was tuned. Background Functions get up to 15 minutes instead -
+// but the platform responds 202 immediately and runs the handler
+// asynchronously, so its real return value never reaches this fetch()
+// call the way a normal synchronous function's did. Calling a role now
+// has two separate steps: triggerAgent() fires the request and reports
+// only what's knowable synchronously (a network failure, or a
+// platform-level rejection like Netlify's own per-IP rate limit); the
+// real, eventual outcome is discovered afterward by polling
+// GET /api/trials/:id (see pollForRoles() and deriveRoleStates() below).
+async function triggerAgent(url, signal) {
   let res;
   try {
     res = await fetch(url, { method: 'POST', signal, headers: SITE_GATE_HEADERS });
   } catch (err) {
     // A genuine network-level failure - offline, DNS, connection refused,
-    // or the AbortController firing. Nothing came back at all, so there's
-    // no response to inspect.
+    // or the AbortController firing. Nothing came back at all.
     if ((err && err.name === 'AbortError') || (signal && signal.aborted)) {
-      return { status: 'aborted', error: 'Stopped by user.' };
+      return { accepted: false, result: { status: 'aborted', error: 'Stopped by user.' } };
     }
-    return { status: 'failed', error: String(err) };
+    return { accepted: false, result: { status: 'failed', error: String(err) } };
   }
 
-  let data;
+  if (res.ok) {
+    // A 2xx here - including Netlify's own automatic 202 for a Background
+    // Function - means only "accepted for processing," not "succeeded."
+    // The real outcome is left entirely to pollForRoles().
+    return { accepted: true };
+  }
+
+  // A non-2xx this early can only be a platform-level rejection (Netlify's
+  // per-IP rate limiter, most likely - see the rateLimit config on
+  // representative.ts/judge.ts) rather than anything from this app's own
+  // handler code, since a Background Function's own application-level
+  // outcome never reaches this response at all.
+  let message;
   try {
-    data = await res.json();
+    const data = await res.json();
+    message = data.error || `HTTP ${res.status}`;
   } catch {
-    // A response DID come back, but its body wasn't the JSON this app's
-    // own functions always return. The one real way that happens is
-    // Netlify's own per-IP rate limiter (see the rateLimit config on
-    // representative.ts/judge.ts) blocking the request before this app's
-    // function code ever runs, returning a plain error page instead -
-    // give a specific, honest reason for that recognizable case rather
-    // than surfacing a raw "Unexpected token" parse error, and a
-    // generic-but-still-honest one for any other unrecognized non-JSON
-    // response.
-    data = {
-      status: 'failed',
-      error:
-        res.status === 429
-          ? "Too many requests from this network in a short time (Netlify's own per-IP rate limit, separate from this app's own call cap). Wait a few minutes and try again."
-          : `Server returned an unexpected non-JSON response (HTTP ${res.status}).`,
+    message =
+      res.status === 429
+        ? "Too many requests from this network in a short time (Netlify's own per-IP rate limit, separate from this app's own call cap). Wait a few minutes and try again."
+        : `Server returned an unexpected non-JSON response (HTTP ${res.status}).`;
+  }
+  return { accepted: false, result: { status: 'failed', error: message } };
+}
+
+// Derives a {representatives, judges} status map from one GET
+// /api/trials/:id response - the single source of truth for "what has
+// actually happened so far in this trial," used identically whether
+// reopening a finished historical trial (loadTrial) or polling a live one
+// (pollForRoles), so the two call sites can't quietly drift into
+// disagreeing about what the same trial record means. apiCallLogs is
+// ordered ascending by timestamp (see getFullTrial in db.ts), so the last
+// matching row for a role is its most recent attempt.
+function deriveRoleStates(data) {
+  const representatives = {};
+  const judges = {};
+
+  for (const arg of data.representativeArguments || []) {
+    representatives[arg.role] = {
+      status: 'success',
+      argumentText: arg.argumentText,
+      seat: arg.seat,
+      modelUsed: arg.modelUsed,
+    };
+  }
+  for (const ruling of data.judgeRulings || []) {
+    judges[ruling.role] = {
+      status: 'success',
+      verdict: ruling.verdict,
+      reasoningText: ruling.reasoningText,
+      modelUsed: ruling.modelUsed,
     };
   }
 
-  if (res.ok && data.status !== 'failed') {
-    return { status: 'success', ...data };
+  for (const log of data.apiCallLogs || []) {
+    const store = log.callType === 'representative' ? representatives : judges;
+    if (log.status !== 'success') {
+      if (store[log.agentRole] && store[log.agentRole].status === 'success') continue;
+      store[log.agentRole] =
+        log.errorMessage === ABORTED_BY_USER_MESSAGE
+          ? { status: 'aborted', error: log.errorMessage }
+          : { status: 'failed', error: log.errorMessage || 'Unknown failure' };
+    } else if (store[log.agentRole] && store[log.agentRole].status === 'success') {
+      // representative_arguments/judge_rulings don't store token counts
+      // (only api_call_logs does) - without this, isTruncated() would have
+      // nothing to compare against.
+      store[log.agentRole].tokens = { prompt: log.promptTokens, completion: log.completionTokens, total: log.totalTokens };
+    }
   }
 
-  return { status: 'failed', error: data.error || `HTTP ${res.status}` };
+  return { representatives, judges };
+}
+
+// How long to keep polling a phase for a role that hasn't resolved yet
+// before giving up and showing it as unclear rather than waiting forever.
+// Comfortably above openrouter.ts's own TOTAL_BUDGET_MS (120s) plus real
+// margin for polling/network overhead. A role that still hasn't resolved
+// by then either genuinely failed in a way this page can't see (the
+// disclosed site-gate/call-cap gap documented in representative.ts/
+// judge.ts - a rejection there is no longer visible to the poller, only
+// in Netlify's function logs) or is a real anomaly worth surfacing
+// honestly rather than silently waiting past.
+const POLL_TIMEOUT_MS = 150000;
+const POLL_INTERVAL_MS = 2500;
+
+// Polls GET /api/trials/:id until every role in `pendingRoles` has
+// resolved (success/failed/aborted) or POLL_TIMEOUT_MS elapses, updating
+// `bucket` (state.representatives or state.judges) and calling `render`
+// incrementally as each role resolves, rather than waiting for the whole
+// batch together.
+async function pollForRoles(pendingRoles, bucket, render, signal) {
+  const remaining = new Set(pendingRoles);
+  const startedAt = Date.now();
+
+  while (remaining.size > 0) {
+    if (signal && signal.aborted) return;
+    if (Date.now() - startedAt >= POLL_TIMEOUT_MS) break;
+
+    try {
+      await sleep(POLL_INTERVAL_MS, signal);
+    } catch {
+      return; // aborted mid-wait - abortCurrentTrial() already set 'aborted' state directly
+    }
+    if (signal && signal.aborted) return;
+
+    let data;
+    try {
+      const res = await fetch(`/api/trials/${state.trialId}`);
+      if (!res.ok) continue;
+      data = await res.json();
+    } catch {
+      continue; // transient - the next tick tries again rather than giving up on one blip
+    }
+
+    const derived = deriveRoleStates(data);
+    let changed = false;
+    for (const role of Array.from(remaining)) {
+      const entry = derived.representatives[role] || derived.judges[role];
+      if (entry) {
+        bucket[role] = entry;
+        remaining.delete(role);
+        changed = true;
+      }
+    }
+    if (changed) render();
+  }
+
+  if (remaining.size > 0) {
+    for (const role of remaining) {
+      bucket[role] = {
+        status: 'timeout',
+        error: `No result after ${Math.round(POLL_TIMEOUT_MS / 1000)}s of polling. The background call may still finish server-side and become visible if you reopen this trial from history later.`,
+      };
+    }
+    render();
+  }
 }
 
 async function runRepresentativesPhase(signal) {
@@ -339,6 +454,7 @@ async function runRepresentativesPhase(signal) {
   }
   renderRepresentatives();
 
+  const triggered = [];
   await runWithConcurrencyLimit(REPRESENTATIVE_ROLES, MAX_CONCURRENT_CALLS, async (role, index) => {
     try {
       await sleep(index * CONCURRENT_CALL_STAGGER_MS, signal);
@@ -347,10 +463,18 @@ async function runRepresentativesPhase(signal) {
       renderRepresentatives();
       return;
     }
-    const result = await callAgent(`/api/trials/${state.trialId}/representatives/${role}`, signal);
-    state.representatives[role] = result;
-    renderRepresentatives();
+    const outcome = await triggerAgent(`/api/trials/${state.trialId}/representatives/${role}`, signal);
+    if (!outcome.accepted) {
+      state.representatives[role] = outcome.result;
+      renderRepresentatives();
+      return;
+    }
+    triggered.push(role);
   });
+
+  if (triggered.length > 0) {
+    await pollForRoles(triggered, state.representatives, renderRepresentatives, signal);
+  }
 }
 
 async function runJudgesPhase(signal) {
@@ -360,6 +484,7 @@ async function runJudgesPhase(signal) {
   }
   renderJudges();
 
+  const triggered = [];
   await runWithConcurrencyLimit(JUDGE_ROLES, MAX_CONCURRENT_CALLS, async (role, index) => {
     try {
       await sleep(index * CONCURRENT_CALL_STAGGER_MS, signal);
@@ -368,10 +493,18 @@ async function runJudgesPhase(signal) {
       renderJudges();
       return;
     }
-    const result = await callAgent(`/api/trials/${state.trialId}/judges/${role}`, signal);
-    state.judges[role] = result;
-    renderJudges();
+    const outcome = await triggerAgent(`/api/trials/${state.trialId}/judges/${role}`, signal);
+    if (!outcome.accepted) {
+      state.judges[role] = outcome.result;
+      renderJudges();
+      return;
+    }
+    triggered.push(role);
   });
+
+  if (triggered.length > 0) {
+    await pollForRoles(triggered, state.judges, renderJudges, signal);
+  }
 }
 
 async function refreshFullTrial() {
@@ -457,52 +590,17 @@ async function loadTrial(trialId) {
 
   state.trialId = trialId;
   state.caseDef = data.caseDef;
-  state.representatives = {};
-  state.judges = {};
-
-  for (const arg of data.representativeArguments) {
-    state.representatives[arg.role] = {
-      status: 'success',
-      argumentText: arg.argumentText,
-      seat: arg.seat,
-      modelUsed: arg.modelUsed,
-    };
-  }
-  for (const ruling of data.judgeRulings) {
-    state.judges[ruling.role] = {
-      status: 'success',
-      verdict: ruling.verdict,
-      reasoningText: ruling.reasoningText,
-      modelUsed: ruling.modelUsed,
-    };
-  }
   state.callLog = data.apiCallLogs || [];
 
-  // Backfill a real 'failed' (or 'aborted') entry for any role that has no
-  // success above, from that role's own logged attempts - apiCallLogs is
-  // ordered ascending by timestamp (see getFullTrial in db.ts), so the last
-  // matching row for a role is its most recent, most relevant attempt.
-  // Without this, that role would have no state entry at all, and
-  // buildAgentStatusBody's "no entry" case would otherwise be the only
-  // thing rendered for it - a generic message with no real detail, even
-  // though the actual error is sitting right there in the log.
-  for (const log of state.callLog) {
-    const store = log.callType === 'representative' ? state.representatives : state.judges;
-    if (log.status !== 'success') {
-      if (store[log.agentRole] && store[log.agentRole].status === 'success') continue;
-      store[log.agentRole] =
-        log.errorMessage === ABORTED_BY_USER_MESSAGE
-          ? { status: 'aborted', error: log.errorMessage }
-          : { status: 'failed', error: log.errorMessage || 'Unknown failure' };
-    } else if (store[log.agentRole] && store[log.agentRole].status === 'success') {
-      // representative_arguments/judge_rulings don't store token counts
-      // (only api_call_logs does) - without this, isTruncated() would have
-      // nothing to compare against for a historical trial, even though the
-      // exact same data that made the live detection possible is sitting
-      // right here in the log.
-      store[log.agentRole].tokens = { prompt: log.promptTokens, completion: log.completionTokens, total: log.totalTokens };
-    }
-  }
+  // Same derivation pollForRoles() uses for a live trial (see
+  // deriveRoleStates) - a role with no success is backfilled with a real
+  // 'failed'/'aborted' entry from its own last logged attempt rather than
+  // left with no state entry at all, which would otherwise make
+  // buildAgentStatusBody's generic "no entry" case the only thing shown
+  // for it, even though the real error is sitting right there in the log.
+  const derived = deriveRoleStates(data);
+  state.representatives = derived.representatives;
+  state.judges = derived.judges;
 
   renderCaseSheet();
   el.phaseRepresentatives.classList.toggle('hidden', Object.keys(state.representatives).length === 0);
@@ -597,6 +695,25 @@ function buildAgentStatusBody(entry, role, verb) {
     const badge = document.createElement('span');
     badge.className = 'badge badge-fail';
     badge.textContent = 'Call failed';
+    wrap.appendChild(badge);
+    const err = document.createElement('p');
+    err.className = 'card-body dim';
+    err.textContent = entry.error;
+    wrap.appendChild(err);
+    return wrap;
+  }
+
+  // Distinct from 'failed': this role's background call may genuinely
+  // still be running server-side (Background Functions get up to 15
+  // minutes) - polling just stopped waiting on this page. Worded to say
+  // that honestly rather than implying the call itself is known to have
+  // failed, since it may not have. See pollForRoles() in the trigger/poll
+  // rewrite for what actually produces this status.
+  if (entry.status === 'timeout') {
+    const wrap = document.createElement('div');
+    const badge = document.createElement('span');
+    badge.className = 'badge badge-fail';
+    badge.textContent = 'No response yet';
     wrap.appendChild(badge);
     const err = document.createElement('p');
     err.className = 'card-body dim';
