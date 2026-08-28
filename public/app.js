@@ -253,9 +253,9 @@ function sleep(ms, signal) {
 // monthly credit budget - a persistently broken model retried forever would
 // quietly burn through that budget for no benefit. The Netlify side of that
 // budget is the one to be most careful with: OpenRouter's quota resets
-// daily (a bad day recovers by tomorrow), but Netlify's resets monthly,
-// well past this project's submission deadline - there's no recovering a
-// month-long mistake in a few days. 150 seconds gives real room for a
+// daily (a bad day recovers by tomorrow), but Netlify's resets monthly -
+// a bad month doesn't recover in a few days the way a bad day does.
+// 150 seconds gives real room for a
 // saturated pool to clear, and for a model that's just genuinely slow that
 // day (real generations have been observed legitimately taking 30-45s
 // under load) to finish, without letting one stuck call run away with

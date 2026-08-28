@@ -7,9 +7,9 @@ import { isSiteGateOk } from './lib/siteGate';
 
 const rawHandler: Handler = async (event) => {
   if (event.httpMethod === 'GET') {
-    // Read-only history listing stays fully open, gate or no gate - a
-    // grader (or anyone else) browsing past runs spends no OpenRouter
-    // quota and only trivial Netlify/Supabase cost either way.
+    // Read-only history listing stays fully open, gate or no gate -
+    // browsing past runs spends no OpenRouter quota and only trivial
+    // Netlify/Supabase cost either way, regardless of who's looking.
     const trials = await listTrials();
     return json(200, { trials });
   }

@@ -15,7 +15,8 @@
 //
 // Fails OPEN (allows the request through) when SITE_GATE_TOKEN isn't
 // configured, rather than closed: an env var that didn't get set must
-// never be able to lock a grader out of an otherwise-working site. Set
+// never be able to lock a legitimate visitor out of an otherwise-working
+// site. Set
 // SITE_GATE_TOKEN in Netlify's production environment to the exact same
 // value as the SITE_GATE_TOKEN constant in public/app.js for this layer
 // to actually do anything - until then it's a harmless no-op, and the
