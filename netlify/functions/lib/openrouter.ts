@@ -37,12 +37,20 @@ const MIN_REMAINING_TO_ATTEMPT_MS = 8000;
 // below), so this upper bound only matters for how long the very first
 // attempt is allowed to run.
 //
-// The constants below are a general estimate (a fixed connection/prompt-
-// processing allowance plus a per-token rate), not a value measured
-// against the specific model currently configured - worth re-tuning once
-// real timing data exists for whichever model is in use.
+// Calibrated against real measured calls against the currently configured
+// model (see the per-attempt console.log lines below), not assumed -
+// three successful representative calls (max_tokens 1000) landed at
+// 13858/14461/16289ms, and three successful judge calls (max_tokens 1400)
+// landed at 10899/12311/16741ms. That's roughly 20-31ms per completion
+// token including connection and prompt-processing overhead, well above
+// what an earlier, un-measured estimate assumed - which is exactly what
+// let a representative call whose real length happened to land on the
+// slow side of that range get cut off by a timeout that had as little as
+// ~700ms of real margin over an otherwise-successful call. The fixed
+// allowance and per-token rate below are sized with real margin above the
+// slowest of those six measurements, not just the average.
 function attemptTimeoutFor(maxTokens: number): number {
-  const estimateMs = 3000 + maxTokens * 14;
+  const estimateMs = 6000 + maxTokens * 18;
   return Math.min(Math.max(estimateMs, 12000), TOTAL_BUDGET_MS);
 }
 
