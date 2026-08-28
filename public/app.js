@@ -62,6 +62,7 @@ const el = {
   phaseRepresentatives: document.getElementById('phase-representatives'),
   representativeCards: document.getElementById('representative-cards'),
   phaseJudges: document.getElementById('phase-judges'),
+  judgesCaveat: document.getElementById('judges-caveat'),
   judgeCards: document.getElementById('judge-cards'),
   phaseLog: document.getElementById('phase-log'),
   callLogBody: document.getElementById('call-log-body'),
@@ -744,6 +745,35 @@ function renderRepresentatives() {
   }
 }
 
+// All three judges in a given trial always see the exact same set of
+// available/unavailable representative arguments - runJudgesPhase() only
+// ever starts after runRepresentativesPhase() has fully resolved every
+// role (success, failure, or abort), so there's no scenario where one
+// judge ruled with 3/4 arguments and another ruled with 4/4 in the same
+// run. That's what makes a single banner above all three cards correct,
+// rather than needing a per-judge-card note or any new stored data - this
+// reads directly off state.representatives, which by the time judges are
+// ever shown (live or historical) already reflects exactly what every
+// judge's own prompt contained (see buildJudgeMessages in prompts.ts,
+// which marks a missing seat "[argument unavailable]" rather than
+// fabricating or silently omitting it).
+function updateJudgesCaveat() {
+  const missing = REPRESENTATIVE_ROLES.filter(
+    (role) => !(state.representatives[role] && state.representatives[role].status === 'success')
+  );
+
+  if (missing.length === 0) {
+    el.judgesCaveat.classList.add('hidden');
+    el.judgesCaveat.textContent = '';
+    return;
+  }
+
+  const available = REPRESENTATIVE_ROLES.length - missing.length;
+  const names = missing.map((role) => REPRESENTATIVE_META[role].name).join(', ');
+  el.judgesCaveat.textContent = `Reached with ${available} of ${REPRESENTATIVE_ROLES.length} representative arguments available (${names} did not respond) - see Representatives above.`;
+  el.judgesCaveat.classList.remove('hidden');
+}
+
 function renderJudges() {
   el.judgeCards.innerHTML = '';
   for (const role of JUDGE_ROLES) {
@@ -778,6 +808,7 @@ function renderJudges() {
     }
     el.judgeCards.appendChild(card);
   }
+  updateJudgesCaveat();
 }
 
 function renderCallLog() {

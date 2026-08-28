@@ -275,6 +275,17 @@ body {
   margin-top: 0;
 }
 
+/* Shown only when fewer than 4 representative arguments were available to
+   the judges (see updateJudgesCaveat in app.js) - deliberately styled as a
+   caveat, not an error: the ruling itself succeeded, this just
+   contextualizes what it was reasoned from. --warn rather than --fail for
+   that reason. */
+.judges-caveat {
+  color: var(--warn);
+  font-size: 0.85rem;
+  margin: 6px 0 0;
+}
+
 .card-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
