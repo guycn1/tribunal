@@ -57,7 +57,7 @@ const rawHandler: Handler = async (event) => {
   const caseDef = await getChargeSheet();
   const messages = buildRepresentativeMessages(repRole, caseDef);
 
-  const result = await callOpenRouter(getModelForRole(repRole), messages, MAX_TOKENS);
+  const result = await callOpenRouter(getModelForRole(repRole), messages, MAX_TOKENS, `representative:${repRole}`);
 
   await logApiCall({
     trialId: id,

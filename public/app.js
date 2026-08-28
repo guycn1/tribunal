@@ -229,7 +229,7 @@ function sleep(ms, signal) {
 // Netlify's platform kills a standard function invocation at ~30s
 // regardless of anything our own code does (measured directly), so a
 // single server call is itself internally retried against a time budget
-// (see TOTAL_BUDGET_MS in openrouter.ts, ~25s) rather than trying to retry
+// (see TOTAL_BUDGET_MS in openrouter.ts, ~26s) rather than trying to retry
 // from the browser across several separate invocations - the previous
 // design of this function did exactly that, which made sense while
 // transient failures were frequent enough to need several fresh attempts
@@ -688,7 +688,7 @@ function renderCallLog() {
 
 // Representatives run concurrently as a group - worst case per group is
 // one server-side call's own internal retry budget (TOTAL_BUDGET_MS in
-// openrouter.ts, ~25s) plus the small stagger between kickoffs, not 4x
+// openrouter.ts, ~26s) plus the small stagger between kickoffs, not 4x
 // that, since roles don't wait on each other. Judges then run as their own
 // concurrent group after, so a genuinely still-working trial takes at most
 // roughly 2x that per-group figure end to end. This threshold has to sit

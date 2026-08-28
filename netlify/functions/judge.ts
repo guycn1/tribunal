@@ -73,7 +73,7 @@ const rawHandler: Handler = async (event) => {
 
   const messages = buildJudgeMessages(judgeRole, caseDef, availableArguments);
 
-  const result = await callOpenRouter(getModelForRole(judgeRole), messages, MAX_TOKENS);
+  const result = await callOpenRouter(getModelForRole(judgeRole), messages, MAX_TOKENS, `judge:${judgeRole}`);
 
   const parsed = result.status === 'success' && result.content ? parseJudgeOutput(result.content) : null;
   const callFailed = result.status === 'failed' || !result.content;
