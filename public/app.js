@@ -214,13 +214,45 @@ async function abortCurrentTrial() {
 }
 
 // In one real run, all 4 representative calls fired at the exact same
-// instant and only the first came back with real content — the other 3
-// (and, separately, all 3 concurrently-fired judges) failed. A small stagger
-// between kickoffs avoids bursting the provider with simultaneous requests
-// from the same account while every call still runs concurrently with the
-// others (none waits for a prior one to finish) — still "in parallel" in
-// the sense that matters, just not all launched in the same instant.
+// instant and only the first came back with real content - the other 3
+// got an immediate 429. A start-time stagger alone (kickoffs 400ms apart)
+// did not fix this on its own in a later run: three of four still failed,
+// two of them not with a fast 429 this time but with a genuine no-response
+// timeout on their retry. A few hundred ms of head start barely matters
+// when each call's real generation takes 15-20s - four calls started even a
+// second apart still spend nearly all of that time overlapping in flight,
+// so a start-time stagger doesn't meaningfully reduce concurrent load on
+// the account. What the same run's judges phase showed instead: 3 calls
+// fired together with the same stagger all succeeded on attempt 1, no rate
+// limit at all. That contrast is the actual signal - this account handles
+// roughly 3 simultaneous in-flight calls cleanly but not 4. So the real fix
+// is a hard cap on how many calls are ever in flight at once
+// (MAX_CONCURRENT_CALLS below, via runWithConcurrencyLimit), not just a
+// stagger on when each one starts - the stagger is kept underneath it as a
+// cheap extra precaution against the pool's initial batch still landing in
+// the same instant, but it is not what does the real work here.
 const CONCURRENT_CALL_STAGGER_MS = 400;
+const MAX_CONCURRENT_CALLS = 3;
+
+// Runs `worker` over `items` with at most `limit` invocations actually in
+// flight at once. A fixed pool of `limit` runners each pull the next item
+// as soon as they're free, so item N+1 only starts once one of the first
+// `limit` items has genuinely finished - not merely after its own stagger
+// delay - which is what actually bounds concurrent load on the account
+// regardless of how long any individual call takes. Every item still runs
+// without waiting on any *specific* other item, only on a free slot, so
+// this stays real concurrency, just bounded.
+async function runWithConcurrencyLimit(items, limit, worker) {
+  let nextIndex = 0;
+  async function runSlot() {
+    while (nextIndex < items.length) {
+      const index = nextIndex++;
+      await worker(items[index], index);
+    }
+  }
+  const slots = Array.from({ length: Math.min(limit, items.length) }, () => runSlot());
+  await Promise.allSettled(slots);
+}
 
 // Abort-aware: rejects immediately (rather than waiting out the delay) if
 // the signal fires mid-wait, so Abort actually stops things promptly even
@@ -307,20 +339,18 @@ async function runRepresentativesPhase(signal) {
   }
   renderRepresentatives();
 
-  await Promise.allSettled(
-    REPRESENTATIVE_ROLES.map(async (role, index) => {
-      try {
-        await sleep(index * CONCURRENT_CALL_STAGGER_MS, signal);
-      } catch {
-        state.representatives[role] = { status: 'aborted', error: 'Stopped by user.' };
-        renderRepresentatives();
-        return;
-      }
-      const result = await callAgent(`/api/trials/${state.trialId}/representatives/${role}`, signal);
-      state.representatives[role] = result;
+  await runWithConcurrencyLimit(REPRESENTATIVE_ROLES, MAX_CONCURRENT_CALLS, async (role, index) => {
+    try {
+      await sleep(index * CONCURRENT_CALL_STAGGER_MS, signal);
+    } catch {
+      state.representatives[role] = { status: 'aborted', error: 'Stopped by user.' };
       renderRepresentatives();
-    })
-  );
+      return;
+    }
+    const result = await callAgent(`/api/trials/${state.trialId}/representatives/${role}`, signal);
+    state.representatives[role] = result;
+    renderRepresentatives();
+  });
 }
 
 async function runJudgesPhase(signal) {
@@ -330,20 +360,18 @@ async function runJudgesPhase(signal) {
   }
   renderJudges();
 
-  await Promise.allSettled(
-    JUDGE_ROLES.map(async (role, index) => {
-      try {
-        await sleep(index * CONCURRENT_CALL_STAGGER_MS, signal);
-      } catch {
-        state.judges[role] = { status: 'aborted', error: 'Stopped by user.' };
-        renderJudges();
-        return;
-      }
-      const result = await callAgent(`/api/trials/${state.trialId}/judges/${role}`, signal);
-      state.judges[role] = result;
+  await runWithConcurrencyLimit(JUDGE_ROLES, MAX_CONCURRENT_CALLS, async (role, index) => {
+    try {
+      await sleep(index * CONCURRENT_CALL_STAGGER_MS, signal);
+    } catch {
+      state.judges[role] = { status: 'aborted', error: 'Stopped by user.' };
       renderJudges();
-    })
-  );
+      return;
+    }
+    const result = await callAgent(`/api/trials/${state.trialId}/judges/${role}`, signal);
+    state.judges[role] = result;
+    renderJudges();
+  });
 }
 
 async function refreshFullTrial() {
