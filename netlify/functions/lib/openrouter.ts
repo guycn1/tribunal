@@ -198,9 +198,19 @@ export async function callOpenRouter(
       }
 
       const servingModel: string = data?.model ?? model;
+      const finishReason = data?.choices?.[0]?.finish_reason;
       console.log(
-        `[openrouter] ${label}: attempt ${attempt} - success, served by ${servingModel}, ${completionTokens} completion tokens, ${Date.now() - startedAt}ms total`
+        `[openrouter] ${label}: attempt ${attempt} - success, served by ${servingModel}, ${completionTokens} completion tokens, finish_reason=${finishReason ?? 'unknown'}, ${Date.now() - startedAt}ms total`
       );
+      if (finishReason === 'length') {
+        // The model was still generating when it hit max_tokens - the
+        // content returned is real, not an error, but it's cut off
+        // mid-thought rather than finished. console.warn (not .log) and a
+        // distinct prefix specifically so this is easy to spot/grep in
+        // terminal output without having to notice that completionTokens
+        // happens to equal the configured cap.
+        console.warn(`[openrouter] ${label}: TRUNCATED - response hit the max_tokens limit (${maxTokens}) before finishing naturally.`);
+      }
 
       return {
         status: 'success',

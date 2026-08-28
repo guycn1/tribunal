@@ -39,6 +39,7 @@ const state = {
   trialId: null,
   caseDef: null,
   modelInfo: null, // { [role]: string }, from /api/case
+  maxTokens: null, // shared completion-token cap, from /api/case - see isTruncated()
   representatives: {},
   judges: {},
   callLog: [],
@@ -110,6 +111,24 @@ function formatDateTimeHtml(dateInput) {
 function shortModelName(modelId) {
   if (!modelId) return 'unknown model';
   return modelId.replace(/^[^/]+\//, '').replace(/:free$/, '');
+}
+
+// True when a successful call's completion hit the shared token cap
+// (state.maxTokens, from /api/case) rather than finishing naturally - the
+// server already logs this distinctly via finish_reason (see openrouter.ts),
+// but that's only visible in the terminal; this is what makes it visible
+// here too. Works for both a live entry (tokens included directly in the
+// success response) and a historical one loaded from a past trial (see
+// loadTrial(), which backfills tokens.completion from the matching
+// api_call_logs row for exactly this purpose).
+function isTruncated(entry) {
+  return Boolean(
+    entry &&
+      entry.status === 'success' &&
+      state.maxTokens &&
+      entry.tokens &&
+      entry.tokens.completion === state.maxTokens
+  );
 }
 
 async function beginTrial() {
@@ -342,6 +361,7 @@ async function loadStaticCaseSheet() {
   const data = await res.json();
   state.caseDef = data.caseDef;
   state.modelInfo = data.modelInfo || null;
+  state.maxTokens = data.maxTokens || null;
   renderCaseSheet();
 }
 
@@ -439,13 +459,20 @@ async function loadTrial(trialId) {
   // thing rendered for it - a generic message with no real detail, even
   // though the actual error is sitting right there in the log.
   for (const log of state.callLog) {
+    const store = log.callType === 'representative' ? state.representatives : state.judges;
     if (log.status !== 'success') {
-      const store = log.callType === 'representative' ? state.representatives : state.judges;
       if (store[log.agentRole] && store[log.agentRole].status === 'success') continue;
       store[log.agentRole] =
         log.errorMessage === ABORTED_BY_USER_MESSAGE
           ? { status: 'aborted', error: log.errorMessage }
           : { status: 'failed', error: log.errorMessage || 'Unknown failure' };
+    } else if (store[log.agentRole] && store[log.agentRole].status === 'success') {
+      // representative_arguments/judge_rulings don't store token counts
+      // (only api_call_logs does) - without this, isTruncated() would have
+      // nothing to compare against for a historical trial, even though the
+      // exact same data that made the live detection possible is sitting
+      // right here in the log.
+      store[log.agentRole].tokens = { prompt: log.promptTokens, completion: log.completionTokens, total: log.totalTokens };
     }
   }
 
@@ -553,6 +580,21 @@ function buildAgentStatusBody(entry, role, verb) {
   return null; // success - caller renders its own content
 }
 
+// Shared by both card types, appended after their normal success content -
+// see isTruncated() for what actually triggers this and why it needs to be
+// derivable for both a live entry and one loaded from history.
+function appendTruncationNotice(card, entry) {
+  if (!isTruncated(entry)) return;
+  const badge = document.createElement('span');
+  badge.className = 'badge badge-warn';
+  badge.textContent = 'Truncated';
+  card.appendChild(badge);
+  const note = document.createElement('p');
+  note.className = 'card-body dim';
+  note.textContent = `This response hit the ${state.maxTokens}-token limit and was cut off before finishing naturally.`;
+  card.appendChild(note);
+}
+
 function renderRepresentatives() {
   el.representativeCards.innerHTML = '';
   for (const role of REPRESENTATIVE_ROLES) {
@@ -578,6 +620,7 @@ function renderRepresentatives() {
       answeredBy.className = 'model-chain';
       answeredBy.innerHTML = `Answered by: <span class="model-name">${shortModelName(entry.modelUsed)}</span>`;
       card.appendChild(answeredBy);
+      appendTruncationNotice(card, entry);
     } else {
       const statusBody = buildAgentStatusBody(entry, role, 'Arguing');
       if (statusBody) card.appendChild(statusBody);
@@ -643,6 +686,7 @@ function renderJudges() {
       answeredBy.className = 'model-chain';
       answeredBy.innerHTML = `Answered by: <span class="model-name">${shortModelName(entry.modelUsed)}</span>`;
       card.appendChild(answeredBy);
+      appendTruncationNotice(card, entry);
     } else {
       const statusBody = buildAgentStatusBody(entry, role, 'Deliberating');
       if (statusBody) card.appendChild(statusBody);
@@ -671,6 +715,11 @@ function renderCallLog() {
   el.callLogBody.innerHTML = '';
   for (const entry of state.callLog) {
     const tr = document.createElement('tr');
+    // A truncated call is still a real success (the call log's own status
+    // column reflects that correctly) - this is layered on top as its own
+    // distinct badge rather than replacing "success", the same reasoning
+    // as the card-level notice in appendTruncationNotice().
+    const wasTruncated = entry.status === 'success' && state.maxTokens && entry.completionTokens === state.maxTokens;
     const statusBadge = entry.status === 'success' ? 'badge-ok' : 'badge-fail';
     const tokens = `${entry.promptTokens} / ${entry.completionTokens} / ${entry.totalTokens}`;
     tr.innerHTML = `
@@ -679,7 +728,10 @@ function renderCallLog() {
       <td>${entry.modelUsed}</td>
       <td>${tokens}</td>
       <td>${formatCost(entry.cost)}</td>
-      <td><span class="badge ${statusBadge}">${entry.status}</span></td>
+      <td>
+        <span class="badge ${statusBadge}">${entry.status}</span>
+        ${wasTruncated ? '<span class="badge badge-warn">truncated</span>' : ''}
+      </td>
       <td>${formatDateTimeHtml(entry.timestamp)}</td>
     `;
     el.callLogBody.appendChild(tr);

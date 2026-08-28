@@ -6,14 +6,16 @@ import { getChargeSheet } from './lib/chargeSheet';
 import { REPRESENTATIVES } from './lib/representatives';
 import { buildRepresentativeMessages } from './lib/prompts';
 import { callOpenRouter } from './lib/openrouter';
-import { getModelForRole } from './lib/models';
+import { getModelForRole, AGENT_MAX_TOKENS } from './lib/models';
 import { getTrial, upsertRepresentativeArgument, logApiCall, isGlobalCallCapExceeded, GLOBAL_CALL_CAP } from './lib/db';
 import { isSiteGateOk } from './lib/siteGate';
 import type { RepresentativeRole } from './lib/types';
 
-// Real headroom for this model's natural verbosity — a tighter cap cut
-// arguments off mid-sentence.
-const MAX_TOKENS = 1000;
+// 1000 previously let a real argument (the longest of its group, 1000
+// completion tokens - exactly the old cap) run out mid-sentence. Now
+// shares AGENT_MAX_TOKENS with judge.ts - see the comment on that constant
+// in models.ts for why one shared value.
+const MAX_TOKENS = AGENT_MAX_TOKENS;
 
 const rawHandler: Handler = async (event) => {
   if (event.httpMethod !== 'POST') {

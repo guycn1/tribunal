@@ -6,7 +6,7 @@ import { getChargeSheet } from './lib/chargeSheet';
 import { JUDGES } from './lib/judges';
 import { buildJudgeMessages, parseJudgeOutput } from './lib/prompts';
 import { callOpenRouter } from './lib/openrouter';
-import { getModelForRole } from './lib/models';
+import { getModelForRole, AGENT_MAX_TOKENS } from './lib/models';
 import {
   getFullTrial,
   upsertJudgeRuling,
@@ -19,15 +19,13 @@ import { isSiteGateOk } from './lib/siteGate';
 import type { JudgeRole, RepresentativeRole } from './lib/types';
 
 // Judges write the longest output of any agent in this system — a fuller
-// opinion plus the leading VERDICT line — so they get the largest cap.
-//
-// Sized against the ~450-600 word target their prompt sets (roughly
-// 600-800 tokens), with headroom above that target rather than a tight
-// fit against it, since a cap hit exactly mid-sentence reads far worse
-// than a shorter completion under it. Worth re-tuning once real
-// completion-length data exists for whichever model is currently
-// configured.
-const MAX_TOKENS = 1400;
+// opinion plus the leading VERDICT line. Sized against the ~450-600 word
+// target their prompt sets (roughly 600-800 tokens), with headroom above
+// that target rather than a tight fit against it, since a cap hit exactly
+// mid-sentence reads far worse than a shorter completion under it. Shares
+// AGENT_MAX_TOKENS with representative.ts - see the comment on that
+// constant in models.ts for why one shared value across both role types.
+const MAX_TOKENS = AGENT_MAX_TOKENS;
 
 const rawHandler: Handler = async (event) => {
   if (event.httpMethod !== 'POST') {
