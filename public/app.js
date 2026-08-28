@@ -38,7 +38,8 @@ const JUDGE_META = {
 const state = {
   trialId: null,
   caseDef: null,
-  modelInfo: null, // { [role]: { chain: string[], lastDitch: string } }, from /api/case
+  modelInfo: null, // { [role]: string }, from /api/case
+  maxTokens: null, // shared completion-token cap, from /api/case - see isTruncated()
   representatives: {},
   judges: {},
   callLog: [],
@@ -104,22 +105,30 @@ function formatDateTimeHtml(dateInput) {
   return `<span class="datetime-part">${datePart},</span><br /><span class="datetime-part">${timePart}</span>`;
 }
 
-// "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free" -> "nemotron-3-nano-omni-30b-a3b-reasoning"
-// Display only - the full id is what's actually sent to the backend/OpenRouter.
+// "mistralai/mistral-small-24b-instruct-2501" -> "mistral-small-24b-instruct-2501"
+// Strips any "provider/" prefix and a trailing ":free" suffix, if present -
+// display only, the full id is what's actually sent to the backend/OpenRouter.
 function shortModelName(modelId) {
   if (!modelId) return 'unknown model';
-  return modelId.replace(/^nvidia\//, '').replace(/:free$/, '');
+  return modelId.replace(/^[^/]+\//, '').replace(/:free$/, '');
 }
 
-function formatModelChain(role) {
-  const info = state.modelInfo && state.modelInfo[role];
-  if (!info) return 'the configured model chain';
-  return info.chain.map(shortModelName).join(' → ');
-}
-
-function formatLastDitchModel(role) {
-  const info = state.modelInfo && state.modelInfo[role];
-  return info ? shortModelName(info.lastDitch) : 'the last-ditch model';
+// True when a successful call's completion hit the shared token cap
+// (state.maxTokens, from /api/case) rather than finishing naturally - the
+// server already logs this distinctly via finish_reason (see openrouter.ts),
+// but that's only visible in the terminal; this is what makes it visible
+// here too. Works for both a live entry (tokens included directly in the
+// success response) and a historical one loaded from a past trial (see
+// loadTrial(), which backfills tokens.completion from the matching
+// api_call_logs row for exactly this purpose).
+function isTruncated(entry) {
+  return Boolean(
+    entry &&
+      entry.status === 'success' &&
+      state.maxTokens &&
+      entry.tokens &&
+      entry.tokens.completion === state.maxTokens
+  );
 }
 
 async function beginTrial() {
@@ -174,7 +183,7 @@ async function beginTrial() {
 async function abortCurrentTrial() {
   if (!state.abortController || !state.trialId) return;
 
-  const isPending = (status) => status === 'loading' || status === 'retrying' || status === 'last-ditch';
+  const isPending = (status) => status === 'loading';
   const pendingRoles = [
     ...REPRESENTATIVE_ROLES.filter((r) => isPending(state.representatives[r] && state.representatives[r].status)),
     ...JUDGE_ROLES.filter((r) => isPending(state.judges[r] && state.judges[r].status)),
@@ -207,11 +216,10 @@ async function abortCurrentTrial() {
 // In one real run, all 4 representative calls fired at the exact same
 // instant and only the first came back with real content — the other 3
 // (and, separately, all 3 concurrently-fired judges) failed. A small stagger
-// between kickoffs avoids bursting this free-tier model with simultaneous
-// requests from the same account while every call still runs concurrently
-// with the others (none waits for a prior one to finish) — still "in
-// parallel" in the sense that matters, just not all launched in the same
-// instant.
+// between kickoffs avoids bursting the provider with simultaneous requests
+// from the same account while every call still runs concurrently with the
+// others (none waits for a prior one to finish) — still "in parallel" in
+// the sense that matters, just not all launched in the same instant.
 const CONCURRENT_CALL_STAGGER_MS = 400;
 
 // Abort-aware: rejects immediately (rather than waiting out the delay) if
@@ -238,156 +246,59 @@ function sleep(ms, signal) {
 }
 
 // Netlify's platform kills a standard function invocation at ~30s
-// regardless of anything our own code does (measured directly), and true
-// background functions (no such ceiling) are a paid-plan-only feature - not
-// an option here. So a single server call cannot itself run for minutes.
-// Instead, each server call stays a short, safe, well-bounded attempt (it
-// already tries a 3-model fallback chain internally, ~25s worst case), and
-// *this* loop is what actually waits "however long it takes": on any
-// retryable failure it just calls the same endpoint again, from the
-// browser, which has no execution ceiling at all. A few minutes of waiting
-// is just several fresh ~25s server calls back to back.
+// regardless of anything our own code does (measured directly), so a
+// single server call is itself internally retried against a time budget
+// (see TOTAL_BUDGET_MS in openrouter.ts, ~26s) rather than trying to retry
+// from the browser across several separate invocations - the previous
+// design of this function did exactly that, which made sense while
+// transient failures were frequent enough to need several fresh attempts
+// in a row, but adds real complexity that isn't earning its keep once the
+// server-side budget alone is expected to cover the normal case.
 //
-// Not truly unbounded, though: a wall-clock cap still applies, because
-// every retry is real, metered compute time on a free tier with a hard
-// monthly credit budget - a persistently broken model retried forever would
-// quietly burn through that budget for no benefit. The Netlify side of that
-// budget is the one to be most careful with: OpenRouter's quota resets
-// daily (a bad day recovers by tomorrow), but Netlify's resets monthly -
-// a bad month doesn't recover in a few days the way a bad day does.
-// 150 seconds gives real room for a
-// saturated pool to clear, and for a model that's just genuinely slow that
-// day (real generations have been observed legitimately taking 30-45s
-// under load) to finish, without letting one stuck call run away with
-// meaningful compute time. Once that ceiling is hit, exactly one further
-// attempt is made against a distinct, explicitly slower fallback model
-// (nemotron-3.5-lightning) via ?lastDitch=true, single-shot, no retry - see
-// callOpenRouterOnce on the backend. The one failure this does NOT retry at
-// all is the daily OpenRouter quota being exhausted - that cannot succeed
-// again before the reset named in the error, no matter how many more
-// attempts are made, so it fails immediately instead of waiting out the
-// full ceiling pointlessly.
-const RETRY_UNTIL_SUCCESS_MS = 150 * 1000;
-const RETRY_BACKOFF_BASE_MS = 2000;
-const RETRY_BACKOFF_MAX_MS = 6000;
-const isQuotaExhausted = (message) => /quota exhausted/i.test(message || '');
-// Matches the message callOpenRouter()/callOpenRouterOnce() produce for a
-// real HTTP 402 from OpenRouter (the paid account's credit balance is
-// genuinely at $0) - see openrouter.ts. representative.ts/judge.ts always
-// wrap an OpenRouter-layer failure as a 502, so the res.status-based 4xx
-// check below never catches this on its own; like isQuotaExhausted above,
-// it needs its own text match. Running out of real money won't resolve
-// itself by retrying, so this is treated as non-retryable the same way.
-const isOutOfCredits = (message) => /out of credits/i.test(message || '');
-
-function nextBackoff(attempt) {
-  return Math.min(RETRY_BACKOFF_BASE_MS * Math.pow(1.3, attempt - 1), RETRY_BACKOFF_MAX_MS) + Math.random() * 500;
-}
-
-// Drives one agent's call end to end: normal retrying against the main
-// model chain until RETRY_UNTIL_SUCCESS_MS, then exactly one last-ditch
-// attempt, then a real, terminal outcome. onUpdate fires on every phase
-// transition AND on a steady ~500ms tick throughout (via setInterval) so a
-// live countdown is possible even while a request is in flight and no
-// discrete event has fired - the alternative (only updating between
-// requests) would make the UI look frozen for however long the current
-// attempt takes, which is exactly the kind of silent-looking wait this
-// whole feature exists to avoid.
-async function callAgentWithRetry(url, onUpdate, signal) {
-  const startedAt = Date.now();
-  const local = { attempt: 0, error: null, phase: 'loading' };
-
-  const tick = () => {
-    const elapsedMs = Date.now() - startedAt;
-    const remainingMs = Math.max(0, RETRY_UNTIL_SUCCESS_MS - elapsedMs);
-    onUpdate({ status: local.phase, attempt: local.attempt, error: local.error, elapsedMs, remainingMs });
-  };
-
-  const intervalId = setInterval(tick, 500);
-  tick();
-
+// So this makes exactly one request and reports whatever comes back,
+// success or failure - no client-driven retry loop, no separate fallback
+// model, no elapsed-time countdown to render while waiting.
+async function callAgent(url, signal) {
+  let res;
   try {
-    while (true) {
-      if (signal && signal.aborted) {
-        return { status: 'aborted', error: 'Stopped by user.' };
-      }
-
-      local.attempt += 1;
-      const elapsedMs = Date.now() - startedAt;
-      const overCeiling = elapsedMs >= RETRY_UNTIL_SUCCESS_MS;
-      local.phase = overCeiling ? 'last-ditch' : local.attempt === 1 ? 'loading' : 'retrying';
-      tick();
-
-      const requestUrl = overCeiling ? `${url}?lastDitch=true` : url;
-      let res, data;
-      try {
-        res = await fetch(requestUrl, { method: 'POST', signal, headers: SITE_GATE_HEADERS });
-      } catch (err) {
-        // A genuine network-level failure - offline, DNS, connection
-        // refused, or the AbortController firing. Nothing came back at
-        // all, so there's no response to inspect.
-        if ((err && err.name === 'AbortError') || (signal && signal.aborted)) {
-          return { status: 'aborted', error: 'Stopped by user.' };
-        }
-        local.error = String(err);
-        if (overCeiling) {
-          return { status: 'failed', error: local.error, lastDitchAttempted: true };
-        }
-        tick();
-        try {
-          await sleep(nextBackoff(local.attempt), signal);
-        } catch {
-          return { status: 'aborted', error: 'Stopped by user.' };
-        }
-        continue;
-      }
-
-      try {
-        data = await res.json();
-      } catch {
-        // A response DID come back, but its body wasn't the JSON this
-        // app's own functions always return. The one real way that
-        // happens is Netlify's own per-IP rate limiter (see the
-        // rateLimit config on representative.ts/judge.ts) blocking the
-        // request before this app's function code ever runs, returning a
-        // plain error page instead - give a specific, honest reason for
-        // that recognizable case rather than surfacing a raw "Unexpected
-        // token" parse error, and a generic-but-still-honest one for any
-        // other unrecognized non-JSON response.
-        data = {
-          status: 'failed',
-          error:
-            res.status === 429
-              ? "Too many requests from this network in a short time (Netlify's own per-IP rate limit, separate from this app's own call cap). Wait a few minutes and try again."
-              : `Server returned an unexpected non-JSON response (HTTP ${res.status}).`,
-        };
-      }
-
-      if (res.ok && data.status !== 'failed') {
-        return { status: 'success', ...data, wasLastDitch: overCeiling };
-      }
-
-      const error = data.error || `HTTP ${res.status}`;
-      local.error = error;
-
-      if (isQuotaExhausted(error) || isOutOfCredits(error) || (res.status >= 400 && res.status < 500) || overCeiling) {
-        // Quota-exhausted, out of real credits, a malformed request (4xx),
-        // or this WAS the last-ditch attempt itself - none of these are
-        // worth another round, for the reasons in the comment above this
-        // function.
-        return { status: 'failed', error, lastDitchAttempted: overCeiling };
-      }
-
-      tick();
-      try {
-        await sleep(nextBackoff(local.attempt), signal);
-      } catch {
-        return { status: 'aborted', error: 'Stopped by user.' };
-      }
+    res = await fetch(url, { method: 'POST', signal, headers: SITE_GATE_HEADERS });
+  } catch (err) {
+    // A genuine network-level failure - offline, DNS, connection refused,
+    // or the AbortController firing. Nothing came back at all, so there's
+    // no response to inspect.
+    if ((err && err.name === 'AbortError') || (signal && signal.aborted)) {
+      return { status: 'aborted', error: 'Stopped by user.' };
     }
-  } finally {
-    clearInterval(intervalId);
+    return { status: 'failed', error: String(err) };
   }
+
+  let data;
+  try {
+    data = await res.json();
+  } catch {
+    // A response DID come back, but its body wasn't the JSON this app's
+    // own functions always return. The one real way that happens is
+    // Netlify's own per-IP rate limiter (see the rateLimit config on
+    // representative.ts/judge.ts) blocking the request before this app's
+    // function code ever runs, returning a plain error page instead -
+    // give a specific, honest reason for that recognizable case rather
+    // than surfacing a raw "Unexpected token" parse error, and a
+    // generic-but-still-honest one for any other unrecognized non-JSON
+    // response.
+    data = {
+      status: 'failed',
+      error:
+        res.status === 429
+          ? "Too many requests from this network in a short time (Netlify's own per-IP rate limit, separate from this app's own call cap). Wait a few minutes and try again."
+          : `Server returned an unexpected non-JSON response (HTTP ${res.status}).`,
+    };
+  }
+
+  if (res.ok && data.status !== 'failed') {
+    return { status: 'success', ...data };
+  }
+
+  return { status: 'failed', error: data.error || `HTTP ${res.status}` };
 }
 
 async function runRepresentativesPhase(signal) {
@@ -405,14 +316,7 @@ async function runRepresentativesPhase(signal) {
         renderRepresentatives();
         return;
       }
-      const result = await callAgentWithRetry(
-        `/api/trials/${state.trialId}/representatives/${role}`,
-        (progress) => {
-          state.representatives[role] = progress;
-          renderRepresentatives();
-        },
-        signal
-      );
+      const result = await callAgent(`/api/trials/${state.trialId}/representatives/${role}`, signal);
       state.representatives[role] = result;
       renderRepresentatives();
     })
@@ -435,14 +339,7 @@ async function runJudgesPhase(signal) {
         renderJudges();
         return;
       }
-      const result = await callAgentWithRetry(
-        `/api/trials/${state.trialId}/judges/${role}`,
-        (progress) => {
-          state.judges[role] = progress;
-          renderJudges();
-        },
-        signal
-      );
+      const result = await callAgent(`/api/trials/${state.trialId}/judges/${role}`, signal);
       state.judges[role] = result;
       renderJudges();
     })
@@ -464,6 +361,7 @@ async function loadStaticCaseSheet() {
   const data = await res.json();
   state.caseDef = data.caseDef;
   state.modelInfo = data.modelInfo || null;
+  state.maxTokens = data.maxTokens || null;
   renderCaseSheet();
 }
 
@@ -561,18 +459,20 @@ async function loadTrial(trialId) {
   // thing rendered for it - a generic message with no real detail, even
   // though the actual error is sitting right there in the log.
   for (const log of state.callLog) {
+    const store = log.callType === 'representative' ? state.representatives : state.judges;
     if (log.status !== 'success') {
-      const store = log.callType === 'representative' ? state.representatives : state.judges;
       if (store[log.agentRole] && store[log.agentRole].status === 'success') continue;
-      const lastDitchModel = state.modelInfo && state.modelInfo[log.agentRole] && state.modelInfo[log.agentRole].lastDitch;
       store[log.agentRole] =
         log.errorMessage === ABORTED_BY_USER_MESSAGE
           ? { status: 'aborted', error: log.errorMessage }
-          : {
-              status: 'failed',
-              error: log.errorMessage || 'Unknown failure',
-              lastDitchAttempted: Boolean(lastDitchModel) && log.modelUsed === lastDitchModel,
-            };
+          : { status: 'failed', error: log.errorMessage || 'Unknown failure' };
+    } else if (store[log.agentRole] && store[log.agentRole].status === 'success') {
+      // representative_arguments/judge_rulings don't store token counts
+      // (only api_call_logs does) - without this, isTruncated() would have
+      // nothing to compare against for a historical trial, even though the
+      // exact same data that made the live detection possible is sitting
+      // right here in the log.
+      store[log.agentRole].tokens = { prompt: log.promptTokens, completion: log.completionTokens, total: log.totalTokens };
     }
   }
 
@@ -612,17 +512,14 @@ function renderCaseSheet() {
 // real, ongoing activity, distinct from the text-only states (aborted,
 // failed, success) where nothing is in flight anymore.
 //
-// Rendering here rebuilds each card's whole DOM wholesale on every ~500ms
-// tick (to update the live elapsed/countdown text), which recreates the
-// spinner element every time too - and a CSS animation restarts from 0%
-// whenever its element is torn down and recreated, so without this it
-// visibly snaps back after a fraction of a rotation instead of spinning
-// continuously. Fix: a negative animation-delay keyed to the real wall
-// clock tells the browser "this animation has already been running for X
-// ms," so a freshly created element starts at exactly the angle a
-// continuously running one would already be at - making the recreation
-// invisible no matter how often it happens. Must match the animation's
-// duration in styles.css (currently 0.8s / 800ms).
+// A CSS animation restarts from 0% whenever its element is torn down and
+// recreated, which would otherwise make a spinner visibly snap back to the
+// start on each re-render instead of appearing to spin continuously. Fix:
+// a negative animation-delay keyed to the real wall clock tells the
+// browser "this animation has already been running for X ms," so a freshly
+// created element starts at exactly the angle a continuously running one
+// would already be at. Must match the animation's duration in styles.css
+// (currently 0.8s / 800ms).
 const SPINNER_ANIMATION_MS = 800;
 function spinnerHtml() {
   const offset = -(Date.now() % SPINNER_ANIMATION_MS);
@@ -648,36 +545,9 @@ function buildAgentStatusBody(entry, role, verb) {
 
   if (entry.status === 'loading') {
     body.className = 'card-body dim';
-    body.innerHTML = `${spinnerHtml()}${verb}…<div class="model-chain">Trying: <span class="model-name">${formatModelChain(role)}</span></div>`;
-    return body;
-  }
-
-  if (entry.status === 'retrying') {
-    const secondsLeft = Math.max(0, Math.ceil((entry.remainingMs || 0) / 1000));
-    body.className = 'card-body dim';
-    // entry.error can echo a truncated raw response body from OpenRouter
-    // (see safeReadText in openrouter.ts), which is external, unpredictable
-    // text - built as its own text node below rather than interpolated
-    // into the innerHTML template with everything else, which is all
-    // either a number or a model id string we control.
-    body.innerHTML = `
-      ${spinnerHtml()}Still trying (attempt ${entry.attempt}, ${Math.round(entry.elapsedMs / 1000)}s so far)…
-      <div class="model-chain">Trying: <span class="model-name">${formatModelChain(role)}</span></div>
-      <div class="model-chain">Last-ditch fallback in <span class="countdown">${secondsLeft}s</span> if this keeps failing</div>
-    `;
-    const errLine = document.createElement('div');
-    errLine.className = 'model-chain';
-    errLine.textContent = `Last attempt: ${entry.error}`;
-    body.appendChild(errLine);
-    return body;
-  }
-
-  if (entry.status === 'last-ditch') {
-    body.className = 'card-body dim';
-    body.innerHTML = `
-      ${spinnerHtml()}Normal chain exhausted after 150s — making one final attempt with <span class="model-name">${formatLastDitchModel(role)}</span>…
-      <div class="model-chain">This model is known to be slower; this attempt may take longer than the others did.</div>
-    `;
+    const modelId = state.modelInfo && state.modelInfo[role];
+    const modelLine = modelId ? `<div class="model-chain">Model: <span class="model-name">${shortModelName(modelId)}</span></div>` : '';
+    body.innerHTML = `${spinnerHtml()}${verb}…${modelLine}`;
     return body;
   }
 
@@ -702,14 +572,27 @@ function buildAgentStatusBody(entry, role, verb) {
     wrap.appendChild(badge);
     const err = document.createElement('p');
     err.className = 'card-body dim';
-    err.textContent = entry.lastDitchAttempted
-      ? `${entry.error} (a last-ditch attempt with ${formatLastDitchModel(role)} was also tried and also failed)`
-      : entry.error;
+    err.textContent = entry.error;
     wrap.appendChild(err);
     return wrap;
   }
 
   return null; // success - caller renders its own content
+}
+
+// Shared by both card types, appended after their normal success content -
+// see isTruncated() for what actually triggers this and why it needs to be
+// derivable for both a live entry and one loaded from history.
+function appendTruncationNotice(card, entry) {
+  if (!isTruncated(entry)) return;
+  const badge = document.createElement('span');
+  badge.className = 'badge badge-warn';
+  badge.textContent = 'Truncated';
+  card.appendChild(badge);
+  const note = document.createElement('p');
+  note.className = 'card-body dim';
+  note.textContent = `This response hit the ${state.maxTokens}-token limit and was cut off before finishing naturally.`;
+  card.appendChild(note);
 }
 
 function renderRepresentatives() {
@@ -735,8 +618,9 @@ function renderRepresentatives() {
       card.appendChild(body);
       const answeredBy = document.createElement('p');
       answeredBy.className = 'model-chain';
-      answeredBy.innerHTML = `Answered by: <span class="model-name">${shortModelName(entry.modelUsed)}</span>${entry.wasLastDitch ? ' (last-ditch fallback)' : ''}`;
+      answeredBy.innerHTML = `Answered by: <span class="model-name">${shortModelName(entry.modelUsed)}</span>`;
       card.appendChild(answeredBy);
+      appendTruncationNotice(card, entry);
     } else {
       const statusBody = buildAgentStatusBody(entry, role, 'Arguing');
       if (statusBody) card.appendChild(statusBody);
@@ -800,8 +684,9 @@ function renderJudges() {
 
       const answeredBy = document.createElement('p');
       answeredBy.className = 'model-chain';
-      answeredBy.innerHTML = `Answered by: <span class="model-name">${shortModelName(entry.modelUsed)}</span>${entry.wasLastDitch ? ' (last-ditch fallback)' : ''}`;
+      answeredBy.innerHTML = `Answered by: <span class="model-name">${shortModelName(entry.modelUsed)}</span>`;
       card.appendChild(answeredBy);
+      appendTruncationNotice(card, entry);
     } else {
       const statusBody = buildAgentStatusBody(entry, role, 'Deliberating');
       if (statusBody) card.appendChild(statusBody);
@@ -809,6 +694,16 @@ function renderJudges() {
     el.judgeCards.appendChild(card);
   }
   updateJudgesCaveat();
+}
+
+// A single decimal place was accurate but uninformative back when every
+// call ran on a $0 free-tier model - real per-call cost on a paid model is
+// a small fraction of a cent, which one decimal place rounds down to
+// indistinguishable from zero every time. Four places keeps real cost
+// visible (the database itself still stores full precision regardless of
+// what's shown here).
+function formatCost(cost) {
+  return `$${Number(cost).toFixed(4)}`;
 }
 
 function renderCallLog() {
@@ -820,6 +715,11 @@ function renderCallLog() {
   el.callLogBody.innerHTML = '';
   for (const entry of state.callLog) {
     const tr = document.createElement('tr');
+    // A truncated call is still a real success (the call log's own status
+    // column reflects that correctly) - this is layered on top as its own
+    // distinct badge rather than replacing "success", the same reasoning
+    // as the card-level notice in appendTruncationNotice().
+    const wasTruncated = entry.status === 'success' && state.maxTokens && entry.completionTokens === state.maxTokens;
     const statusBadge = entry.status === 'success' ? 'badge-ok' : 'badge-fail';
     const tokens = `${entry.promptTokens} / ${entry.completionTokens} / ${entry.totalTokens}`;
     tr.innerHTML = `
@@ -827,8 +727,11 @@ function renderCallLog() {
       <td>${entry.callType}</td>
       <td>${entry.modelUsed}</td>
       <td>${tokens}</td>
-      <td>$${Number(entry.cost).toFixed(1)}</td>
-      <td><span class="badge ${statusBadge}">${entry.status}</span></td>
+      <td>${formatCost(entry.cost)}</td>
+      <td>
+        <span class="badge ${statusBadge}">${entry.status}</span>
+        ${wasTruncated ? '<span class="badge badge-warn">truncated</span>' : ''}
+      </td>
       <td>${formatDateTimeHtml(entry.timestamp)}</td>
     `;
     el.callLogBody.appendChild(tr);
@@ -836,20 +739,22 @@ function renderCallLog() {
 }
 
 // Representatives run concurrently as a group - worst case per group is
-// RETRY_UNTIL_SUCCESS_MS (150s) plus one last-ditch attempt (up to ~26s),
-// not 4x that, since roles don't wait on each other - then judges run as
-// their own concurrent group after, so a genuinely still-working trial
-// takes at most roughly 2x that per-group figure (~352s) end to end. This
-// threshold has to sit safely above that, or a trial that's actually still
-// retrying gets mislabeled as abandoned.
-const INTERRUPTED_THRESHOLD_MS = 7 * 60 * 1000;
+// one server-side call's own internal retry budget (TOTAL_BUDGET_MS in
+// openrouter.ts, ~26s) plus the small stagger between kickoffs, not 4x
+// that, since roles don't wait on each other. Judges then run as their own
+// concurrent group after, so a genuinely still-working trial takes at most
+// roughly 2x that per-group figure end to end. This threshold has to sit
+// safely above that, or a trial that's actually still working gets
+// mislabeled as abandoned.
+const INTERRUPTED_THRESHOLD_MS = 3 * 60 * 1000;
 
 // What "Completed - with failures" is based on: whether the trial's final,
 // persisted results are actually incomplete - NOT whether any individual
-// call ever logged a failure along the way. On a free tier, a transient
-// failure that the retry loop recovers from within its ceiling is the
-// expected case, not the exception - a label driven by hadFailures would
-// fire on most runs and stop meaning anything. The call log table still
+// call ever logged a failure along the way. A transient failure that the
+// server-side retry recovers from within its own budget is a real, logged
+// attempt that simply isn't the final outcome - a label driven by
+// hadFailures would flag a run like that as tainted even though the
+// result is complete and correct. The call log table still
 // shows every real attempt, success or failure, in full; this only changes
 // what the one-line sidebar summary reports.
 const TOTAL_EXPECTED_RESULTS = REPRESENTATIVE_ROLES.length + JUDGE_ROLES.length;

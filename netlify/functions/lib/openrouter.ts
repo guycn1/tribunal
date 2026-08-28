@@ -1,67 +1,58 @@
-import { getModelChainForRole } from './models';
 import { calculateCost } from './pricing';
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
 // Retries are bounded by a total time budget rather than a fixed attempt
-// count, because the two failure modes here have wildly different costs and
-// a single attempt count cannot serve both. Measured against the real free
-// tier:
-//   - A saturated upstream worker pool returns in ~400-700ms. Retrying that
-//     is nearly free, so a fixed low retry cap wastes recoverable calls.
-//   - A genuine successful generation needs ~12-13s to stream its full body.
-// The budget leaves headroom under Netlify's observed 30s platform timeout
-// for the Supabase writes that surround this call.
-const TOTAL_BUDGET_MS = 25000;
-// Don't start an attempt the remaining budget cannot plausibly finish. A
-// generation that cannot complete would just be aborted partway, spending
-// free-tier quota to produce nothing.
+// count, so a call that fails fast (e.g. a burst rate limit, returned in
+// under a second) gets more attempts than one where each try genuinely
+// takes most of the budget.
+//
+// 26000ms is the most this can safely ask for, not an arbitrary round
+// number: Netlify's own platform-level timeout for a standard function
+// invocation was directly observed at ~30s, and it fires regardless of any
+// AbortSignal this code sets - if that kill happens first, the whole
+// invocation dies before any of this function's own error-logging or the
+// Supabase writes that run after callOpenRouter() resolves can execute,
+// which is a silent failure rather than a clean one. The ~4s of margin
+// below the observed ceiling is deliberately kept, not spent, for exactly
+// those writes plus general timing imprecision - there is no larger safe
+// value to raise this to on this platform; genuinely accommodating a
+// longer wait would need a different architecture (e.g. a Netlify
+// Background Function the frontend polls for, which has no such ceiling
+// but isn't available on every plan).
+const TOTAL_BUDGET_MS = 26000;
+// Don't start an attempt the remaining budget cannot plausibly finish - an
+// attempt that gets aborted partway through generation spends real cost to
+// produce nothing usable.
 const MIN_REMAINING_TO_ATTEMPT_MS = 8000;
 
-// Per-attempt ceiling, scaled to how much text the call actually asked for.
-// A single flat value cannot serve both call types: representatives
-// complete in ~12-13s, while judges - whose prompt also carries all four
-// representative arguments - were measured at 16-21s before their output
-// length was reined in. A timeout sized for representatives silently aborts
-// judges mid-generation, which is exactly how an earlier flat 8s value
-// turned working calls into failures - note that a timeout signal passed to
-// fetch() stays armed while the response body is read, so this must cover
-// generation time, not just time-to-headers (~350ms).
+// Per-attempt ceiling, scaled to how much text the call actually asked for
+// - a single flat value can't serve both call types here, since judges
+// (whose prompt also carries all four representative arguments, and whose
+// max_tokens is set higher) need more generation time than representatives
+// do. A timeout signal passed to fetch() stays armed while the response
+// body is read, so this has to cover generation time, not just
+// time-to-headers. In practice a single attempt's timeout is also always
+// further clamped by whatever's left of TOTAL_BUDGET_MS (see remainingMs()
+// below), so this upper bound only matters for how long the very first
+// attempt is allowed to run.
 //
-// Derived from the measured throughput (~55-80 completion tokens/sec) plus
-// a fixed allowance for connection and prompt processing, then clamped so
-// that even the largest call leaves the surrounding Supabase writes room
-// under the platform's 30s ceiling.
+// Calibrated against real measured calls against the currently configured
+// model (see the per-attempt console.log lines below), not assumed -
+// three successful representative calls (max_tokens 1000) landed at
+// 13858/14461/16289ms, and three successful judge calls (max_tokens 1400)
+// landed at 10899/12311/16741ms. That's roughly 20-31ms per completion
+// token including connection and prompt-processing overhead, well above
+// what an earlier, un-measured estimate assumed - which is exactly what
+// let a representative call whose real length happened to land on the
+// slow side of that range get cut off by a timeout that had as little as
+// ~700ms of real margin over an otherwise-successful call. The fixed
+// allowance and per-token rate below are sized with real margin above the
+// slowest of those six measurements, not just the average.
 function attemptTimeoutFor(maxTokens: number): number {
-  const estimateMs = 3000 + maxTokens * 14;
-  return Math.min(Math.max(estimateMs, 12000), 22000);
+  const estimateMs = 6000 + maxTokens * 18;
+  return Math.min(Math.max(estimateMs, 12000), TOTAL_BUDGET_MS);
 }
-
-// The last-ditch call (callOpenRouterOnce, below) is a single attempt with
-// no retry loop and no TOTAL_BUDGET_MS wrapper around it, so - unlike
-// attemptTimeoutFor above, which in practice is always further clamped by
-// the main loop's remainingMs() - this ceiling really is the full time that
-// attempt gets. Real generations have been observed legitimately taking
-// 30-45s under load, well past attemptTimeoutFor's 22s ceiling, which is
-// what was cutting last-ditch attempts off before a genuine (if slow)
-// response could land. Flat rather than token-scaled deliberately: the
-// slowness observed here isn't proportional to output length (even a
-// trivial ~10-token reply from this same model was measured taking 25s+
-// under load — see the "Default model switched" bug log entry), so a
-// per-token formula doesn't model it; a flat ceiling close to the real
-// constraint below does.
-//
-// That constraint is Netlify's own platform-level timeout for this
-// function, observed at ~30s, which fires regardless of any AbortSignal
-// this code sets. If that kill happens first, the whole invocation dies
-// before any of this function's own error-logging or the Supabase writes
-// that follow it can run — a silent failure, not a clean one. 26000ms is
-// the most this can safely ask for while leaving real slack under that
-// ~30s wall for those writes. A single Netlify Function invocation
-// genuinely cannot wait a full 45s no matter what value this holds — that
-// needs a different architecture (e.g. a Background Function the frontend
-// polls for), not a larger number here.
-const LAST_DITCH_TIMEOUT_MS = 26000;
 
 export interface OpenRouterMessage {
   role: 'system' | 'user';
@@ -79,13 +70,17 @@ export interface OpenRouterResult {
   errorMessage?: string;
 }
 
+// label identifies the caller in the log lines below (e.g.
+// "representative:jon_snow") - purely diagnostic, never sent to OpenRouter
+// or returned to the client. With seven agents potentially calling this
+// concurrently, a log line with no indication of which one it belongs to
+// is close to useless once more than one is in flight at the same time.
 export async function callOpenRouter(
-  agentRole: string,
+  model: string,
   messages: OpenRouterMessage[],
-  maxTokens: number
+  maxTokens: number,
+  label: string
 ): Promise<OpenRouterResult> {
-  const modelChain = getModelChainForRole(agentRole);
-  const model = modelChain[0];
   const apiKey = process.env.OPENROUTER_API_KEY;
 
   if (!apiKey) {
@@ -99,7 +94,9 @@ export async function callOpenRouter(
   let attempt = 0;
 
   while (remainingMs() >= MIN_REMAINING_TO_ATTEMPT_MS) {
+    attempt++;
     const attemptTimeout = Math.min(attemptTimeoutFor(maxTokens), remainingMs());
+    console.log(`[openrouter] ${label}: attempt ${attempt} starting, timeout=${attemptTimeout}ms, remaining budget=${remainingMs()}ms`);
     try {
       const response = await fetch(OPENROUTER_URL, {
         method: 'POST',
@@ -113,17 +110,12 @@ export async function callOpenRouter(
         },
         body: JSON.stringify({
           model,
-          // Fallback chain. These free models share upstream worker pools
-          // that are frequently saturated; each id has its own pool, so
-          // letting OpenRouter route down the list turns the single most
-          // common failure into a served request.
-          models: modelChain,
           messages,
           max_tokens: maxTokens,
-          // Reasoning models otherwise spend hundreds to thousands of
+          // Reasoning models can otherwise spend hundreds to thousands of
           // hidden tokens per call before producing visible output —
-          // invisible in the response, but the reason calls were taking
-          // 60+ seconds by default.
+          // invisible in the response, but a real driver of call latency
+          // when enabled by default.
           reasoning: { enabled: false },
         }),
         signal: AbortSignal.timeout(attemptTimeout),
@@ -131,29 +123,25 @@ export async function callOpenRouter(
 
       if (response.status === 429) {
         // Distinguish a short burst limit, which retrying inside this call
-        // can clear, from a longer-window quota (free-tier daily, or a
-        // paid account's own rate-limit tier), which it cannot. Retrying
-        // the latter just hammers a limiter that will keep refusing for a
+        // can clear, from a longer-window quota it cannot. Retrying the
+        // latter just hammers a limiter that will keep refusing for a
         // while, and reports a useless "gave up after N attempts" instead
         // of the actual reason. OpenRouter tells us which it is via
-        // X-RateLimit-Reset (epoch ms) - not free-tier-specific, so the
-        // message below deliberately doesn't assume which kind of account
-        // is being used.
+        // X-RateLimit-Reset (epoch ms).
         const resetAt = Number(response.headers.get('x-ratelimit-reset'));
         const retryAfterMs = Number.isFinite(resetAt) && resetAt > 0 ? resetAt - Date.now() : 0;
 
         if (retryAfterMs > remainingMs()) {
           const resetIso = new Date(resetAt).toISOString();
           const limit = response.headers.get('x-ratelimit-limit') ?? 'the account';
-          return failure(
-            model,
-            `OpenRouter request quota exhausted (rate limit ${limit}, 0 remaining). Resets at ${resetIso}.`,
-            lastUsage
-          );
+          const message = `OpenRouter request quota exhausted (rate limit ${limit}, 0 remaining). Resets at ${resetIso}.`;
+          console.log(`[openrouter] ${label}: attempt ${attempt} - ${message}`);
+          return failure(model, message, lastUsage);
         }
 
         lastError = `OpenRouter returned HTTP 429 (rate limited)`;
-        await backoff(attempt++);
+        console.log(`[openrouter] ${label}: attempt ${attempt} - ${lastError}, retrying`);
+        await backoff(attempt);
         continue;
       }
 
@@ -162,22 +150,27 @@ export async function callOpenRouter(
         // genuinely at $0, which won't resolve by retrying, so this
         // returns immediately rather than looping like the 429/5xx
         // branches above. The exact phrase "out of credits" is matched by
-        // isOutOfCredits() in app.js to short-circuit the client's own
-        // retry loop too - representative.ts/judge.ts wrap this failure as
-        // a 502 rather than passing the 402 status through directly, so
-        // the client can't rely on the status code alone here the way it
-        // does for a direct 4xx from this app's own endpoints.
-        return failure(model, `OpenRouter account is out of credits (HTTP 402): ${await describeErrorBody(response)}`);
+        // isOutOfCredits() in app.js - representative.ts/judge.ts wrap
+        // this failure as a 502 rather than passing the 402 status
+        // through directly, so the client can't rely on the status code
+        // alone here the way it does for a direct 4xx from this app's own
+        // endpoints.
+        const message = `OpenRouter account is out of credits (HTTP 402): ${await describeErrorBody(response)}`;
+        console.log(`[openrouter] ${label}: attempt ${attempt} - ${message}`);
+        return failure(model, message);
       }
 
       if (response.status >= 500) {
         lastError = `OpenRouter returned HTTP ${response.status}`;
-        await backoff(attempt++);
+        console.log(`[openrouter] ${label}: attempt ${attempt} - ${lastError}, retrying`);
+        await backoff(attempt);
         continue;
       }
 
       if (!response.ok) {
-        return failure(model, `OpenRouter returned HTTP ${response.status}: ${await describeErrorBody(response)}`);
+        const message = `OpenRouter returned HTTP ${response.status}: ${await describeErrorBody(response)}`;
+        console.log(`[openrouter] ${label}: attempt ${attempt} - ${message}`);
+        return failure(model, message);
       }
 
       const data = (await response.json()) as any;
@@ -188,28 +181,36 @@ export async function callOpenRouter(
       const totalTokens = usage.total_tokens ?? promptTokens + completionTokens;
 
       if (!content) {
-        // Two distinct shapes land here. (1) OpenRouter/the upstream
-        // provider returns HTTP 200 with an `error` object instead of
-        // `choices` - confirmed in practice to carry things like Nvidia's
-        // free-tier worker pool being fully saturated (a real, transient,
-        // shared-capacity condition, not anything specific to this
-        // request). (2) A genuinely empty `choices[0].message.content`
-        // with no `error` present. Both get a direct retry here - both
-        // were confirmed to succeed on a subsequent attempt.
+        // Two distinct shapes land here: (1) HTTP 200 carrying an `error`
+        // object instead of `choices` - a transient upstream condition
+        // rather than anything specific to this request; (2) a genuinely
+        // empty `choices[0].message.content` with no `error` present.
+        // Both get a direct retry.
         const upstreamError = data?.error?.message;
         const finishReason = data?.choices?.[0]?.finish_reason ?? 'unknown';
         lastError = upstreamError
           ? `OpenRouter/upstream error: ${upstreamError}`
           : `OpenRouter response contained no message content (finish_reason=${finishReason}, prompt_tokens=${promptTokens}, completion_tokens=${completionTokens}).`;
         lastUsage = { promptTokens, completionTokens, totalTokens };
-        await backoff(attempt++);
+        console.log(`[openrouter] ${label}: attempt ${attempt} - ${lastError}, retrying`);
+        await backoff(attempt);
         continue;
       }
 
-      // Report the model that actually served the request, which is not
-      // necessarily the primary one - OpenRouter may have routed down the
-      // fallback chain. The call log is meant to record what really ran.
       const servingModel: string = data?.model ?? model;
+      const finishReason = data?.choices?.[0]?.finish_reason;
+      console.log(
+        `[openrouter] ${label}: attempt ${attempt} - success, served by ${servingModel}, ${completionTokens} completion tokens, finish_reason=${finishReason ?? 'unknown'}, ${Date.now() - startedAt}ms total`
+      );
+      if (finishReason === 'length') {
+        // The model was still generating when it hit max_tokens - the
+        // content returned is real, not an error, but it's cut off
+        // mid-thought rather than finished. console.warn (not .log) and a
+        // distinct prefix specifically so this is easy to spot/grep in
+        // terminal output without having to notice that completionTokens
+        // happens to equal the configured cap.
+        console.warn(`[openrouter] ${label}: TRUNCATED - response hit the max_tokens limit (${maxTokens}) before finishing naturally.`);
+      }
 
       return {
         status: 'success',
@@ -227,105 +228,14 @@ export async function callOpenRouter(
         : err instanceof Error
           ? err.message
           : String(err);
-      await backoff(attempt++);
+      console.log(`[openrouter] ${label}: attempt ${attempt} - ${lastError}, retrying`);
+      await backoff(attempt);
     }
   }
 
-  return failure(model, `${lastError} (gave up after ${attempt} attempt(s), ${TOTAL_BUDGET_MS}ms budget)`, lastUsage);
-}
-
-// One attempt, one specific model, no retry and no fallback array of its
-// own. Used exclusively for the frontend-orchestrated "last-ditch" call
-// once its own retry-until-success ceiling against the normal chain (above)
-// has been exhausted — at that point, spending more time retrying inside
-// this call too would just stack additional delay on an already long wait,
-// so this makes exactly one attempt and returns immediately either way.
-// Reuses the same timeout scaling and response-parsing rules as the main
-// loop, just without the loop around them.
-export async function callOpenRouterOnce(
-  messages: OpenRouterMessage[],
-  maxTokens: number,
-  model: string
-): Promise<OpenRouterResult> {
-  const apiKey = process.env.OPENROUTER_API_KEY;
-  if (!apiKey) {
-    return failure(model, 'OPENROUTER_API_KEY is not configured on the server.');
-  }
-
-  const attemptTimeout = LAST_DITCH_TIMEOUT_MS;
-
-  try {
-    const response = await fetch(OPENROUTER_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-        'X-Title': 'Tribunal',
-      },
-      body: JSON.stringify({
-        model,
-        messages,
-        max_tokens: maxTokens,
-        reasoning: { enabled: false },
-      }),
-      signal: AbortSignal.timeout(attemptTimeout),
-    });
-
-    if (response.status === 429) {
-      const resetAt = Number(response.headers.get('x-ratelimit-reset'));
-      const resetIso = Number.isFinite(resetAt) && resetAt > 0 ? new Date(resetAt).toISOString() : 'unknown';
-      const limit = response.headers.get('x-ratelimit-limit') ?? 'the account';
-      return failure(model, `Last-ditch attempt: OpenRouter rate limit exhausted (${limit}). Resets at ${resetIso}.`);
-    }
-
-    if (response.status === 402) {
-      // See the matching branch and comment in callOpenRouter above - same
-      // reasoning, just prefixed to make clear which call path hit it.
-      return failure(
-        model,
-        `Last-ditch attempt: OpenRouter account is out of credits (HTTP 402): ${await describeErrorBody(response)}`
-      );
-    }
-
-    if (!response.ok) {
-      return failure(model, `Last-ditch attempt: OpenRouter returned HTTP ${response.status}: ${await describeErrorBody(response)}`);
-    }
-
-    const data = (await response.json()) as any;
-    const content: string | undefined = data?.choices?.[0]?.message?.content;
-    const usage = data?.usage ?? {};
-    const promptTokens = usage.prompt_tokens ?? 0;
-    const completionTokens = usage.completion_tokens ?? 0;
-    const totalTokens = usage.total_tokens ?? promptTokens + completionTokens;
-
-    if (!content) {
-      const upstreamError = data?.error?.message;
-      const finishReason = data?.choices?.[0]?.finish_reason ?? 'unknown';
-      const message = upstreamError
-        ? `Last-ditch attempt, OpenRouter/upstream error: ${upstreamError}`
-        : `Last-ditch attempt: OpenRouter response contained no message content (finish_reason=${finishReason}).`;
-      return failure(model, message, { promptTokens, completionTokens, totalTokens });
-    }
-
-    const servingModel: string = data?.model ?? model;
-    return {
-      status: 'success',
-      content,
-      model: servingModel,
-      promptTokens,
-      completionTokens,
-      totalTokens,
-      cost: calculateCost(servingModel, promptTokens, completionTokens),
-    };
-  } catch (err) {
-    const isTimeout = err instanceof Error && err.name === 'TimeoutError';
-    const message = isTimeout
-      ? `Last-ditch attempt: OpenRouter did not respond within ${attemptTimeout}ms`
-      : err instanceof Error
-        ? err.message
-        : String(err);
-    return failure(model, message);
-  }
+  const message = `${lastError} (gave up after ${attempt} attempt(s), ${TOTAL_BUDGET_MS}ms budget)`;
+  console.log(`[openrouter] ${label}: ${message}`);
+  return failure(model, message, lastUsage);
 }
 
 function failure(
@@ -339,9 +249,6 @@ function failure(
     promptTokens: usage?.promptTokens ?? 0,
     completionTokens: usage?.completionTokens ?? 0,
     totalTokens: usage?.totalTokens ?? 0,
-    // Real cost is 0 regardless on this free-tier model, but computing it
-    // properly (rather than hardcoding) keeps this correct if a paid
-    // MODEL_* override is ever configured for a role.
     cost: usage ? calculateCost(model, usage.promptTokens, usage.completionTokens) : 0,
     errorMessage,
   };
@@ -375,8 +282,7 @@ async function describeErrorBody(response: Response): Promise<string> {
 // Exponential backoff with jitter, capped so a long backoff never eats the
 // remaining budget that an actual attempt needs. The jitter matters here:
 // the seven agents fire as concurrent requests on one account, and an
-// unjittered backoff makes them all retry in lockstep, re-colliding on the
-// same saturated upstream pool they just bounced off.
+// unjittered backoff makes them all retry in lockstep.
 function backoff(attempt: number): Promise<void> {
   const base = Math.min(400 * Math.pow(2, attempt), 2000);
   const delayMs = base + Math.random() * 300;
