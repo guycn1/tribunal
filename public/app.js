@@ -1,6 +1,27 @@
 const REPRESENTATIVE_ROLES = ['jon_snow', 'tyrion_lannister', 'daenerys_targaryen', 'grey_worm'];
 const JUDGE_ROLES = ['barak', 'elon', 'shamgar'];
 
+// Must match ABORTED_BY_USER_MESSAGE in netlify/functions/lib/db.ts exactly
+// - used to recognize an aborted call's log row when rebuilding history
+// (see loadTrial) so it renders with the distinct "Aborted" badge instead
+// of the generic "Call failed" one.
+const ABORTED_BY_USER_MESSAGE = 'Aborted by user before this call could complete.';
+
+// Sent as the X-Site-Gate header on every call that creates a trial or
+// spends OpenRouter quota (see isSiteGateOk in
+// netlify/functions/lib/siteGate.ts). This is NOT a real secret and isn't
+// meant to be one - it's shipped in this public, unauthenticated file, so
+// anyone who looks can read it. Its only job is to reject automated
+// traffic that never loaded this page at all; a caller who did look
+// defeats it trivially. Must match the SITE_GATE_TOKEN environment
+// variable configured on the Netlify Functions side exactly, or every
+// gated call fails with 401 - if that env var is left unset there,
+// isSiteGateOk() fails open (allows everything through) rather than
+// locking out real users, so this constant being "wrong" server-side is a
+// silent no-op, not an outage.
+const SITE_GATE_TOKEN = 'g8YdtIo_-n2zLFDsgWqqfuQmVKaNsHQaQtruTybqlvY';
+const SITE_GATE_HEADERS = { 'X-Site-Gate': SITE_GATE_TOKEN };
+
 const REPRESENTATIVE_META = {
   jon_snow: { name: 'Jon Snow', seat: 'defense' },
   tyrion_lannister: { name: 'Tyrion Lannister', seat: 'defense' },
@@ -109,7 +130,7 @@ async function beginTrial() {
   state.abortController = controller;
 
   try {
-    const res = await fetch('/api/trials', { method: 'POST' });
+    const res = await fetch('/api/trials', { method: 'POST', headers: SITE_GATE_HEADERS });
     const data = await res.json();
     if (!res.ok) {
       alert(`Failed to create trial: ${data.error || res.status}`);
@@ -233,8 +254,10 @@ function sleep(ms, signal) {
 // budget is the one to be most careful with: OpenRouter's quota resets
 // daily (a bad day recovers by tomorrow), but Netlify's resets monthly,
 // well past this project's submission deadline - there's no recovering a
-// month-long mistake in a few days. 100 seconds gives real room for a
-// saturated pool to clear without letting one stuck call run away with
+// month-long mistake in a few days. 150 seconds gives real room for a
+// saturated pool to clear, and for a model that's just genuinely slow that
+// day (real generations have been observed legitimately taking 30-45s
+// under load) to finish, without letting one stuck call run away with
 // meaningful compute time. Once that ceiling is hit, exactly one further
 // attempt is made against a distinct, explicitly slower fallback model
 // (nemotron-3.5-lightning) via ?lastDitch=true, single-shot, no retry - see
@@ -243,10 +266,18 @@ function sleep(ms, signal) {
 // again before the reset named in the error, no matter how many more
 // attempts are made, so it fails immediately instead of waiting out the
 // full ceiling pointlessly.
-const RETRY_UNTIL_SUCCESS_MS = 100 * 1000;
+const RETRY_UNTIL_SUCCESS_MS = 150 * 1000;
 const RETRY_BACKOFF_BASE_MS = 2000;
 const RETRY_BACKOFF_MAX_MS = 6000;
 const isQuotaExhausted = (message) => /quota exhausted/i.test(message || '');
+// Matches the message callOpenRouter()/callOpenRouterOnce() produce for a
+// real HTTP 402 from OpenRouter (the paid account's credit balance is
+// genuinely at $0) - see openrouter.ts. representative.ts/judge.ts always
+// wrap an OpenRouter-layer failure as a 502, so the res.status-based 4xx
+// check below never catches this on its own; like isQuotaExhausted above,
+// it needs its own text match. Running out of real money won't resolve
+// itself by retrying, so this is treated as non-retryable the same way.
+const isOutOfCredits = (message) => /out of credits/i.test(message || '');
 
 function nextBackoff(attempt) {
   return Math.min(RETRY_BACKOFF_BASE_MS * Math.pow(1.3, attempt - 1), RETRY_BACKOFF_MAX_MS) + Math.random() * 500;
@@ -289,9 +320,11 @@ async function callAgentWithRetry(url, onUpdate, signal) {
       const requestUrl = overCeiling ? `${url}?lastDitch=true` : url;
       let res, data;
       try {
-        res = await fetch(requestUrl, { method: 'POST', signal });
-        data = await res.json();
+        res = await fetch(requestUrl, { method: 'POST', signal, headers: SITE_GATE_HEADERS });
       } catch (err) {
+        // A genuine network-level failure - offline, DNS, connection
+        // refused, or the AbortController firing. Nothing came back at
+        // all, so there's no response to inspect.
         if ((err && err.name === 'AbortError') || (signal && signal.aborted)) {
           return { status: 'aborted', error: 'Stopped by user.' };
         }
@@ -308,6 +341,27 @@ async function callAgentWithRetry(url, onUpdate, signal) {
         continue;
       }
 
+      try {
+        data = await res.json();
+      } catch {
+        // A response DID come back, but its body wasn't the JSON this
+        // app's own functions always return. The one real way that
+        // happens is Netlify's own per-IP rate limiter (see the
+        // rateLimit config on representative.ts/judge.ts) blocking the
+        // request before this app's function code ever runs, returning a
+        // plain error page instead - give a specific, honest reason for
+        // that recognizable case rather than surfacing a raw "Unexpected
+        // token" parse error, and a generic-but-still-honest one for any
+        // other unrecognized non-JSON response.
+        data = {
+          status: 'failed',
+          error:
+            res.status === 429
+              ? "Too many requests from this network in a short time (Netlify's own per-IP rate limit, separate from this app's own call cap). Wait a few minutes and try again."
+              : `Server returned an unexpected non-JSON response (HTTP ${res.status}).`,
+        };
+      }
+
       if (res.ok && data.status !== 'failed') {
         return { status: 'success', ...data, wasLastDitch: overCeiling };
       }
@@ -315,10 +369,11 @@ async function callAgentWithRetry(url, onUpdate, signal) {
       const error = data.error || `HTTP ${res.status}`;
       local.error = error;
 
-      if (isQuotaExhausted(error) || (res.status >= 400 && res.status < 500) || overCeiling) {
-        // Quota-exhausted, a malformed request (4xx), or this WAS the
-        // last-ditch attempt itself - none of these are worth another
-        // round, for the reasons in the comment above this function.
+      if (isQuotaExhausted(error) || isOutOfCredits(error) || (res.status >= 400 && res.status < 500) || overCeiling) {
+        // Quota-exhausted, out of real credits, a malformed request (4xx),
+        // or this WAS the last-ditch attempt itself - none of these are
+        // worth another round, for the reasons in the comment above this
+        // function.
         return { status: 'failed', error, lastDitchAttempted: overCeiling };
       }
 
@@ -496,6 +551,30 @@ async function loadTrial(trialId) {
   }
   state.callLog = data.apiCallLogs || [];
 
+  // Backfill a real 'failed' (or 'aborted') entry for any role that has no
+  // success above, from that role's own logged attempts - apiCallLogs is
+  // ordered ascending by timestamp (see getFullTrial in db.ts), so the last
+  // matching row for a role is its most recent, most relevant attempt.
+  // Without this, that role would have no state entry at all, and
+  // buildAgentStatusBody's "no entry" case would otherwise be the only
+  // thing rendered for it - a generic message with no real detail, even
+  // though the actual error is sitting right there in the log.
+  for (const log of state.callLog) {
+    if (log.status !== 'success') {
+      const store = log.callType === 'representative' ? state.representatives : state.judges;
+      if (store[log.agentRole] && store[log.agentRole].status === 'success') continue;
+      const lastDitchModel = state.modelInfo && state.modelInfo[log.agentRole] && state.modelInfo[log.agentRole].lastDitch;
+      store[log.agentRole] =
+        log.errorMessage === ABORTED_BY_USER_MESSAGE
+          ? { status: 'aborted', error: log.errorMessage }
+          : {
+              status: 'failed',
+              error: log.errorMessage || 'Unknown failure',
+              lastDitchAttempted: Boolean(lastDitchModel) && log.modelUsed === lastDitchModel,
+            };
+    }
+  }
+
   renderCaseSheet();
   el.phaseRepresentatives.classList.toggle('hidden', Object.keys(state.representatives).length === 0);
   el.phaseJudges.classList.toggle('hidden', Object.keys(state.judges).length === 0);
@@ -552,7 +631,21 @@ function spinnerHtml() {
 function buildAgentStatusBody(entry, role, verb) {
   const body = document.createElement('div');
 
-  if (!entry || entry.status === 'loading') {
+  // No entry at all is NOT "hasn't started yet" - a live run always seeds
+  // state.representatives/judges[role] with {status: 'loading'} the moment
+  // it begins (see beginTrial), before this ever renders. The only way
+  // this function sees a missing entry is loadTrial() viewing a completed,
+  // historical trial whose call log has nothing to show for this role at
+  // all (no logged attempt of any kind - loadTrial backfills a proper
+  // 'failed' entry from the call log whenever one exists, below). Showing
+  // the spinner here would claim this dead trial is still working.
+  if (!entry) {
+    body.className = 'card-body dim';
+    body.textContent = 'No result recorded for this role - nothing was logged for it in this trial.';
+    return body;
+  }
+
+  if (entry.status === 'loading') {
     body.className = 'card-body dim';
     body.innerHTML = `${spinnerHtml()}${verb}…<div class="model-chain">Trying: <span class="model-name">${formatModelChain(role)}</span></div>`;
     return body;
@@ -581,7 +674,7 @@ function buildAgentStatusBody(entry, role, verb) {
   if (entry.status === 'last-ditch') {
     body.className = 'card-body dim';
     body.innerHTML = `
-      ${spinnerHtml()}Normal chain exhausted after 100s — making one final attempt with <span class="model-name">${formatLastDitchModel(role)}</span>…
+      ${spinnerHtml()}Normal chain exhausted after 150s — making one final attempt with <span class="model-name">${formatLastDitchModel(role)}</span>…
       <div class="model-chain">This model is known to be slower; this attempt may take longer than the others did.</div>
     `;
     return body;
@@ -712,13 +805,13 @@ function renderCallLog() {
 }
 
 // Representatives run concurrently as a group - worst case per group is
-// RETRY_UNTIL_SUCCESS_MS (100s) plus one last-ditch attempt (up to ~22s),
+// RETRY_UNTIL_SUCCESS_MS (150s) plus one last-ditch attempt (up to ~26s),
 // not 4x that, since roles don't wait on each other - then judges run as
 // their own concurrent group after, so a genuinely still-working trial
-// takes at most roughly 2x that per-group figure (~244s) end to end. This
+// takes at most roughly 2x that per-group figure (~352s) end to end. This
 // threshold has to sit safely above that, or a trial that's actually still
 // retrying gets mislabeled as abandoned.
-const INTERRUPTED_THRESHOLD_MS = 5 * 60 * 1000;
+const INTERRUPTED_THRESHOLD_MS = 7 * 60 * 1000;
 
 // What "Completed - with failures" is based on: whether the trial's final,
 // persisted results are actually incomplete - NOT whether any individual

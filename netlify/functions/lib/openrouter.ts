@@ -37,6 +37,32 @@ function attemptTimeoutFor(maxTokens: number): number {
   return Math.min(Math.max(estimateMs, 12000), 22000);
 }
 
+// The last-ditch call (callOpenRouterOnce, below) is a single attempt with
+// no retry loop and no TOTAL_BUDGET_MS wrapper around it, so - unlike
+// attemptTimeoutFor above, which in practice is always further clamped by
+// the main loop's remainingMs() - this ceiling really is the full time that
+// attempt gets. Real generations have been observed legitimately taking
+// 30-45s under load, well past attemptTimeoutFor's 22s ceiling, which is
+// what was cutting last-ditch attempts off before a genuine (if slow)
+// response could land. Flat rather than token-scaled deliberately: the
+// slowness observed here isn't proportional to output length (even a
+// trivial ~10-token reply from this same model was measured taking 25s+
+// under load — see the "Default model switched" bug log entry), so a
+// per-token formula doesn't model it; a flat ceiling close to the real
+// constraint below does.
+//
+// That constraint is Netlify's own platform-level timeout for this
+// function, observed at ~30s, which fires regardless of any AbortSignal
+// this code sets. If that kill happens first, the whole invocation dies
+// before any of this function's own error-logging or the Supabase writes
+// that follow it can run — a silent failure, not a clean one. 26000ms is
+// the most this can safely ask for while leaving real slack under that
+// ~30s wall for those writes. A single Netlify Function invocation
+// genuinely cannot wait a full 45s no matter what value this holds — that
+// needs a different architecture (e.g. a Background Function the frontend
+// polls for), not a larger number here.
+const LAST_DITCH_TIMEOUT_MS = 26000;
+
 export interface OpenRouterMessage {
   role: 'system' | 'user';
   content: string;
@@ -105,20 +131,23 @@ export async function callOpenRouter(
 
       if (response.status === 429) {
         // Distinguish a short burst limit, which retrying inside this call
-        // can clear, from the account-wide daily free-model quota, which it
-        // cannot. Retrying the latter just hammers a limiter that will keep
-        // refusing for hours, and reports a useless "gave up after N
-        // attempts" instead of the actual reason. OpenRouter tells us which
-        // it is via X-RateLimit-Reset (epoch ms).
+        // can clear, from a longer-window quota (free-tier daily, or a
+        // paid account's own rate-limit tier), which it cannot. Retrying
+        // the latter just hammers a limiter that will keep refusing for a
+        // while, and reports a useless "gave up after N attempts" instead
+        // of the actual reason. OpenRouter tells us which it is via
+        // X-RateLimit-Reset (epoch ms) - not free-tier-specific, so the
+        // message below deliberately doesn't assume which kind of account
+        // is being used.
         const resetAt = Number(response.headers.get('x-ratelimit-reset'));
         const retryAfterMs = Number.isFinite(resetAt) && resetAt > 0 ? resetAt - Date.now() : 0;
 
         if (retryAfterMs > remainingMs()) {
           const resetIso = new Date(resetAt).toISOString();
-          const limit = response.headers.get('x-ratelimit-limit') ?? 'the free-tier';
+          const limit = response.headers.get('x-ratelimit-limit') ?? 'the account';
           return failure(
             model,
-            `OpenRouter free-tier request quota exhausted (limit ${limit}/day, 0 remaining). Resets at ${resetIso}.`,
+            `OpenRouter request quota exhausted (rate limit ${limit}, 0 remaining). Resets at ${resetIso}.`,
             lastUsage
           );
         }
@@ -128,6 +157,19 @@ export async function callOpenRouter(
         continue;
       }
 
+      if (response.status === 402) {
+        // Real credit exhaustion on a paid account - the balance is
+        // genuinely at $0, which won't resolve by retrying, so this
+        // returns immediately rather than looping like the 429/5xx
+        // branches above. The exact phrase "out of credits" is matched by
+        // isOutOfCredits() in app.js to short-circuit the client's own
+        // retry loop too - representative.ts/judge.ts wrap this failure as
+        // a 502 rather than passing the 402 status through directly, so
+        // the client can't rely on the status code alone here the way it
+        // does for a direct 4xx from this app's own endpoints.
+        return failure(model, `OpenRouter account is out of credits (HTTP 402): ${await describeErrorBody(response)}`);
+      }
+
       if (response.status >= 500) {
         lastError = `OpenRouter returned HTTP ${response.status}`;
         await backoff(attempt++);
@@ -135,8 +177,7 @@ export async function callOpenRouter(
       }
 
       if (!response.ok) {
-        const bodyText = await safeReadText(response);
-        return failure(model, `OpenRouter returned HTTP ${response.status}: ${bodyText}`);
+        return failure(model, `OpenRouter returned HTTP ${response.status}: ${await describeErrorBody(response)}`);
       }
 
       const data = (await response.json()) as any;
@@ -211,7 +252,7 @@ export async function callOpenRouterOnce(
     return failure(model, 'OPENROUTER_API_KEY is not configured on the server.');
   }
 
-  const attemptTimeout = attemptTimeoutFor(maxTokens);
+  const attemptTimeout = LAST_DITCH_TIMEOUT_MS;
 
   try {
     const response = await fetch(OPENROUTER_URL, {
@@ -233,13 +274,21 @@ export async function callOpenRouterOnce(
     if (response.status === 429) {
       const resetAt = Number(response.headers.get('x-ratelimit-reset'));
       const resetIso = Number.isFinite(resetAt) && resetAt > 0 ? new Date(resetAt).toISOString() : 'unknown';
-      const limit = response.headers.get('x-ratelimit-limit') ?? 'the free-tier';
-      return failure(model, `Last-ditch attempt: OpenRouter returned HTTP 429 (limit ${limit}/day). Resets at ${resetIso}.`);
+      const limit = response.headers.get('x-ratelimit-limit') ?? 'the account';
+      return failure(model, `Last-ditch attempt: OpenRouter rate limit exhausted (${limit}). Resets at ${resetIso}.`);
+    }
+
+    if (response.status === 402) {
+      // See the matching branch and comment in callOpenRouter above - same
+      // reasoning, just prefixed to make clear which call path hit it.
+      return failure(
+        model,
+        `Last-ditch attempt: OpenRouter account is out of credits (HTTP 402): ${await describeErrorBody(response)}`
+      );
     }
 
     if (!response.ok) {
-      const bodyText = await safeReadText(response);
-      return failure(model, `Last-ditch attempt: OpenRouter returned HTTP ${response.status}: ${bodyText}`);
+      return failure(model, `Last-ditch attempt: OpenRouter returned HTTP ${response.status}: ${await describeErrorBody(response)}`);
     }
 
     const data = (await response.json()) as any;
@@ -304,6 +353,23 @@ async function safeReadText(response: Response): Promise<string> {
   } catch {
     return '(no response body)';
   }
+}
+
+// Every non-ok failure path wants a human-readable reason, not a raw
+// response body - OpenRouter error responses are typically
+// {"error":{"message":"..."}}, so this pulls that message out when
+// present and only falls back to the raw text (still better than nothing)
+// when the body isn't that shape at all.
+async function describeErrorBody(response: Response): Promise<string> {
+  const bodyText = await safeReadText(response);
+  try {
+    const parsed = JSON.parse(bodyText);
+    const message = parsed?.error?.message;
+    if (typeof message === 'string' && message.trim()) return message;
+  } catch {
+    // Not JSON, or not the expected shape - fall through to raw text.
+  }
+  return bodyText;
 }
 
 // Exponential backoff with jitter, capped so a long backoff never eats the
