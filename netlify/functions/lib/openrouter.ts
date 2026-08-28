@@ -51,7 +51,20 @@ const MIN_REMAINING_TO_ATTEMPT_MS = 8000;
 // slowest of those six measurements, not just the average.
 function attemptTimeoutFor(maxTokens: number): number {
   const estimateMs = 6000 + maxTokens * 18;
-  return Math.min(Math.max(estimateMs, 12000), TOTAL_BUDGET_MS);
+  // Never let a single attempt's ceiling claim the entire remaining budget.
+  // Both role types now share AGENT_MAX_TOKENS (1400), and at that value
+  // the raw estimate (31200ms) already exceeds TOTAL_BUDGET_MS - so without
+  // this reserve, attempt 1 gets clamped to the full 26000ms with nothing
+  // left over. A real attempt that times out at exactly that ceiling then
+  // leaves remainingMs() at ~0, which fails the retry loop's own
+  // MIN_REMAINING_TO_ATTEMPT_MS floor - so a single genuine hang gives up
+  // after exactly one attempt, with no chance for the fast-retry path
+  // (429/5xx/empty-content) that this whole budget system exists to allow.
+  // Reserving that same floor here guarantees the opposite: even a
+  // worst-case full-length timeout on attempt 1 leaves exactly enough
+  // budget for the loop to admit a real retry.
+  const ceiling = TOTAL_BUDGET_MS - MIN_REMAINING_TO_ATTEMPT_MS;
+  return Math.min(Math.max(estimateMs, 12000), ceiling);
 }
 
 export interface OpenRouterMessage {
@@ -117,6 +130,20 @@ export async function callOpenRouter(
           // invisible in the response, but a real driver of call latency
           // when enabled by default.
           reasoning: { enabled: false },
+          // A real response was observed spiraling into the same short
+          // clause repeated for its entire remaining token budget (never
+          // reaching a natural stopping point) - a known small-model
+          // degeneration mode, not a prompt-content problem, since the
+          // system prompt already gives an explicit word-count target.
+          // frequency_penalty scales with how often a token has already
+          // appeared, which specifically counteracts a loop that would
+          // otherwise keep reinforcing itself; presence_penalty adds a
+          // smaller flat push away from anything already said, encouraging
+          // the response to keep moving toward an actual conclusion. Values
+          // are moderate on purpose - enough to break a runaway loop
+          // without visibly distorting normal in-character prose.
+          frequency_penalty: 0.4,
+          presence_penalty: 0.2,
         }),
         signal: AbortSignal.timeout(attemptTimeout),
       });
