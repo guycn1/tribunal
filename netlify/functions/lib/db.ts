@@ -249,10 +249,10 @@ export async function upsertJudgeRuling(params: {
 // against anything the caller can present.
 //
 // Sized generously above any realistic legitimate day (manual testing plus
-// a grader running the trial repeatedly) while staying well short of
+// repeated real usage from other visitors) while staying well short of
 // meaningfully denting a small prepaid balance - tune GLOBAL_CALL_CAP down
 // once the real per-call cost of whichever paid model is in use is known.
-export const GLOBAL_CALL_CAP = 150;
+export const GLOBAL_CALL_CAP = 350;
 const GLOBAL_CALL_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 // Deliberately does NOT log anything when the cap is hit (unlike every
