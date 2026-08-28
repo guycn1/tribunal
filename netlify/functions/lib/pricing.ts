@@ -6,7 +6,13 @@
 // a MODEL_<ROLE> override; an unlisted paid model logs a cost of 0 rather
 // than throwing, since an unknown price should never block a real call from
 // being logged.
-const PRICING_PER_MILLION_TOKENS: Record<string, { prompt: number; completion: number }> = {};
+// Source: https://openrouter.ai/mistralai/mistral-small-24b-instruct-2501
+// (checked directly against the listed price, not assumed) - re-verify if
+// this model's pricing page ever shows a different number, since OpenRouter
+// can reprice a model without notice.
+const PRICING_PER_MILLION_TOKENS: Record<string, { prompt: number; completion: number }> = {
+  'mistralai/mistral-small-24b-instruct-2501': { prompt: 0.05, completion: 0.08 },
+};
 
 export function calculateCost(model: string, promptTokens: number, completionTokens: number): number {
   if (model.endsWith(':free')) {

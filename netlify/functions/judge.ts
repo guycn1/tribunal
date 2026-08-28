@@ -5,8 +5,8 @@ import { extractParams } from './lib/extractParams';
 import { getChargeSheet } from './lib/chargeSheet';
 import { JUDGES } from './lib/judges';
 import { buildJudgeMessages, parseJudgeOutput } from './lib/prompts';
-import { callOpenRouter, callOpenRouterOnce } from './lib/openrouter';
-import { getLastDitchModelForRole } from './lib/models';
+import { callOpenRouter } from './lib/openrouter';
+import { getModelForRole } from './lib/models';
 import {
   getFullTrial,
   upsertJudgeRuling,
@@ -22,18 +22,11 @@ import type { JudgeRole, RepresentativeRole } from './lib/types';
 // opinion plus the leading VERDICT line — so they get the largest cap.
 //
 // Sized against the ~450-600 word target their prompt sets (roughly
-// 600-800 tokens), but with real headroom above the typical case: a real
-// run measured shamgar/elon comfortably under (617/882 completion tokens),
-// but barak, served by the nemotron-3-super-120b fallback rather than the
-// primary model, hit the previous 1100 cap exactly and was cut off
-// mid-sentence. Since which model in the chain actually answers isn't
-// something this app controls, the cap needs headroom for the most
-// verbose model that might serve the request, not just the typical one.
-// 1400 still sits below the old un-targeted 1600 (which corresponded to
-// 1184-1317 tokens with no length instruction at all), and doesn't cost
-// extra attempt-timeout budget beyond ~1357 tokens either way, since
-// attemptTimeoutFor() in openrouter.ts is already clamped to its 22s
-// ceiling by that point.
+// 600-800 tokens), with headroom above that target rather than a tight
+// fit against it, since a cap hit exactly mid-sentence reads far worse
+// than a shorter completion under it. Worth re-tuning once real
+// completion-length data exists for whichever model is currently
+// configured.
 const MAX_TOKENS = 1400;
 
 const rawHandler: Handler = async (event) => {
@@ -80,11 +73,7 @@ const rawHandler: Handler = async (event) => {
 
   const messages = buildJudgeMessages(judgeRole, caseDef, availableArguments);
 
-  // ?lastDitch=true: see the matching comment in representative.ts.
-  const isLastDitch = event.queryStringParameters?.lastDitch === 'true';
-  const result = isLastDitch
-    ? await callOpenRouterOnce(messages, MAX_TOKENS, getLastDitchModelForRole(judgeRole))
-    : await callOpenRouter(judgeRole, messages, MAX_TOKENS);
+  const result = await callOpenRouter(getModelForRole(judgeRole), messages, MAX_TOKENS);
 
   const parsed = result.status === 'success' && result.content ? parseJudgeOutput(result.content) : null;
   const callFailed = result.status === 'failed' || !result.content;

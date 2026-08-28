@@ -5,8 +5,8 @@ import { extractParams } from './lib/extractParams';
 import { getChargeSheet } from './lib/chargeSheet';
 import { REPRESENTATIVES } from './lib/representatives';
 import { buildRepresentativeMessages } from './lib/prompts';
-import { callOpenRouter, callOpenRouterOnce } from './lib/openrouter';
-import { getLastDitchModelForRole } from './lib/models';
+import { callOpenRouter } from './lib/openrouter';
+import { getModelForRole } from './lib/models';
 import { getTrial, upsertRepresentativeArgument, logApiCall, isGlobalCallCapExceeded, GLOBAL_CALL_CAP } from './lib/db';
 import { isSiteGateOk } from './lib/siteGate';
 import type { RepresentativeRole } from './lib/types';
@@ -57,14 +57,7 @@ const rawHandler: Handler = async (event) => {
   const caseDef = await getChargeSheet();
   const messages = buildRepresentativeMessages(repRole, caseDef);
 
-  // ?lastDitch=true: the frontend has already exhausted its own retry
-  // ceiling against the normal model chain and is making exactly one final
-  // attempt against a distinct, explicitly slower model before giving up
-  // for real. Single shot, no internal retry - see callOpenRouterOnce.
-  const isLastDitch = event.queryStringParameters?.lastDitch === 'true';
-  const result = isLastDitch
-    ? await callOpenRouterOnce(messages, MAX_TOKENS, getLastDitchModelForRole(repRole))
-    : await callOpenRouter(repRole, messages, MAX_TOKENS);
+  const result = await callOpenRouter(getModelForRole(repRole), messages, MAX_TOKENS);
 
   await logApiCall({
     trialId: id,
@@ -123,9 +116,9 @@ export const handler = safeHandler(rawHandler);
 // windowLimit/windowSize are deliberately generous, not tight - this is a
 // backstop against a single source hammering the function in a burst,
 // not the thing meant to bound total cost (that's the global cap in
-// db.ts, layered underneath this). A real user's own retry loop can
-// legitimately re-hit this endpoint several times inside a couple of
-// minutes on a bad connection, and that must keep working.
+// db.ts, layered underneath this). A real user running several trials in
+// a short window, or retrying after a transient failure, must keep
+// working.
 //
 // UNVERIFIED IN PRODUCTION: local netlify dev does not simulate rate
 // limiting, and this project has separately, repeatedly found that its

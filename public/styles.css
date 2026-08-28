@@ -386,12 +386,6 @@ body {
   font-size: 0.92em;
 }
 
-.countdown {
-  font-variant-numeric: tabular-nums;
-  font-weight: 600;
-  color: var(--text);
-}
-
 /* The date and time fragments in formatDateTimeHtml() (app.js) - each one
    individually protected from wrapping, while the <br /> between them is
    the only break point allowed. No min-width/scroll fallback needed for
