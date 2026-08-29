@@ -15,8 +15,8 @@ const PRICING_PER_MILLION_TOKENS: Record<string, { prompt: number; completion: n
   // The truncation-retry fallback model (see getTruncationFallbackModel in
   // models.ts) - only ever billed on the minority of calls that truncate
   // once on the default model.
-  // Source: https://openrouter.ai/mistralai/mistral-large-3-2512
-  'mistralai/mistral-large-3-2512': { prompt: 0.5, completion: 1.5 },
+  // Source: https://openrouter.ai/mistralai/mistral-large-2512
+  'mistralai/mistral-large-2512': { prompt: 0.5, completion: 1.5 },
 };
 
 export function calculateCost(model: string, promptTokens: number, completionTokens: number): number {
