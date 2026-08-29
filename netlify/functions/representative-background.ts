@@ -202,7 +202,7 @@ export const config = {
   path: '/.netlify/functions/representative-background/*',
   background: true,
   rateLimit: {
-    windowLimit: 30,
+    windowLimit: 45,
     windowSize: 300,
     aggregateBy: ['ip'],
   },
