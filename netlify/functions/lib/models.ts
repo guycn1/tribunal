@@ -81,3 +81,15 @@ export function getTopTierFallbackModel(): string {
 export function getLastResortFallbackModel(): string {
   return LAST_RESORT_FALLBACK_MODEL;
 }
+
+// Some models reject `reasoning: { enabled: false }` outright (OpenRouter
+// returns HTTP 400: "Reasoning is mandatory for this endpoint and cannot
+// be disabled.") rather than silently ignoring it - discovered for real
+// via an isolated tier-4 sanity test on google/gemini-2.5-pro, which
+// failed every single call this way. openrouter.ts checks this before
+// deciding whether to include the reasoning field in a request at all.
+const MODELS_WITH_MANDATORY_REASONING = new Set<string>(['google/gemini-2.5-pro']);
+
+export function modelRequiresReasoning(model: string): boolean {
+  return MODELS_WITH_MANDATORY_REASONING.has(model);
+}

@@ -1,5 +1,5 @@
 import { calculateCost } from './pricing';
-import { getTruncationFallbackModel, getTopTierFallbackModel, getLastResortFallbackModel } from './models';
+import { getTruncationFallbackModel, getTopTierFallbackModel, getLastResortFallbackModel, modelRequiresReasoning } from './models';
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
@@ -193,8 +193,11 @@ export async function callOpenRouter(
           // Reasoning models can otherwise spend hundreds to thousands of
           // hidden tokens per call before producing visible output —
           // invisible in the response, but a real driver of call latency
-          // when enabled by default.
-          reasoning: { enabled: false },
+          // when enabled by default. Some models reject this outright
+          // rather than ignoring it (google/gemini-2.5-pro returns HTTP
+          // 400 - see modelRequiresReasoning in models.ts) - omitted
+          // entirely for those rather than forced off.
+          ...(modelRequiresReasoning(attemptModel) ? {} : { reasoning: { enabled: false } }),
           // A real response was observed spiraling into the same short
           // clause repeated for its entire remaining token budget (never
           // reaching a natural stopping point) - a known small-model
