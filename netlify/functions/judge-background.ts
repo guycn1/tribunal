@@ -148,7 +148,7 @@ export const handler = safeHandler(rawHandler);
 // caveat) - the only difference is the function name in the path,
 // matching how netlify.toml routes here.
 export const config = {
-  path: '/.netlify/functions/judge/*',
+  path: '/.netlify/functions/judge-background/*',
   background: true,
   rateLimit: {
     windowLimit: 30,

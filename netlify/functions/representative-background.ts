@@ -161,11 +161,23 @@ export const handler = safeHandler(rawHandler);
 // decision. Without the suffix, local dev was silently giving these calls
 // the synchronous 30s ceiling regardless of this file's own config,
 // which is exactly what was killing real, otherwise-successful calls in
-// local testing. A custom `path` below still controls the actual public
-// route, so this rename changes nothing about the URL this function is
-// reachable at - both config.background here and the filename suffix are
+// local testing. Both config.background here and the filename suffix are
 // kept together, since Netlify's own docs list the filename suffix as a
 // still-supported legacy convention alongside the modern config property.
+//
+// The `path` below was also updated to match this file's new name
+// (representative-background, not representative) - a first attempt at
+// this rename assumed a custom `path` fully overrides a function's
+// default name-derived URL regardless of the file's actual name, which
+// is what Netlify's own docs describe, but that assumption produced a
+// real, observed regression: every call returned a synchronous 404
+// immediately after the rename, with netlify.toml's redirect still
+// pointing at the old name-based URL. Fixed by updating both this `path`
+// and the matching redirect target in netlify.toml to the new name,
+// rather than relying on the old path continuing to resolve under a
+// renamed file - not yet root-caused exactly why the override didn't
+// hold locally, but keeping `path` and the actual filename in agreement
+// avoids depending on that assumption at all.
 //
 // UNVERIFIED IN PRODUCTION: whether the real deployed platform's own
 // Background Function detection also needs (or merely tolerates) the
@@ -187,7 +199,7 @@ export const handler = safeHandler(rawHandler);
 // the platform reads from this export, so annotating against the stale
 // type would only fight the type-checker over something already correct.
 export const config = {
-  path: '/.netlify/functions/representative/*',
+  path: '/.netlify/functions/representative-background/*',
   background: true,
   rateLimit: {
     windowLimit: 30,
