@@ -144,11 +144,19 @@ export async function callOpenRouter(
           // appeared, which specifically counteracts a loop that would
           // otherwise keep reinforcing itself; presence_penalty adds a
           // smaller flat push away from anything already said, encouraging
-          // the response to keep moving toward an actual conclusion. Values
-          // are moderate on purpose - enough to break a runaway loop
-          // without visibly distorting normal in-character prose.
-          frequency_penalty: 0.4,
-          presence_penalty: 0.2,
+          // the response to keep moving toward an actual conclusion.
+          //
+          // Raised from an earlier 0.4/0.2 after real testing showed that
+          // pair wasn't reliably enough: a live response still spiralled
+          // into "He knew that I was a threat to the realm. He knew that I
+          // was a threat to his sisters..." repeated for the entire
+          // remaining budget, on both the original attempt and the
+          // truncation retry below - the retry's added instruction only
+          // addresses length, not repetition, so it couldn't have fixed
+          // this on its own. Still comfortably short of values (near the
+          // +/-2.0 ends) that visibly distort normal prose.
+          frequency_penalty: 0.7,
+          presence_penalty: 0.35,
         }),
         signal: AbortSignal.timeout(attemptTimeout),
       });
