@@ -264,8 +264,25 @@ export async function callOpenRouter(
           // discarded attempt, so it shouldn't also spend budget waiting.
           continue;
         }
-        console.warn(
-          `[openrouter] ${label}: truncated again after the conciseness retry (or no budget left for one) - returning the truncated content as final.`
+        // Still truncated after using the one retry (or there was no
+        // budget left to attempt one) - a response cut off mid-thought is
+        // not a degraded-but-usable result, it's not a real answer at all
+        // (an argument or ruling that stops mid-sentence isn't fair to
+        // present as the character's actual position). Treated as a real
+        // failure, not returned as a truncated "success" for the caller
+        // to badge and move on - representative.ts/judge.ts already treat
+        // any `status: 'failed'` result as a normal, visible failure, so
+        // this needs no special handling on their side. Cost/token totals
+        // still include both attempts, since both genuinely spent money.
+        console.warn(`[openrouter] ${label}: still truncated after the retry - returning failed rather than a cut-off result.`);
+        return failure(
+          servingModel,
+          `Response was truncated at the ${maxTokens}-token limit on both the original attempt and a conciseness retry. The generated content was incomplete and was not saved.`,
+          {
+            promptTokens: promptTokens + extraPromptTokens,
+            completionTokens: completionTokens + extraCompletionTokens,
+            totalTokens: totalTokens + extraTotalTokens,
+          }
         );
       }
 

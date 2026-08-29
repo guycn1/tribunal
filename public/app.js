@@ -121,13 +121,24 @@ function shortModelName(modelId) {
 // success response) and a historical one loaded from a past trial (see
 // loadTrial(), which backfills tokens.completion from the matching
 // api_call_logs row for exactly this purpose).
+//
+// A response still truncated after the one conciseness retry is now
+// returned by the server as a real failure (openrouter.ts), not a
+// "success" for this function to badge - so this can no longer fire for
+// any newly-generated result. It's kept, and checks a *multiple* of
+// state.maxTokens rather than an exact match, specifically for trials
+// recorded before that change: some real historical rows have a
+// completion of exactly 2 x maxTokens (both the original attempt and the
+// retry hit the cap, and the older code still saved that as a success) -
+// an exact `===` check would silently miss those on reopen.
 function isTruncated(entry) {
   return Boolean(
     entry &&
       entry.status === 'success' &&
       state.maxTokens &&
       entry.tokens &&
-      entry.tokens.completion === state.maxTokens
+      entry.tokens.completion > 0 &&
+      entry.tokens.completion % state.maxTokens === 0
   );
 }
 
@@ -860,11 +871,18 @@ function renderCallLog() {
   el.callLogBody.innerHTML = '';
   for (const entry of state.callLog) {
     const tr = document.createElement('tr');
-    // A truncated call is still a real success (the call log's own status
-    // column reflects that correctly) - this is layered on top as its own
-    // distinct badge rather than replacing "success", the same reasoning
-    // as the card-level notice in appendTruncationNotice().
-    const wasTruncated = entry.status === 'success' && state.maxTokens && entry.completionTokens === state.maxTokens;
+    // A response still truncated after the conciseness retry is now a
+    // real failure (openrouter.ts), correctly shown via the status column
+    // below - this badge only still fires for historical rows recorded
+    // before that change, where the log genuinely says 'success' with a
+    // completion that's an exact multiple of the cap (1x from an older,
+    // single-attempt truncation, or 2x from a retry that also truncated
+    // before this fix existed). Same reasoning and formula as isTruncated().
+    const wasTruncated =
+      entry.status === 'success' &&
+      state.maxTokens &&
+      entry.completionTokens > 0 &&
+      entry.completionTokens % state.maxTokens === 0;
     const statusBadge = entry.status === 'success' ? 'badge-ok' : 'badge-fail';
     const tokens = `${entry.promptTokens} / ${entry.completionTokens} / ${entry.totalTokens}`;
     tr.innerHTML = `
