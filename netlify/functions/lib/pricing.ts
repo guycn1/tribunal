@@ -17,6 +17,14 @@ const PRICING_PER_MILLION_TOKENS: Record<string, { prompt: number; completion: n
   // once on the default model.
   // Source: https://openrouter.ai/mistralai/mistral-large-2512
   'mistralai/mistral-large-2512': { prompt: 0.5, completion: 1.5 },
+  // Third and fourth escalation tiers (see getTopTierFallbackModel /
+  // getLastResortFallbackModel in models.ts) - reached only after every
+  // earlier tier has already truncated, so real usage stays rare despite
+  // the materially higher per-token price.
+  // Source: https://openrouter.ai/openai
+  'openai/gpt-5.6-sol': { prompt: 2, completion: 10 },
+  // Source: https://openrouter.ai/google
+  'google/gemini-2.5-pro': { prompt: 1.25, completion: 10 },
 };
 
 export function calculateCost(model: string, promptTokens: number, completionTokens: number): number {

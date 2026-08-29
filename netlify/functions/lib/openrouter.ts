@@ -1,5 +1,5 @@
 import { calculateCost } from './pricing';
-import { getTruncationFallbackModel } from './models';
+import { getTruncationFallbackModel, getTopTierFallbackModel, getLastResortFallbackModel } from './models';
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
@@ -23,13 +23,16 @@ const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 // is still a small fraction of that real ceiling - real margin for
 // multiple genuine full-length retries, not just fast-failure ones - while
 // staying far short of ever risking the actual 15-minute wall.
-// Raised from 120000 to fit up to two fallback-model attempts on top of
-// the original one (see MAX_FALLBACK_ATTEMPTS/FALLBACK_MAX_TOKENS below) -
-// worst case, roughly 43s (default model, 1400 tokens) + 78s x2 (fallback
-// model, 2800 tokens each) = ~199s of attempt ceilings alone. 250000ms
-// (250s) leaves real margin above that worst case while staying well
-// under a third of the real 900s background-function ceiling.
-const TOTAL_BUDGET_MS = 250000;
+// Raised to fit the full escalation chain (see RETRY_TIERS below): worst
+// case, roughly 43s (default, 1400 tokens) + 78s x2 (mistral-large, 2800
+// tokens) + 95.5s x2 (first top-tier model, 3500 tokens) + 108s x1 (last-
+// resort model, 4000 tokens) = ~498s of attempt ceilings alone, before
+// counting backoff delays between attempts - a real, observed case hit
+// ~20 consecutive fast 429 retries at one tier alone. 650000ms (650s,
+// ~10.8 minutes) leaves real margin above that worst case while staying
+// comfortably under the real 900s (15 minute) background-function
+// ceiling, not razor-close to it.
+const TOTAL_BUDGET_MS = 650000;
 // Don't start an attempt the remaining budget cannot plausibly finish.
 // With a 2-minute total budget instead of a ~26s one, this no longer has
 // to be tuned razor-close to the floor the way it did before (a real,
@@ -72,22 +75,37 @@ export interface OpenRouterMessage {
 // A single same-model retry measurably wasn't enough: real data showed
 // that once a role's first attempt truncated, a same-model retry
 // truncated again 60-75% of the time - not an independent second roll,
-// closer to "that generation was already in a bad state." Switching the
-// retry to a different, more capable model (see getTruncationFallbackModel
-// in models.ts) helped - 3 of 5 real fallback attempts succeeded - but not
-// reliably enough on its own: 2 of 5 still truncated even on the fallback
-// model. Two changes address that: FALLBACK_MAX_TOKENS gives fallback
-// attempts real headroom above the base cap (some truncations may be
-// genuinely-long-but-coherent content hitting an arbitrary ceiling, not
-// only degeneration, and a bigger cap directly fixes that case); and
-// MAX_FALLBACK_ATTEMPTS allows a second fallback attempt if the first one
-// also truncates, since there's no evidence yet that two fallback-model
-// attempts are correlated with each other the way two same-model attempts
-// were - that correlation was specifically measured between two attempts
-// on the same (small) model, not between two attempts on a different,
-// more capable one.
-const FALLBACK_MAX_TOKENS = 2800;
-const MAX_FALLBACK_ATTEMPTS = 2;
+// closer to "that generation was already in a bad state." A single
+// different-model fallback (Mistral Large) helped a lot but still wasn't
+// reliable enough on its own either: of 8 real escalations measured, 7
+// succeeded and 1 truncated on both of its own attempts too. Rather than
+// one fallback, this is a genuine escalation chain - each tier a
+// different, more capable (and pricier) model, reached only once every
+// attempt at the tier before it has already truncated. The last two
+// tiers are deliberately from two different companies, not two models in
+// the same family, so a shared-vendor quirk can't explain a failure that
+// makes it that far. Every tier also gets more token headroom than the
+// one before it - some truncations may be genuinely-long-but-coherent
+// content hitting an arbitrary ceiling, not only degeneration, and a
+// bigger cap directly fixes that case regardless of which model is
+// generating. Reached rarely enough, given how many tiers already stand
+// before it, that the real cost stays small despite each tier being
+// meaningfully pricier than the last - see pricing.ts for the real
+// numbers.
+interface RetryTier {
+  getModel: () => string;
+  maxTokens: number;
+  maxAttempts: number;
+}
+
+function buildRetryTiers(defaultModel: string, defaultMaxTokens: number): RetryTier[] {
+  return [
+    { getModel: () => defaultModel, maxTokens: defaultMaxTokens, maxAttempts: 1 },
+    { getModel: getTruncationFallbackModel, maxTokens: 2800, maxAttempts: 2 },
+    { getModel: getTopTierFallbackModel, maxTokens: 3500, maxAttempts: 2 },
+    { getModel: getLastResortFallbackModel, maxTokens: 4000, maxAttempts: 1 },
+  ];
+}
 
 const CONCISENESS_REMINDER: OpenRouterMessage = {
   role: 'user',
@@ -128,34 +146,34 @@ export async function callOpenRouter(
   let lastError = 'Unknown error';
   let lastUsage: { promptTokens: number; completionTokens: number; totalTokens: number } | undefined;
   let attempt = 0;
-  // Counts fallback-model attempts used so far (0 = still on the default
-  // model, up to MAX_FALLBACK_ATTEMPTS after that). Also accumulates the
-  // real cost/tokens every discarded attempt actually spent, so the final
-  // logged cost reflects everything spent, not just the kept attempt.
-  let fallbackAttemptsUsed = 0;
+  // Which escalation tier we're on (0 = the default model) and how many
+  // attempts have been made at that tier so far - see buildRetryTiers
+  // above. Also accumulates the real cost/tokens every discarded attempt
+  // actually spent, so the final logged cost reflects everything spent
+  // across the whole chain, not just the kept attempt.
+  const tiers = buildRetryTiers(model, maxTokens);
+  let tierIndex = 0;
+  let attemptsAtTier = 0;
   let extraCost = 0;
   let extraPromptTokens = 0;
   let extraCompletionTokens = 0;
   let extraTotalTokens = 0;
   // Tracks which model the most recent attempt actually used, so a failure
-  // path reached after the truncation retry has switched models (see
+  // path reached after the chain has moved to a later tier (see
   // attemptModel below) reports and costs against the model that really
   // made that attempt, not always the original.
   let lastAttemptModel = model;
 
   while (remainingMs() >= MIN_REMAINING_TO_ATTEMPT_MS) {
     attempt++;
-    // A fallback attempt uses a different, more capable model (see
-    // getTruncationFallbackModel in models.ts) and a bigger token ceiling
-    // (FALLBACK_MAX_TOKENS) than the default model's own attempt - see the
-    // comment on FALLBACK_MAX_TOKENS/MAX_FALLBACK_ATTEMPTS above for why.
-    const isFallbackAttempt = fallbackAttemptsUsed > 0;
-    const attemptModel = isFallbackAttempt ? getTruncationFallbackModel() : model;
-    const attemptMaxTokens = isFallbackAttempt ? FALLBACK_MAX_TOKENS : maxTokens;
+    const tier = tiers[tierIndex];
+    const isFallbackAttempt = tierIndex > 0;
+    const attemptModel = tier.getModel();
+    const attemptMaxTokens = tier.maxTokens;
     const attemptTimeout = Math.min(attemptTimeoutFor(attemptMaxTokens), remainingMs());
     lastAttemptModel = attemptModel;
     console.log(
-      `[openrouter] ${label}: attempt ${attempt} starting, model=${attemptModel}, maxTokens=${attemptMaxTokens}, timeout=${attemptTimeout}ms, remaining budget=${remainingMs()}ms`
+      `[openrouter] ${label}: attempt ${attempt} starting, tier=${tierIndex + 1}/${tiers.length}, model=${attemptModel}, maxTokens=${attemptMaxTokens}, timeout=${attemptTimeout}ms, remaining budget=${remainingMs()}ms`
     );
     try {
       const response = await fetch(OPENROUTER_URL, {
@@ -293,32 +311,46 @@ export async function callOpenRouter(
         // happens to equal the configured cap.
         console.warn(`[openrouter] ${label}: TRUNCATED - response hit the max_tokens limit (${attemptMaxTokens}) before finishing naturally.`);
 
-        if (fallbackAttemptsUsed < MAX_FALLBACK_ATTEMPTS && remainingMs() >= MIN_REMAINING_TO_ATTEMPT_MS) {
-          fallbackAttemptsUsed++;
-          console.warn(
-            `[openrouter] ${label}: retrying with the fallback model (attempt ${fallbackAttemptsUsed} of ${MAX_FALLBACK_ATTEMPTS}, ${remainingMs()}ms remaining).`
-          );
+        attemptsAtTier++;
+        let nextTierIndex = tierIndex;
+        if (attemptsAtTier >= tier.maxAttempts) {
+          nextTierIndex = tierIndex + 1;
+        }
+
+        if (nextTierIndex < tiers.length && remainingMs() >= MIN_REMAINING_TO_ATTEMPT_MS) {
+          // Only fold this attempt's cost/tokens into the "extra" totals
+          // once we know it's being discarded in favor of another attempt -
+          // the final failure return below adds the *current* (last)
+          // attempt's cost separately, so folding it in here too would
+          // double-count it on that path.
           extraCost += calculateCost(servingModel, promptTokens, completionTokens);
           extraPromptTokens += promptTokens;
           extraCompletionTokens += completionTokens;
           extraTotalTokens += totalTokens;
+          if (nextTierIndex !== tierIndex) {
+            tierIndex = nextTierIndex;
+            attemptsAtTier = 0;
+          }
+          console.warn(
+            `[openrouter] ${label}: retrying at tier ${tierIndex + 1}/${tiers.length} (${tiers[tierIndex].getModel()}), ${remainingMs()}ms remaining.`
+          );
           // No backoff() here, same reasoning as the timeout branch below -
           // nothing about a token-cap hit suggests waiting helps, and this
           // retry is already spending real tokens/cost on top of the
           // discarded attempt, so it shouldn't also spend budget waiting.
           continue;
         }
-        // Still truncated after using every fallback attempt (or there was
-        // no budget left for one) - a response cut off mid-thought is not
-        // a degraded-but-usable result, it's not a real answer at all (an
-        // argument or ruling that stops mid-sentence isn't fair to present
-        // as the character's actual position). Treated as a real failure,
-        // not returned as a truncated "success" for the caller to badge
-        // and move on - representative.ts/judge.ts already treat any
+        // Still truncated after using every attempt at every tier (or there
+        // was no budget left for another) - a response cut off mid-thought
+        // is not a degraded-but-usable result, it's not a real answer at
+        // all (an argument or ruling that stops mid-sentence isn't fair to
+        // present as the character's actual position). Treated as a real
+        // failure, not returned as a truncated "success" for the caller to
+        // badge and move on - representative.ts/judge.ts already treat any
         // `status: 'failed'` result as a normal, visible failure, so this
         // needs no special handling on their side. Cost/token totals still
         // include every attempt, since each one genuinely spent money.
-        console.warn(`[openrouter] ${label}: still truncated after every fallback attempt - returning failed rather than a cut-off result.`);
+        console.warn(`[openrouter] ${label}: still truncated after every tier - returning failed rather than a cut-off result.`);
         // Built directly rather than via failure() - the attempts can span
         // different models (see attemptModel above) with different
         // per-token prices, so cost has to be summed as separate dollar
@@ -332,7 +364,7 @@ export async function callOpenRouter(
           completionTokens: completionTokens + extraCompletionTokens,
           totalTokens: totalTokens + extraTotalTokens,
           cost: calculateCost(servingModel, promptTokens, completionTokens) + extraCost,
-          errorMessage: `Response was still truncated after ${attempt} attempt(s) (the original try plus ${fallbackAttemptsUsed} fallback-model ${fallbackAttemptsUsed === 1 ? 'retry' : 'retries'}). The generated content was incomplete and was not saved.`,
+          errorMessage: `Response was still truncated after ${attempt} attempt(s) across ${tierIndex + 1} escalation tier(s). The generated content was incomplete and was not saved.`,
         };
       }
 

@@ -57,3 +57,27 @@ const TRUNCATION_FALLBACK_MODEL = process.env.TRUNCATION_FALLBACK_MODEL || 'mist
 export function getTruncationFallbackModel(): string {
   return TRUNCATION_FALLBACK_MODEL;
 }
+
+// Third and fourth escalation tiers, reached only when the fallback model
+// above has already truncated on every attempt allowed it (see the tiered
+// retry loop in openrouter.ts) - real measured data on that fallback model
+// alone found it still not reliable enough on its own (a real, if rare,
+// case truncated on both of its own attempts too). These two are
+// deliberately two different, genuinely top-tier models from two
+// different companies, neither an incremental step within the same
+// family: escalating vendor as well as capability tier removes any
+// shared-family quirk as an explanation, not just a shared-size one.
+// Reached rarely enough (only after every earlier tier has already
+// failed) that the real cost impact stays small despite a materially
+// higher per-token price than either the default or the Mistral Large
+// tier - see pricing.ts.
+const TOP_TIER_FALLBACK_MODEL = process.env.TOP_TIER_FALLBACK_MODEL || 'openai/gpt-5.6-sol';
+const LAST_RESORT_FALLBACK_MODEL = process.env.LAST_RESORT_FALLBACK_MODEL || 'google/gemini-2.5-pro';
+
+export function getTopTierFallbackModel(): string {
+  return TOP_TIER_FALLBACK_MODEL;
+}
+
+export function getLastResortFallbackModel(): string {
+  return LAST_RESORT_FALLBACK_MODEL;
+}
