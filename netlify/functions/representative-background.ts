@@ -152,8 +152,24 @@ export const handler = safeHandler(rawHandler);
 // real, disclosed gap this introduces (those two rejections are no longer
 // visible to the poller, only in function logs).
 //
-// UNVERIFIED IN PRODUCTION: local netlify dev's emulation of Background
-// Functions has not been confirmed to match real deployed behavior -
+// The file is named representative-background.ts, not representative.ts,
+// for a real, load-bearing reason found by reading netlify-cli's own
+// source directly: locally, netlify dev decides whether a function gets
+// the 900-second background timeout or the 30-second synchronous one
+// purely by checking whether the function's name ends in "-background" -
+// it does not read this config.background export at all for that
+// decision. Without the suffix, local dev was silently giving these calls
+// the synchronous 30s ceiling regardless of this file's own config,
+// which is exactly what was killing real, otherwise-successful calls in
+// local testing. A custom `path` below still controls the actual public
+// route, so this rename changes nothing about the URL this function is
+// reachable at - both config.background here and the filename suffix are
+// kept together, since Netlify's own docs list the filename suffix as a
+// still-supported legacy convention alongside the modern config property.
+//
+// UNVERIFIED IN PRODUCTION: whether the real deployed platform's own
+// Background Function detection also needs (or merely tolerates) the
+// filename suffix, on top of config.background, has not been confirmed -
 // this project has separately, repeatedly found that its redirect-based
 // routing behaves differently locally than once deployed (see the
 // "Production deployment" bug log entries), so the same caution applies

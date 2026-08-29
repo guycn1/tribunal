@@ -140,12 +140,13 @@ const rawHandler: Handler = async (event) => {
 
 export const handler = safeHandler(rawHandler);
 
-// See the matching config on representative.ts for the reasoning behind
-// every choice here (the numbers, background:true and why it's now
-// required rather than optional, the path glob, the missing `: Config`
-// annotation, and the "unverified in production" caveat) - the only
-// difference is the function name in the path, matching how netlify.toml
-// routes here.
+// See the matching config on representative-background.ts for the
+// reasoning behind every choice here (the numbers, background:true and
+// why it's now required rather than optional, the -background filename
+// suffix and why local dev specifically needs it, the path glob, the
+// missing `: Config` annotation, and the "unverified in production"
+// caveat) - the only difference is the function name in the path,
+// matching how netlify.toml routes here.
 export const config = {
   path: '/.netlify/functions/judge/*',
   background: true,
