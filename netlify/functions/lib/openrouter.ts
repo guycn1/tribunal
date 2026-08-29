@@ -1,4 +1,5 @@
 import { calculateCost } from './pricing';
+import { getTruncationFallbackModel } from './models';
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
@@ -110,11 +111,24 @@ export async function callOpenRouter(
   let extraPromptTokens = 0;
   let extraCompletionTokens = 0;
   let extraTotalTokens = 0;
+  // Tracks which model the most recent attempt actually used, so a failure
+  // path reached after the truncation retry has switched models (see
+  // attemptModel below) reports and costs against the model that really
+  // made that attempt, not always the original.
+  let lastAttemptModel = model;
 
   while (remainingMs() >= MIN_REMAINING_TO_ATTEMPT_MS) {
     attempt++;
     const attemptTimeout = Math.min(attemptTimeoutFor(maxTokens), remainingMs());
-    console.log(`[openrouter] ${label}: attempt ${attempt} starting, timeout=${attemptTimeout}ms, remaining budget=${remainingMs()}ms`);
+    // The truncation retry uses a different, more capable fallback model
+    // rather than asking the same model again - see getTruncationFallbackModel
+    // in models.ts for why a same-model retry turned out not to behave like
+    // a genuinely independent second attempt.
+    const attemptModel = hasRetriedForTruncation ? getTruncationFallbackModel() : model;
+    lastAttemptModel = attemptModel;
+    console.log(
+      `[openrouter] ${label}: attempt ${attempt} starting, model=${attemptModel}, timeout=${attemptTimeout}ms, remaining budget=${remainingMs()}ms`
+    );
     try {
       const response = await fetch(OPENROUTER_URL, {
         method: 'POST',
@@ -127,7 +141,7 @@ export async function callOpenRouter(
           'X-Title': 'Tribunal',
         },
         body: JSON.stringify({
-          model,
+          model: attemptModel,
           messages: hasRetriedForTruncation ? [...messages, CONCISENESS_REMINDER] : messages,
           max_tokens: maxTokens,
           // Reasoning models can otherwise spend hundreds to thousands of
@@ -176,7 +190,7 @@ export async function callOpenRouter(
           const limit = response.headers.get('x-ratelimit-limit') ?? 'the account';
           const message = `OpenRouter request quota exhausted (rate limit ${limit}, 0 remaining). Resets at ${resetIso}.`;
           console.log(`[openrouter] ${label}: attempt ${attempt} - ${message}`);
-          return failure(model, message, lastUsage);
+          return failure(attemptModel, message, lastUsage);
         }
 
         lastError = `OpenRouter returned HTTP 429 (rate limited)`;
@@ -197,7 +211,7 @@ export async function callOpenRouter(
         // endpoints.
         const message = `OpenRouter account is out of credits (HTTP 402): ${await describeErrorBody(response)}`;
         console.log(`[openrouter] ${label}: attempt ${attempt} - ${message}`);
-        return failure(model, message);
+        return failure(attemptModel, message);
       }
 
       if (response.status >= 500) {
@@ -210,7 +224,7 @@ export async function callOpenRouter(
       if (!response.ok) {
         const message = `OpenRouter returned HTTP ${response.status}: ${await describeErrorBody(response)}`;
         console.log(`[openrouter] ${label}: attempt ${attempt} - ${message}`);
-        return failure(model, message);
+        return failure(attemptModel, message);
       }
 
       const data = (await response.json()) as any;
@@ -237,7 +251,7 @@ export async function callOpenRouter(
         continue;
       }
 
-      const servingModel: string = data?.model ?? model;
+      const servingModel: string = data?.model ?? attemptModel;
       const finishReason = data?.choices?.[0]?.finish_reason;
       console.log(
         `[openrouter] ${label}: attempt ${attempt} - success, served by ${servingModel}, ${completionTokens} completion tokens, finish_reason=${finishReason ?? 'unknown'}, ${Date.now() - startedAt}ms total`
@@ -275,15 +289,21 @@ export async function callOpenRouter(
         // this needs no special handling on their side. Cost/token totals
         // still include both attempts, since both genuinely spent money.
         console.warn(`[openrouter] ${label}: still truncated after the retry - returning failed rather than a cut-off result.`);
-        return failure(
-          servingModel,
-          `Response was truncated at the ${maxTokens}-token limit on both the original attempt and a conciseness retry. The generated content was incomplete and was not saved.`,
-          {
-            promptTokens: promptTokens + extraPromptTokens,
-            completionTokens: completionTokens + extraCompletionTokens,
-            totalTokens: totalTokens + extraTotalTokens,
-          }
-        );
+        // Built directly rather than via failure() - the two attempts can
+        // now use different models (see attemptModel above) with different
+        // per-token prices, so cost has to be summed as two separate
+        // dollar amounts (one per model), not computed once from summed
+        // token counts against a single price the way failure() does
+        // internally. Same pattern the success return below already uses.
+        return {
+          status: 'failed',
+          model: servingModel,
+          promptTokens: promptTokens + extraPromptTokens,
+          completionTokens: completionTokens + extraCompletionTokens,
+          totalTokens: totalTokens + extraTotalTokens,
+          cost: calculateCost(servingModel, promptTokens, completionTokens) + extraCost,
+          errorMessage: `Response was truncated at the ${maxTokens}-token limit on both the original attempt and a conciseness retry. The generated content was incomplete and was not saved.`,
+        };
       }
 
       return {
@@ -317,7 +337,7 @@ export async function callOpenRouter(
 
   const message = `${lastError} (gave up after ${attempt} attempt(s), ${TOTAL_BUDGET_MS}ms budget)`;
   console.log(`[openrouter] ${label}: ${message}`);
-  return failure(model, message, lastUsage);
+  return failure(lastAttemptModel, message, lastUsage);
 }
 
 function failure(
