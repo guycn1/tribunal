@@ -53,6 +53,21 @@ export interface OpenRouterMessage {
   content: string;
 }
 
+// Appended (as an extra user turn, not a continuation of the cut-off
+// content) for exactly one retry when a response hits max_tokens before
+// reaching a natural conclusion. A truncated response was previously
+// accepted as a plain success with no corrective action - real testing
+// found this happens to a real, non-trivial share of calls (roughly 1 in
+// 4 in one batch) even with frequency_penalty/presence_penalty already
+// in place, so silently accepting it was leaving a known, common failure
+// mode unaddressed. Framed as a fresh attempt, not "finish what you
+// started," since the model never sees its own truncated fragment here.
+const CONCISENESS_REMINDER: OpenRouterMessage = {
+  role: 'user',
+  content:
+    'Your previous attempt ran past the length target and was cut off before reaching a conclusion. Write your response again from scratch, more concisely this time, and make sure to reach a clear, complete ending well within the word count you were given.',
+};
+
 export interface OpenRouterResult {
   status: 'success' | 'failed';
   content?: string;
@@ -86,6 +101,15 @@ export async function callOpenRouter(
   let lastError = 'Unknown error';
   let lastUsage: { promptTokens: number; completionTokens: number; totalTokens: number } | undefined;
   let attempt = 0;
+  // Tracks whether the one-shot truncation retry has already been used, and
+  // accumulates the real cost/tokens a discarded truncated attempt actually
+  // spent, so the final logged cost reflects both attempts, not just the
+  // one whose content is kept.
+  let hasRetriedForTruncation = false;
+  let extraCost = 0;
+  let extraPromptTokens = 0;
+  let extraCompletionTokens = 0;
+  let extraTotalTokens = 0;
 
   while (remainingMs() >= MIN_REMAINING_TO_ATTEMPT_MS) {
     attempt++;
@@ -104,7 +128,7 @@ export async function callOpenRouter(
         },
         body: JSON.stringify({
           model,
-          messages,
+          messages: hasRetriedForTruncation ? [...messages, CONCISENESS_REMINDER] : messages,
           max_tokens: maxTokens,
           // Reasoning models can otherwise spend hundreds to thousands of
           // hidden tokens per call before producing visible output —
@@ -218,16 +242,33 @@ export async function callOpenRouter(
         // terminal output without having to notice that completionTokens
         // happens to equal the configured cap.
         console.warn(`[openrouter] ${label}: TRUNCATED - response hit the max_tokens limit (${maxTokens}) before finishing naturally.`);
+
+        if (!hasRetriedForTruncation && remainingMs() >= MIN_REMAINING_TO_ATTEMPT_MS) {
+          console.warn(`[openrouter] ${label}: retrying once with an explicit conciseness reminder (${remainingMs()}ms remaining).`);
+          hasRetriedForTruncation = true;
+          extraCost += calculateCost(servingModel, promptTokens, completionTokens);
+          extraPromptTokens += promptTokens;
+          extraCompletionTokens += completionTokens;
+          extraTotalTokens += totalTokens;
+          // No backoff() here, same reasoning as the timeout branch below -
+          // nothing about a token-cap hit suggests waiting helps, and this
+          // retry is already spending real tokens/cost on top of the
+          // discarded attempt, so it shouldn't also spend budget waiting.
+          continue;
+        }
+        console.warn(
+          `[openrouter] ${label}: truncated again after the conciseness retry (or no budget left for one) - returning the truncated content as final.`
+        );
       }
 
       return {
         status: 'success',
         content,
         model: servingModel,
-        promptTokens,
-        completionTokens,
-        totalTokens,
-        cost: calculateCost(servingModel, promptTokens, completionTokens),
+        promptTokens: promptTokens + extraPromptTokens,
+        completionTokens: completionTokens + extraCompletionTokens,
+        totalTokens: totalTokens + extraTotalTokens,
+        cost: calculateCost(servingModel, promptTokens, completionTokens) + extraCost,
       };
     } catch (err) {
       const isTimeout = err instanceof Error && err.name === 'TimeoutError';
