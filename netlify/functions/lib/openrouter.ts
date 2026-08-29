@@ -1,4 +1,5 @@
 import { calculateCost } from './pricing';
+import { getTruncationFallbackModel, getTopTierFallbackModel, getLastResortFallbackModel, modelRequiresReasoning } from './models';
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
@@ -7,57 +8,110 @@ const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 // under a second) gets more attempts than one where each try genuinely
 // takes most of the budget.
 //
-// 26000ms is the most this can safely ask for, not an arbitrary round
-// number: Netlify's own platform-level timeout for a standard function
-// invocation was directly observed at ~30s, and it fires regardless of any
-// AbortSignal this code sets - if that kill happens first, the whole
-// invocation dies before any of this function's own error-logging or the
-// Supabase writes that run after callOpenRouter() resolves can execute,
-// which is a silent failure rather than a clean one. The ~4s of margin
-// below the observed ceiling is deliberately kept, not spent, for exactly
-// those writes plus general timing imprecision - there is no larger safe
-// value to raise this to on this platform; genuinely accommodating a
-// longer wait would need a different architecture (e.g. a Netlify
-// Background Function the frontend polls for, which has no such ceiling
-// but isn't available on every plan).
-const TOTAL_BUDGET_MS = 26000;
-// Don't start an attempt the remaining budget cannot plausibly finish - an
-// attempt that gets aborted partway through generation spends real cost to
-// produce nothing usable.
-const MIN_REMAINING_TO_ATTEMPT_MS = 8000;
+// representative.ts/judge.ts now run as Netlify Background Functions
+// (config.background = true), not standard synchronous invocations - the
+// real, verified reason this whole file used to budget against a tight
+// ~26s ceiling. That number was calibrated against a *standard* Netlify
+// Function invocation limit that turned out to be wrong for what this
+// project actually runs on: the real free-tier synchronous limit is 10
+// seconds (verified directly against Netlify's own docs and support
+// forum, not assumed), which every real completion measured on this
+// project (consistently 8-18s+ per call) would have been at serious risk
+// of blowing through regardless of how carefully the old budget was
+// tuned - no amount of constant-tuning fixes an architecture mismatch.
+// Background Functions get up to 15 minutes instead. 120000ms (2 minutes)
+// is still a small fraction of that real ceiling - real margin for
+// multiple genuine full-length retries, not just fast-failure ones - while
+// staying far short of ever risking the actual 15-minute wall.
+// Raised to fit the full escalation chain (see RETRY_TIERS below): worst
+// case, roughly 43s (default, 1400 tokens) + 78s x2 (mistral-large, 2800
+// tokens) + 95.5s x2 (first top-tier model, 3500 tokens) + 108s x1 (last-
+// resort model, 4000 tokens) = ~498s of attempt ceilings alone, before
+// counting backoff delays between attempts - a real, observed case hit
+// ~20 consecutive fast 429 retries at one tier alone. 650000ms (650s,
+// ~10.8 minutes) leaves real margin above that worst case while staying
+// comfortably under the real 900s (15 minute) background-function
+// ceiling, not razor-close to it.
+const TOTAL_BUDGET_MS = 650000;
+// Don't start an attempt the remaining budget cannot plausibly finish.
+// With a 2-minute total budget instead of a ~26s one, this no longer has
+// to be tuned razor-close to the floor the way it did before (a real,
+// measured mistake at the old tight budget: 8000ms turned out to be
+// exactly big enough to get eaten by backoff()'s own delay between
+// attempts, silently preventing the retry it existed to allow). 10000ms
+// here has real slack in both directions - comfortably enough for a fast
+// 429/5xx/empty-content retry, and enough margin that ordinary timing
+// jitter can't quietly cancel it out again.
+const MIN_REMAINING_TO_ATTEMPT_MS = 10000;
 
-// Per-attempt ceiling, scaled to how much text the call actually asked for
-// - a single flat value can't serve both call types here, since judges
-// (whose prompt also carries all four representative arguments, and whose
-// max_tokens is set higher) need more generation time than representatives
-// do. A timeout signal passed to fetch() stays armed while the response
+// Per-attempt ceiling, scaled to how much text the call actually asked
+// for. A timeout signal passed to fetch() stays armed while the response
 // body is read, so this has to cover generation time, not just
-// time-to-headers. In practice a single attempt's timeout is also always
-// further clamped by whatever's left of TOTAL_BUDGET_MS (see remainingMs()
-// below), so this upper bound only matters for how long the very first
-// attempt is allowed to run.
-//
-// Calibrated against real measured calls against the currently configured
-// model (see the per-attempt console.log lines below), not assumed -
-// three successful representative calls (max_tokens 1000) landed at
-// 13858/14461/16289ms, and three successful judge calls (max_tokens 1400)
-// landed at 10899/12311/16741ms. That's roughly 20-31ms per completion
-// token including connection and prompt-processing overhead, well above
-// what an earlier, un-measured estimate assumed - which is exactly what
-// let a representative call whose real length happened to land on the
-// slow side of that range get cut off by a timeout that had as little as
-// ~700ms of real margin over an otherwise-successful call. The fixed
-// allowance and per-token rate below are sized with real margin above the
-// slowest of those six measurements, not just the average.
+// time-to-headers. Real successful completions at the current
+// AGENT_MAX_TOKENS (1400) have measured 8.2s-18.5s across every real call
+// logged on this project so far - the values below give real multiples of
+// margin above that range, not just enough to scrape by, since the whole
+// point of moving to a background function was to stop cutting this close.
 function attemptTimeoutFor(maxTokens: number): number {
-  const estimateMs = 6000 + maxTokens * 18;
-  return Math.min(Math.max(estimateMs, 12000), TOTAL_BUDGET_MS);
+  const estimateMs = 8000 + maxTokens * 25;
+  const ceiling = TOTAL_BUDGET_MS - MIN_REMAINING_TO_ATTEMPT_MS;
+  return Math.min(Math.max(estimateMs, 30000), ceiling);
 }
 
 export interface OpenRouterMessage {
   role: 'system' | 'user';
   content: string;
 }
+
+// Appended (as an extra user turn, not a continuation of the cut-off
+// content) for exactly one retry when a response hits max_tokens before
+// reaching a natural conclusion. A truncated response was previously
+// accepted as a plain success with no corrective action - real testing
+// found this happens to a real, non-trivial share of calls (roughly 1 in
+// 4 in one batch) even with frequency_penalty/presence_penalty already
+// in place, so silently accepting it was leaving a known, common failure
+// mode unaddressed. Framed as a fresh attempt, not "finish what you
+// started," since the model never sees its own truncated fragment here.
+// A single same-model retry measurably wasn't enough: real data showed
+// that once a role's first attempt truncated, a same-model retry
+// truncated again 60-75% of the time - not an independent second roll,
+// closer to "that generation was already in a bad state." A single
+// different-model fallback (Mistral Large) helped a lot but still wasn't
+// reliable enough on its own either: of 8 real escalations measured, 7
+// succeeded and 1 truncated on both of its own attempts too. Rather than
+// one fallback, this is a genuine escalation chain - each tier a
+// different, more capable (and pricier) model, reached only once every
+// attempt at the tier before it has already truncated. The last two
+// tiers are deliberately from two different companies, not two models in
+// the same family, so a shared-vendor quirk can't explain a failure that
+// makes it that far. Every tier also gets more token headroom than the
+// one before it - some truncations may be genuinely-long-but-coherent
+// content hitting an arbitrary ceiling, not only degeneration, and a
+// bigger cap directly fixes that case regardless of which model is
+// generating. Reached rarely enough, given how many tiers already stand
+// before it, that the real cost stays small despite each tier being
+// meaningfully pricier than the last - see pricing.ts for the real
+// numbers.
+interface RetryTier {
+  getModel: () => string;
+  maxTokens: number;
+  maxAttempts: number;
+}
+
+function buildRetryTiers(defaultModel: string, defaultMaxTokens: number): RetryTier[] {
+  return [
+    { getModel: () => defaultModel, maxTokens: defaultMaxTokens, maxAttempts: 1 },
+    { getModel: getTruncationFallbackModel, maxTokens: 2800, maxAttempts: 2 },
+    { getModel: getTopTierFallbackModel, maxTokens: 3500, maxAttempts: 2 },
+    { getModel: getLastResortFallbackModel, maxTokens: 4000, maxAttempts: 1 },
+  ];
+}
+
+const CONCISENESS_REMINDER: OpenRouterMessage = {
+  role: 'user',
+  content:
+    'Your previous attempt ran past the length target and was cut off before reaching a conclusion. Write your response again from scratch, more concisely this time, and make sure to reach a clear, complete ending well within the word count you were given.',
+};
 
 export interface OpenRouterResult {
   status: 'success' | 'failed';
@@ -92,11 +146,35 @@ export async function callOpenRouter(
   let lastError = 'Unknown error';
   let lastUsage: { promptTokens: number; completionTokens: number; totalTokens: number } | undefined;
   let attempt = 0;
+  // Which escalation tier we're on (0 = the default model) and how many
+  // attempts have been made at that tier so far - see buildRetryTiers
+  // above. Also accumulates the real cost/tokens every discarded attempt
+  // actually spent, so the final logged cost reflects everything spent
+  // across the whole chain, not just the kept attempt.
+  const tiers = buildRetryTiers(model, maxTokens);
+  let tierIndex = 0;
+  let attemptsAtTier = 0;
+  let extraCost = 0;
+  let extraPromptTokens = 0;
+  let extraCompletionTokens = 0;
+  let extraTotalTokens = 0;
+  // Tracks which model the most recent attempt actually used, so a failure
+  // path reached after the chain has moved to a later tier (see
+  // attemptModel below) reports and costs against the model that really
+  // made that attempt, not always the original.
+  let lastAttemptModel = model;
 
   while (remainingMs() >= MIN_REMAINING_TO_ATTEMPT_MS) {
     attempt++;
-    const attemptTimeout = Math.min(attemptTimeoutFor(maxTokens), remainingMs());
-    console.log(`[openrouter] ${label}: attempt ${attempt} starting, timeout=${attemptTimeout}ms, remaining budget=${remainingMs()}ms`);
+    const tier = tiers[tierIndex];
+    const isFallbackAttempt = tierIndex > 0;
+    const attemptModel = tier.getModel();
+    const attemptMaxTokens = tier.maxTokens;
+    const attemptTimeout = Math.min(attemptTimeoutFor(attemptMaxTokens), remainingMs());
+    lastAttemptModel = attemptModel;
+    console.log(
+      `[openrouter] ${label}: attempt ${attempt} starting, tier=${tierIndex + 1}/${tiers.length}, model=${attemptModel}, maxTokens=${attemptMaxTokens}, timeout=${attemptTimeout}ms, remaining budget=${remainingMs()}ms`
+    );
     try {
       const response = await fetch(OPENROUTER_URL, {
         method: 'POST',
@@ -109,14 +187,39 @@ export async function callOpenRouter(
           'X-Title': 'Tribunal',
         },
         body: JSON.stringify({
-          model,
-          messages,
-          max_tokens: maxTokens,
+          model: attemptModel,
+          messages: isFallbackAttempt ? [...messages, CONCISENESS_REMINDER] : messages,
+          max_tokens: attemptMaxTokens,
           // Reasoning models can otherwise spend hundreds to thousands of
           // hidden tokens per call before producing visible output —
           // invisible in the response, but a real driver of call latency
-          // when enabled by default.
-          reasoning: { enabled: false },
+          // when enabled by default. Some models reject this outright
+          // rather than ignoring it (google/gemini-2.5-pro returns HTTP
+          // 400 - see modelRequiresReasoning in models.ts) - omitted
+          // entirely for those rather than forced off.
+          ...(modelRequiresReasoning(attemptModel) ? {} : { reasoning: { enabled: false } }),
+          // A real response was observed spiraling into the same short
+          // clause repeated for its entire remaining token budget (never
+          // reaching a natural stopping point) - a known small-model
+          // degeneration mode, not a prompt-content problem, since the
+          // system prompt already gives an explicit word-count target.
+          // frequency_penalty scales with how often a token has already
+          // appeared, which specifically counteracts a loop that would
+          // otherwise keep reinforcing itself; presence_penalty adds a
+          // smaller flat push away from anything already said, encouraging
+          // the response to keep moving toward an actual conclusion.
+          //
+          // Raised from an earlier 0.4/0.2 after real testing showed that
+          // pair wasn't reliably enough: a live response still spiralled
+          // into "He knew that I was a threat to the realm. He knew that I
+          // was a threat to his sisters..." repeated for the entire
+          // remaining budget, on both the original attempt and the
+          // truncation retry below - the retry's added instruction only
+          // addresses length, not repetition, so it couldn't have fixed
+          // this on its own. Still comfortably short of values (near the
+          // +/-2.0 ends) that visibly distort normal prose.
+          frequency_penalty: 0.7,
+          presence_penalty: 0.35,
         }),
         signal: AbortSignal.timeout(attemptTimeout),
       });
@@ -136,7 +239,7 @@ export async function callOpenRouter(
           const limit = response.headers.get('x-ratelimit-limit') ?? 'the account';
           const message = `OpenRouter request quota exhausted (rate limit ${limit}, 0 remaining). Resets at ${resetIso}.`;
           console.log(`[openrouter] ${label}: attempt ${attempt} - ${message}`);
-          return failure(model, message, lastUsage);
+          return failure(attemptModel, message, lastUsage);
         }
 
         lastError = `OpenRouter returned HTTP 429 (rate limited)`;
@@ -157,7 +260,7 @@ export async function callOpenRouter(
         // endpoints.
         const message = `OpenRouter account is out of credits (HTTP 402): ${await describeErrorBody(response)}`;
         console.log(`[openrouter] ${label}: attempt ${attempt} - ${message}`);
-        return failure(model, message);
+        return failure(attemptModel, message);
       }
 
       if (response.status >= 500) {
@@ -170,7 +273,7 @@ export async function callOpenRouter(
       if (!response.ok) {
         const message = `OpenRouter returned HTTP ${response.status}: ${await describeErrorBody(response)}`;
         console.log(`[openrouter] ${label}: attempt ${attempt} - ${message}`);
-        return failure(model, message);
+        return failure(attemptModel, message);
       }
 
       const data = (await response.json()) as any;
@@ -197,7 +300,7 @@ export async function callOpenRouter(
         continue;
       }
 
-      const servingModel: string = data?.model ?? model;
+      const servingModel: string = data?.model ?? attemptModel;
       const finishReason = data?.choices?.[0]?.finish_reason;
       console.log(
         `[openrouter] ${label}: attempt ${attempt} - success, served by ${servingModel}, ${completionTokens} completion tokens, finish_reason=${finishReason ?? 'unknown'}, ${Date.now() - startedAt}ms total`
@@ -209,17 +312,73 @@ export async function callOpenRouter(
         // distinct prefix specifically so this is easy to spot/grep in
         // terminal output without having to notice that completionTokens
         // happens to equal the configured cap.
-        console.warn(`[openrouter] ${label}: TRUNCATED - response hit the max_tokens limit (${maxTokens}) before finishing naturally.`);
+        console.warn(`[openrouter] ${label}: TRUNCATED - response hit the max_tokens limit (${attemptMaxTokens}) before finishing naturally.`);
+
+        attemptsAtTier++;
+        let nextTierIndex = tierIndex;
+        if (attemptsAtTier >= tier.maxAttempts) {
+          nextTierIndex = tierIndex + 1;
+        }
+
+        if (nextTierIndex < tiers.length && remainingMs() >= MIN_REMAINING_TO_ATTEMPT_MS) {
+          // Only fold this attempt's cost/tokens into the "extra" totals
+          // once we know it's being discarded in favor of another attempt -
+          // the final failure return below adds the *current* (last)
+          // attempt's cost separately, so folding it in here too would
+          // double-count it on that path.
+          extraCost += calculateCost(servingModel, promptTokens, completionTokens);
+          extraPromptTokens += promptTokens;
+          extraCompletionTokens += completionTokens;
+          extraTotalTokens += totalTokens;
+          if (nextTierIndex !== tierIndex) {
+            tierIndex = nextTierIndex;
+            attemptsAtTier = 0;
+          }
+          console.warn(
+            `[openrouter] ${label}: retrying at tier ${tierIndex + 1}/${tiers.length} (${tiers[tierIndex].getModel()}), ${remainingMs()}ms remaining.`
+          );
+          // No backoff() here, same reasoning as the timeout branch below -
+          // nothing about a token-cap hit suggests waiting helps, and this
+          // retry is already spending real tokens/cost on top of the
+          // discarded attempt, so it shouldn't also spend budget waiting.
+          continue;
+        }
+        // Still truncated after using every attempt at every tier (or there
+        // was no budget left for another) - a response cut off mid-thought
+        // is not a degraded-but-usable result, it's not a real answer at
+        // all (an argument or ruling that stops mid-sentence isn't fair to
+        // present as the character's actual position). Treated as a real
+        // failure, not returned as a truncated "success" for the caller to
+        // badge and move on - representative.ts/judge.ts already treat any
+        // `status: 'failed'` result as a normal, visible failure, so this
+        // needs no special handling on their side. Cost/token totals still
+        // include every attempt, since each one genuinely spent money.
+        console.warn(`[openrouter] ${label}: still truncated after every tier - returning failed rather than a cut-off result.`);
+        // Built directly rather than via failure() - the attempts can span
+        // different models (see attemptModel above) with different
+        // per-token prices, so cost has to be summed as separate dollar
+        // amounts (one per model), not computed once from summed token
+        // counts against a single price the way failure() does internally.
+        // Same pattern the success return below already uses.
+        return {
+          status: 'failed',
+          model: servingModel,
+          promptTokens: promptTokens + extraPromptTokens,
+          completionTokens: completionTokens + extraCompletionTokens,
+          totalTokens: totalTokens + extraTotalTokens,
+          cost: calculateCost(servingModel, promptTokens, completionTokens) + extraCost,
+          errorMessage: `Response was still truncated after ${attempt} attempt(s) across ${tierIndex + 1} escalation tier(s). The generated content was incomplete and was not saved.`,
+        };
       }
 
       return {
         status: 'success',
         content,
         model: servingModel,
-        promptTokens,
-        completionTokens,
-        totalTokens,
-        cost: calculateCost(servingModel, promptTokens, completionTokens),
+        promptTokens: promptTokens + extraPromptTokens,
+        completionTokens: completionTokens + extraCompletionTokens,
+        totalTokens: totalTokens + extraTotalTokens,
+        cost: calculateCost(servingModel, promptTokens, completionTokens) + extraCost,
       };
     } catch (err) {
       const isTimeout = err instanceof Error && err.name === 'TimeoutError';
@@ -229,13 +388,21 @@ export async function callOpenRouter(
           ? err.message
           : String(err);
       console.log(`[openrouter] ${label}: attempt ${attempt} - ${lastError}, retrying`);
-      await backoff(attempt);
+      // backoff()'s delay exists to avoid hammering a rate limiter that
+      // will keep refusing for a moment - a real reason to wait for the
+      // 429/5xx/empty-content branches above, but not for a timeout, where
+      // nothing suggests waiting helps and every remaining millisecond of a
+      // fixed, already-tight budget matters more than a precautionary
+      // pause. A genuine timeout skips straight to the retry check instead.
+      if (!isTimeout) {
+        await backoff(attempt);
+      }
     }
   }
 
   const message = `${lastError} (gave up after ${attempt} attempt(s), ${TOTAL_BUDGET_MS}ms budget)`;
   console.log(`[openrouter] ${label}: ${message}`);
-  return failure(model, message, lastUsage);
+  return failure(lastAttemptModel, message, lastUsage);
 }
 
 function failure(

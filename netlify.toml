@@ -25,12 +25,12 @@
 
 [[redirects]]
   from = "/api/trials/:id/representatives/:role"
-  to = "/.netlify/functions/representative/:id/:role"
+  to = "/.netlify/functions/representative-background/:id/:role"
   status = 200
 
 [[redirects]]
   from = "/api/trials/:id/judges/:role"
-  to = "/.netlify/functions/judge/:id/:role"
+  to = "/.netlify/functions/judge-background/:id/:role"
   status = 200
 
 [[redirects]]

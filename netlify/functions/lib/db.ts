@@ -263,7 +263,22 @@ const GLOBAL_CALL_WINDOW_MS = 24 * 60 * 60 * 1000;
 // window even if real traffic had stopped. The caller still returns a
 // clear, real error to the client either way (see representative.ts /
 // judge.ts) - it just isn't persisted.
+//
+// This whole cap exists to bound worst-case spend on the real, public,
+// deployed site - not to constrain the developer's own local testing,
+// which already needs its own explicit go-ahead before any OpenRouter
+// quota is spent (a separate, stricter gate than this one). NETLIFY_DEV
+// is injected as 'true' by the Netlify CLI itself for every invocation
+// under `netlify dev` (confirmed directly in its own source,
+// commands/dev/dev.js) and is not something a real deployed invocation
+// - or a client request - could ever set; a genuine hang chasing this
+// exact cap during local testing is what prompted checking for a way to
+// exempt local calls instead of only ever raising the number.
 export async function isGlobalCallCapExceeded(): Promise<{ exceeded: boolean; count: number }> {
+  if (process.env.NETLIFY_DEV === 'true') {
+    return { exceeded: false, count: 0 };
+  }
+
   const supabase = getSupabaseClient();
   const since = new Date(Date.now() - GLOBAL_CALL_WINDOW_MS).toISOString();
   const { count, error } = await supabase
