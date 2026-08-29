@@ -396,14 +396,20 @@ function deriveRoleStates(data) {
 
 // How long to keep polling a phase for a role that hasn't resolved yet
 // before giving up and showing it as unclear rather than waiting forever.
-// Comfortably above openrouter.ts's own TOTAL_BUDGET_MS (120s) plus real
-// margin for polling/network overhead. A role that still hasn't resolved
-// by then either genuinely failed in a way this page can't see (the
+// Comfortably above openrouter.ts's own TOTAL_BUDGET_MS (650s, sized for
+// the full 4-tier escalation chain - see openrouter.ts) plus real margin
+// for polling/network overhead. This drifted out of sync once before: the
+// server budget was raised from 120s to 650s to fit the escalation chain,
+// but this constant stayed at its old value (150s) - a real, observed
+// consequence was a role that genuinely succeeded server-side (verified
+// directly in the DB) still showing as unresolved on the client because
+// polling gave up first. A role that still hasn't resolved by the new
+// timeout either genuinely failed in a way this page can't see (the
 // disclosed site-gate/call-cap gap documented in representative.ts/
 // judge.ts - a rejection there is no longer visible to the poller, only
 // in Netlify's function logs) or is a real anomaly worth surfacing
 // honestly rather than silently waiting past.
-const POLL_TIMEOUT_MS = 150000;
+const POLL_TIMEOUT_MS = 700000;
 const POLL_INTERVAL_MS = 2500;
 
 // Polls GET /api/trials/:id until every role in `pendingRoles` has
