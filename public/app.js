@@ -122,6 +122,14 @@ function shortModelName(modelId) {
   return modelId.replace(/^[^/]+\//, '').replace(/:free$/, '');
 }
 
+// Only "representative" is long enough to matter for the call log's Type
+// column - "judge" is already short. <abbr> keeps the full word available
+// on hover/long-press rather than just silently truncating it.
+function formatCallTypeHtml(callType) {
+  if (callType === 'representative') return '<abbr title="representative">rep.</abbr>';
+  return callType;
+}
+
 // True when a successful call's completion hit the shared token cap
 // (state.maxTokens, from /api/case) rather than finishing naturally - the
 // server already logs this distinctly via finish_reason (see openrouter.ts),
@@ -941,8 +949,8 @@ function renderCallLog() {
 
     tr.innerHTML = `
       <td>${entry.agentRole}</td>
-      <td>${entry.callType}</td>
-      <td>${entry.modelUsed}</td>
+      <td>${formatCallTypeHtml(entry.callType)}</td>
+      <td title="${entry.modelUsed}">${shortModelName(entry.modelUsed)}</td>
       <td>${tokens}</td>
       <td>${formatCost(entry.cost)}</td>
       <td>${statusCellHtml}</td>

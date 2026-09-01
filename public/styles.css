@@ -346,8 +346,15 @@ body {
   border-radius: 999px;
   padding: 3px 10px;
   font-size: 0.75rem;
+  /* white-space: normal lets a multi-word badge (e.g. "No response yet")
+     wrap between words when its column is narrow. Deliberately no
+     word-break: break-word here, unlike earlier - that broke single-word
+     badges like "Degenerated" mid-character ("Degenerat" / "ed") the
+     moment the column got tight, which reads as broken rather than
+     responsive. overflow-wrap: break-word on the parent <td> is still
+     there as a last-resort fallback for a genuinely unbreakable string,
+     but no real badge text here needs it. */
   white-space: normal;
-  word-break: break-word;
 }
 
 .badge-ok {
@@ -456,18 +463,25 @@ table.call-log {
      overflow-x: auto never actually has anything to scroll. A horizontal
      scrollbar is explicitly not wanted here even as a fallback; wrapped
      text, however imperfect, is the accepted outcome on a narrow viewport
-     instead. The rebalanced colgroup widths below and the responsive
-     font-size/padding reduction further down are what actually reduce how
-     often/how badly that wrapping happens - not a scroll escape hatch. */
+     instead.
+     This size (and the padding below) used to be the >1000px-viewport
+     default, with a smaller size only kicking in below that - but this
+     table's real rendered width is capped by .main's max-width:960px
+     regardless of viewport, so a 1408px-wide window still gives this
+     table only ~900px to work with. A viewport media query alone can't
+     see that, so a "wide" viewport still looked cramped. Compact is now
+     just the permanent default; see the narrow-phone breakpoint further
+     down for the one case (real viewport under ~480px, sidebar already
+     stacked) that still benefits from shrinking further. */
   width: 100%;
   border-collapse: collapse;
   table-layout: fixed;
-  font-size: 0.82rem;
+  font-size: 0.78rem;
 }
 
 table.call-log th,
 table.call-log td {
-  padding: 8px 10px;
+  padding: 7px 8px;
   text-align: left;
   border-bottom: 1px solid var(--border);
   overflow-wrap: break-word;
@@ -495,27 +509,36 @@ table.call-log tbody tr.row-degenerated-retried {
   opacity: 0.53;
 }
 
+table.call-log abbr {
+  text-decoration-style: dotted;
+  cursor: help;
+}
+
 .status-caption {
   color: var(--text-dim);
   font-size: 0.72rem;
   margin-top: 2px;
 }
 
-/* Smaller text and tighter padding buy real room back for the table's
-   fixed-percentage columns on a narrower viewport - the actual fix for
-   less wrapping here, rather than a horizontal scrollbar (deliberately not
-   used anywhere on this table) or forcing any column to nowrap (which,
-   without a scrollbar to fall back on, would just overflow its cell). */
-@media (max-width: 1000px) {
+/* A real narrow-phone viewport (below this, .main's own 720px breakpoint
+   has already stacked the sidebar above the content, so the table gets
+   the full viewport width minus .main's 20px padding either side - down
+   to the 350px floor this app targets, that's still not much room).
+   Smaller text and tighter padding buy back real room for the table's
+   fixed-percentage columns here - the actual fix for less wrapping,
+   rather than a horizontal scrollbar (deliberately not used anywhere on
+   this table) or forcing any column to nowrap (which, without a
+   scrollbar to fall back on, would just overflow its cell). */
+@media (max-width: 480px) {
   table.call-log {
-    font-size: 0.72rem;
+    font-size: 0.7rem;
   }
   table.call-log th,
   table.call-log td {
-    padding: 6px 6px;
+    padding: 5px 5px;
   }
   table.call-log th {
-    font-size: 0.62rem;
+    font-size: 0.6rem;
   }
 }
 

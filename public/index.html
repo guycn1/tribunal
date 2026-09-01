@@ -60,13 +60,30 @@
         <div class="table-scroll">
           <table class="call-log">
             <colgroup>
-              <col style="width: 15%" />
-              <col style="width: 15%" />
-              <col style="width: 16%" />
-              <col style="width: 16%" />
-              <col style="width: 7%" />
-              <col style="width: 11%" />
-              <col style="width: 20%" />
+              <!-- Percentages tuned against the real rendered width, which
+                   is capped well under any reasonable viewport by .main's
+                   max-width:960px - a viewport-width media query alone
+                   can't tell when this table is actually cramped, so
+                   these are sized for the narrow case by default. Model
+                   is the biggest share deliberately: even with the
+                   vendor prefix stripped for display (shortModelName() in
+                   app.js), model ids are still the single longest
+                   realistic content in any column. Time is a bare
+                   fraction of its old share - each of its two stacked
+                   fragments (date, time) is under a dozen characters and
+                   never needed anywhere near this much room. Type is
+                   abbreviated to "rep."/"judge" (formatCallTypeHtml() in
+                   app.js), so it barely needs any share either. Leaves no
+                   spare width for a planned future Duration column -
+                   rebalance this again once that's added, don't just
+                   shrink table-wide font size to make room. -->
+              <col style="width: 14%" />
+              <col style="width: 6%" />
+              <col style="width: 26%" />
+              <col style="width: 19%" />
+              <col style="width: 6%" />
+              <col style="width: 19%" />
+              <col style="width: 10%" />
             </colgroup>
             <thead>
               <tr>
