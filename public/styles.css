@@ -501,6 +501,12 @@ table.call-log th {
   font-size: 0.72rem;
   text-transform: uppercase;
   letter-spacing: 0.04em;
+  /* Every header is a single word ("Agent", "Type", "Duration", ...) -
+     none of them ever needs to wrap at all, let alone mid-word. Overrides
+     the overflow-wrap: break-word inherited from the shared th/td rule
+     above, which data cells genuinely need (long model ids, status
+     captions) but headers never do. */
+  white-space: nowrap;
 }
 
 table.call-log tbody tr:last-child td {

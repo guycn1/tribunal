@@ -71,22 +71,22 @@
                    realistic content in any column. Time is a bare
                    fraction of its old share - each of its two stacked
                    fragments (date, time) is under a dozen characters and
-                   never needed anywhere near this much room. Type is
-                   abbreviated to a single letter (formatCallTypeHtml() in
-                   app.js), so it barely needs any share either. Duration
-                   (formatDuration() in app.js) tops out around
-                   "600000 ms" in the worst realistic case, so it doesn't
-                   need much room either - its addition is funded mostly
-                   by shrinking Status, which had more room than its
-                   content (a short badge plus, at most, one wrapped
-                   caption line) actually needed. -->
+                   never needed anywhere near this much room.
+                   Type/Cost/Duration are all short data-wise, but their
+                   *headers* ("Type", "Cost", "Duration") are single
+                   words that must never wrap (see table.call-log th's
+                   white-space: nowrap) - each is sized with real margin
+                   above what its own uppercase, letter-spaced header
+                   text needs, not just its data, funded by trimming
+                   Model and Status, both of which had more room than
+                   their content actually needed. -->
               <col style="width: 13%" />
-              <col style="width: 5%" />
-              <col style="width: 24%" />
-              <col style="width: 17%" />
               <col style="width: 6%" />
-              <col style="width: 9%" />
-              <col style="width: 16%" />
+              <col style="width: 22%" />
+              <col style="width: 17%" />
+              <col style="width: 7%" />
+              <col style="width: 11%" />
+              <col style="width: 14%" />
               <col style="width: 10%" />
             </colgroup>
             <thead>
