@@ -937,7 +937,14 @@ function renderCallLog() {
       state.maxTokens &&
       entry.completionTokens > 0 &&
       entry.completionTokens % state.maxTokens === 0;
-    const tokens = `${entry.promptTokens} / ${entry.completionTokens} / ${entry.totalTokens}`;
+    // Total is what actually matters at a glance (it's what the cap and
+    // cost are driven by); prompt/completion break it down underneath in
+    // the same dim, secondary-line treatment status-caption already uses
+    // for "why" text, rather than three equally-weighted numbers.
+    const tokens = `
+      <strong>${entry.totalTokens.toLocaleString()}</strong>
+      <div class="status-caption">${entry.promptTokens.toLocaleString()} in / ${entry.completionTokens.toLocaleString()} out</div>
+    `;
 
     let statusCellHtml;
     if (isDegenerateRetried) {
