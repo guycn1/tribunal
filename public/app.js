@@ -887,6 +887,19 @@ function formatCost(cost) {
   return `${(Number(cost) * 100).toFixed(2)}¢`;
 }
 
+// "Grey Worm" instead of "grey_worm" - REPRESENTATIVE_META already has the
+// proper display name for the four representatives; judges are single
+// words, so plain capitalization gives "Barak"/"Elon"/"Shamgar" directly
+// (deliberately not JUDGE_META's name, which is "Judge — Barak method" -
+// too long for this column and redundant with the Type column showing
+// "J" already). Also means text wraps at the space in a name like
+// "Daenerys Targaryen" instead of breaking mid-word inside
+// "daenerys_targaryen".
+function formatAgentName(role) {
+  if (REPRESENTATIVE_META[role]) return REPRESENTATIVE_META[role].name;
+  return role.charAt(0).toUpperCase() + role.slice(1);
+}
+
 // null specifically for rows logged before the duration_ms column
 // existed (see ApiCallLogRecord in types.ts) - shown as a plain dash
 // rather than a fabricated 0, which would misleadingly read as an
@@ -966,7 +979,7 @@ function renderCallLog() {
     }
 
     tr.innerHTML = `
-      <td>${entry.agentRole}</td>
+      <td>${formatAgentName(entry.agentRole)}</td>
       <td>${formatCallTypeHtml(entry.callType)}</td>
       <td><abbr title="${entry.modelUsed}">${shortModelName(entry.modelUsed)}</abbr></td>
       <td>${tokens}</td>
