@@ -549,10 +549,11 @@ table.call-log abbr {
   margin-top: 2px;
 }
 
-/* A real narrow-phone viewport (below this, .main's own 720px breakpoint
-   has already stacked the sidebar above the content, so the table gets
-   the full viewport width minus .main's 20px padding either side - down
-   to the 350px floor this app targets, that's still not much room).
+/* A real narrow-phone viewport (below this, .layout's own 900px
+   breakpoint has already stacked the sidebar above the content, so the
+   table gets the full viewport width minus .main's 20px padding either
+   side - down to the 350px floor this app targets, that's still not much
+   room).
    Smaller text and tighter padding buy back real room for the table's
    fixed-percentage columns here - the actual fix for less wrapping,
    rather than a horizontal scrollbar (deliberately not used anywhere on
@@ -571,7 +572,16 @@ table.call-log abbr {
   }
 }
 
-@media (max-width: 720px) {
+/* Below this, the sidebar stops competing with .main for horizontal
+   space at all and moves above it instead, full-width. Raised from
+   720px - at that threshold the two were still fighting over real
+   estate neither could spare: Status/Time in the call log table were
+   observed breaking down at a 896px viewport, well above the old
+   breakpoint. 900px (rather than the ~850px first suggested) is
+   deliberately just past that 896px case specifically, so the exact
+   viewport that showed the problem falls on the "stacked" side of this
+   breakpoint, not just short of it. */
+@media (max-width: 900px) {
   .layout {
     flex-direction: column;
   }
