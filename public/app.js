@@ -125,8 +125,8 @@ function shortModelName(modelId) {
 // Single-letter Type column, with the full word kept available via <abbr>
 // (hover/long-press) rather than silently discarding it.
 function formatCallTypeHtml(callType) {
-  if (callType === 'representative') return '<abbr title="representative">R</abbr>';
-  if (callType === 'judge') return '<abbr title="judge">J</abbr>';
+  if (callType === 'representative') return '<abbr title="Representative">R</abbr>';
+  if (callType === 'judge') return '<abbr title="Judge">J</abbr>';
   return callType;
 }
 
