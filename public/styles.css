@@ -482,9 +482,17 @@ table.call-log {
 table.call-log th,
 table.call-log td {
   padding: 7px 8px;
-  text-align: left;
+  text-align: center;
   border-bottom: 1px solid var(--border);
+  /* Deliberately much fainter than the row divider above - a hint of
+     separation between columns, not a visible grid. */
+  border-right: 1px solid color-mix(in srgb, var(--border) 40%, transparent);
   overflow-wrap: break-word;
+}
+
+table.call-log th:last-child,
+table.call-log td:last-child {
+  border-right: none;
 }
 
 table.call-log th {
