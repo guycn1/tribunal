@@ -885,6 +885,15 @@ function formatCost(cost) {
   return `$${Number(cost).toFixed(4)}`;
 }
 
+// null specifically for rows logged before the duration_ms column
+// existed (see ApiCallLogRecord in types.ts) - shown as a plain dash
+// rather than a fabricated 0, which would misleadingly read as an
+// instant response.
+function formatDuration(durationMs) {
+  if (durationMs === null || durationMs === undefined) return '—';
+  return `${Math.round(durationMs).toLocaleString()} ms`;
+}
+
 function renderCallLog() {
   if (state.callLog.length === 0) {
     el.phaseLog.classList.add('hidden');
@@ -953,6 +962,7 @@ function renderCallLog() {
       <td><abbr title="${entry.modelUsed}">${shortModelName(entry.modelUsed)}</abbr></td>
       <td>${tokens}</td>
       <td>${formatCost(entry.cost)}</td>
+      <td>${formatDuration(entry.durationMs)}</td>
       <td>${statusCellHtml}</td>
       <td>${formatDateTimeHtml(entry.timestamp)}</td>
     `;

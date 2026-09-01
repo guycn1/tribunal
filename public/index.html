@@ -72,17 +72,21 @@
                    fraction of its old share - each of its two stacked
                    fragments (date, time) is under a dozen characters and
                    never needed anywhere near this much room. Type is
-                   abbreviated to "rep."/"judge" (formatCallTypeHtml() in
-                   app.js), so it barely needs any share either. Leaves no
-                   spare width for a planned future Duration column -
-                   rebalance this again once that's added, don't just
-                   shrink table-wide font size to make room. -->
-              <col style="width: 14%" />
+                   abbreviated to a single letter (formatCallTypeHtml() in
+                   app.js), so it barely needs any share either. Duration
+                   (formatDuration() in app.js) tops out around
+                   "600000 ms" in the worst realistic case, so it doesn't
+                   need much room either - its addition is funded mostly
+                   by shrinking Status, which had more room than its
+                   content (a short badge plus, at most, one wrapped
+                   caption line) actually needed. -->
+              <col style="width: 13%" />
+              <col style="width: 5%" />
+              <col style="width: 24%" />
+              <col style="width: 17%" />
               <col style="width: 6%" />
-              <col style="width: 26%" />
-              <col style="width: 19%" />
-              <col style="width: 6%" />
-              <col style="width: 19%" />
+              <col style="width: 9%" />
+              <col style="width: 16%" />
               <col style="width: 10%" />
             </colgroup>
             <thead>
@@ -92,6 +96,7 @@
                 <th>Model</th>
                 <th>Tokens (prompt / completion / total)</th>
                 <th>Cost</th>
+                <th>Duration</th>
                 <th>Status</th>
                 <th>Time</th>
               </tr>

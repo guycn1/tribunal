@@ -182,6 +182,7 @@ export interface DiscardedAttempt {
   totalTokens: number;
   cost: number;
   errorMessage: string;
+  durationMs: number;
 }
 
 export interface OpenRouterResult {
@@ -193,6 +194,11 @@ export interface OpenRouterResult {
   totalTokens: number;
   cost: number;
   errorMessage?: string;
+  // Wall-clock time for this specific attempt (the one this result
+  // actually reports on), not the cumulative time across every attempt
+  // in the chain - consistent with promptTokens/completionTokens/cost
+  // above, which are likewise this attempt's own, not a running total.
+  durationMs: number;
   // Attempts that truncated/degenerated and were discarded before this
   // result was reached - each one gets its own logApiCall() row alongside
   // this result's own row. Empty on the common path (no escalation
@@ -238,9 +244,15 @@ export async function callOpenRouter(
   // attemptModel below) reports and costs against the model that really
   // made that attempt, not always the original.
   let lastAttemptModel = model;
+  // Wall-clock start of the current/most recent attempt only, reset at
+  // the top of every loop iteration - the basis for every durationMs
+  // this function reports, always this attempt's own time, never the
+  // cumulative time since callOpenRouter() itself was first called.
+  let lastAttemptStartedAt = Date.now();
 
   while (remainingMs() >= MIN_REMAINING_TO_ATTEMPT_MS) {
     attempt++;
+    lastAttemptStartedAt = Date.now();
     const tier = tiers[tierIndex];
     const isFallbackAttempt = tierIndex > 0;
     const attemptModel = tier.getModel();
@@ -314,7 +326,7 @@ export async function callOpenRouter(
           const limit = response.headers.get('x-ratelimit-limit') ?? 'the account';
           const message = `OpenRouter request quota exhausted (rate limit ${limit}, 0 remaining). Resets at ${resetIso}.`;
           console.log(`[openrouter] ${label}: attempt ${attempt} - ${message}`);
-          return failure(attemptModel, message, lastUsage, discardedAttempts);
+          return failure(attemptModel, message, lastUsage, discardedAttempts, Date.now() - lastAttemptStartedAt);
         }
 
         lastError = `OpenRouter returned HTTP 429 (rate limited)`;
@@ -335,7 +347,7 @@ export async function callOpenRouter(
         // endpoints.
         const message = `OpenRouter account is out of credits (HTTP 402): ${await describeErrorBody(response)}`;
         console.log(`[openrouter] ${label}: attempt ${attempt} - ${message}`);
-        return failure(attemptModel, message, undefined, discardedAttempts);
+        return failure(attemptModel, message, undefined, discardedAttempts, Date.now() - lastAttemptStartedAt);
       }
 
       if (response.status >= 500) {
@@ -348,7 +360,7 @@ export async function callOpenRouter(
       if (!response.ok) {
         const message = `OpenRouter returned HTTP ${response.status}: ${await describeErrorBody(response)}`;
         console.log(`[openrouter] ${label}: attempt ${attempt} - ${message}`);
-        return failure(attemptModel, message, undefined, discardedAttempts);
+        return failure(attemptModel, message, undefined, discardedAttempts, Date.now() - lastAttemptStartedAt);
       }
 
       const data = (await response.json()) as any;
@@ -424,6 +436,7 @@ export async function callOpenRouter(
             totalTokens,
             cost: calculateCost(servingModel, promptTokens, completionTokens),
             errorMessage: `${sameModel ? DEGENERATE_RETRIED_SAME_MODEL_MARKER : DEGENERATE_RETRIED_DIFF_MODEL_MARKER} This attempt ${reason} - ${sameModel ? 're-tried with the same model' : `escalated to ${nextModel}`}.`,
+            durationMs: Date.now() - lastAttemptStartedAt,
           });
           if (nextTierIndex !== tierIndex) {
             tierIndex = nextTierIndex;
@@ -467,6 +480,7 @@ export async function callOpenRouter(
               : `Response was still incoherent (a long run-on with no punctuation) after ${attempt} attempt(s) across ${tierIndex + 1} escalation tier(s). The generated content was not saved.`
           } This was the last available tier - no further fallback exists.`,
           discardedAttempts,
+          durationMs: Date.now() - lastAttemptStartedAt,
         };
       }
 
@@ -479,6 +493,7 @@ export async function callOpenRouter(
         totalTokens,
         cost: calculateCost(servingModel, promptTokens, completionTokens),
         discardedAttempts,
+        durationMs: Date.now() - lastAttemptStartedAt,
       };
     } catch (err) {
       const isTimeout = err instanceof Error && err.name === 'TimeoutError';
@@ -502,14 +517,15 @@ export async function callOpenRouter(
 
   const message = `${lastError} (gave up after ${attempt} attempt(s), ${TOTAL_BUDGET_MS}ms budget)`;
   console.log(`[openrouter] ${label}: ${message}`);
-  return failure(lastAttemptModel, message, lastUsage, discardedAttempts);
+  return failure(lastAttemptModel, message, lastUsage, discardedAttempts, Date.now() - lastAttemptStartedAt);
 }
 
 function failure(
   model: string,
   errorMessage: string,
   usage?: { promptTokens: number; completionTokens: number; totalTokens: number },
-  discardedAttempts?: DiscardedAttempt[]
+  discardedAttempts?: DiscardedAttempt[],
+  durationMs = 0
 ): OpenRouterResult {
   return {
     status: 'failed',
@@ -520,6 +536,7 @@ function failure(
     cost: usage ? calculateCost(model, usage.promptTokens, usage.completionTokens) : 0,
     errorMessage,
     discardedAttempts,
+    durationMs,
   };
 }
 

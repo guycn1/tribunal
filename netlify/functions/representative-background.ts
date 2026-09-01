@@ -93,6 +93,7 @@ const rawHandler: Handler = async (event) => {
       cost: discarded.cost,
       status: 'failed',
       errorMessage: discarded.errorMessage,
+      durationMs: discarded.durationMs,
     });
   }
 
@@ -107,6 +108,7 @@ const rawHandler: Handler = async (event) => {
     cost: result.cost,
     status: result.status,
     errorMessage: result.errorMessage ?? null,
+    durationMs: result.durationMs,
   });
 
   if (result.status === 'failed' || !result.content) {

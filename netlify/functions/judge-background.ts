@@ -99,6 +99,7 @@ const rawHandler: Handler = async (event) => {
       cost: discarded.cost,
       status: 'failed',
       errorMessage: discarded.errorMessage,
+      durationMs: discarded.durationMs,
     });
   }
 
@@ -117,6 +118,7 @@ const rawHandler: Handler = async (event) => {
       : unparseable
         ? 'Model response did not include a parseable VERDICT line.'
         : null,
+    durationMs: result.durationMs,
   });
 
   // A judge call that fails outright or comes back unparseable still ends
