@@ -875,14 +875,16 @@ function renderJudges() {
   updateJudgesCaveat();
 }
 
-// A single decimal place was accurate but uninformative back when every
-// call ran on a $0 free-tier model - real per-call cost on a paid model is
-// a small fraction of a cent, which one decimal place rounds down to
-// indistinguishable from zero every time. Four places keeps real cost
-// visible (the database itself still stores full precision regardless of
-// what's shown here).
+// Shown in cents rather than dollars - real per-call cost on a paid model
+// is a small fraction of a cent, and "$0.0001" (four decimal places, to
+// stay meaningful rather than rounding down to indistinguishable-from-
+// zero) was both visually noisy and, at the call log's column widths,
+// prone to wrapping mid-number. Two decimal places of a cent is the same
+// real precision as four decimal places of a dollar (the database itself
+// still stores full, unrounded precision regardless of what's shown
+// here) in two fewer characters.
 function formatCost(cost) {
-  return `$${Number(cost).toFixed(4)}`;
+  return `${(Number(cost) * 100).toFixed(2)}¢`;
 }
 
 // null specifically for rows logged before the duration_ms column
