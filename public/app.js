@@ -7,6 +7,15 @@ const JUDGE_ROLES = ['barak', 'elon', 'shamgar'];
 // of the generic "Call failed" one.
 const ABORTED_BY_USER_MESSAGE = 'Aborted by user before this call could complete.';
 
+// Must match the three DEGENERATE_*_MARKER exports in
+// netlify/functions/lib/openrouter.ts exactly - used by renderCallLog()
+// to tell a discarded-but-recovered attempt (the role went on to succeed
+// or is still trying a further tier) from a discarded-and-fatal one (this
+// was the last available tier, and it was also truncated/degenerate).
+const DEGENERATE_RETRIED_SAME_MODEL_MARKER = '[degenerate-retried-same-model]';
+const DEGENERATE_RETRIED_DIFF_MODEL_MARKER = '[degenerate-retried-diff-model]';
+const DEGENERATE_FINAL_MARKER = '[degenerate-final]';
+
 // Sent as the X-Site-Gate header on every call that creates a trial or
 // spends OpenRouter quota (see isSiteGateOk in
 // netlify/functions/lib/siteGate.ts). This is NOT a real secret and isn't
@@ -877,6 +886,26 @@ function renderCallLog() {
   el.callLogBody.innerHTML = '';
   for (const entry of state.callLog) {
     const tr = document.createElement('tr');
+    const err = entry.errorMessage || '';
+    // A discarded attempt (truncated/degenerated, then retried at the
+    // same tier or escalated to the next one) gets its own row, tagged
+    // with one of the two "retried" markers - see the DEGENERATE_*_MARKER
+    // comment above. A row tagged with the "final" marker instead means
+    // this was the last available tier and it was *also*
+    // truncated/degenerate - a genuinely fatal outcome, not a recovered
+    // one, so it's styled distinctly (red, full opacity, no retry
+    // caption) rather than folded into the same "still recovering" look.
+    const isRetriedSameModel = err.startsWith(DEGENERATE_RETRIED_SAME_MODEL_MARKER);
+    const isRetriedDiffModel = err.startsWith(DEGENERATE_RETRIED_DIFF_MODEL_MARKER);
+    const isDegenerateRetried = isRetriedSameModel || isRetriedDiffModel;
+    const isDegenerateFinal = err.startsWith(DEGENERATE_FINAL_MARKER);
+
+    if (isDegenerateRetried) {
+      // Dims the whole row - a visual cue that this failure wasn't fatal
+      // and the same call likely went on to succeed on a later row.
+      tr.classList.add('row-degenerated-retried');
+    }
+
     // A response still truncated after the conciseness retry is now a
     // real failure (openrouter.ts), correctly shown via the status column
     // below - this badge only still fires for historical rows recorded
@@ -889,18 +918,34 @@ function renderCallLog() {
       state.maxTokens &&
       entry.completionTokens > 0 &&
       entry.completionTokens % state.maxTokens === 0;
-    const statusBadge = entry.status === 'success' ? 'badge-ok' : 'badge-fail';
     const tokens = `${entry.promptTokens} / ${entry.completionTokens} / ${entry.totalTokens}`;
+
+    let statusCellHtml;
+    if (isDegenerateRetried) {
+      const caption = isRetriedSameModel ? 'retried with the same model' : 'fell back to a different model';
+      statusCellHtml = `
+        <span class="badge badge-warn">Degenerated</span>
+        <div class="status-caption">(${caption})</div>
+      `;
+    } else if (isDegenerateFinal) {
+      // Red, not yellow - this is the priciest fallback tier failing too,
+      // with nothing left to fall back to. As fatal as a 404/429/500.
+      statusCellHtml = `<span class="badge badge-fail">Degenerated</span>`;
+    } else {
+      const statusBadge = entry.status === 'success' ? 'badge-ok' : 'badge-fail';
+      statusCellHtml = `
+        <span class="badge ${statusBadge}">${entry.status}</span>
+        ${wasTruncated ? '<span class="badge badge-warn">truncated</span>' : ''}
+      `;
+    }
+
     tr.innerHTML = `
       <td>${entry.agentRole}</td>
       <td>${entry.callType}</td>
       <td>${entry.modelUsed}</td>
       <td>${tokens}</td>
       <td>${formatCost(entry.cost)}</td>
-      <td>
-        <span class="badge ${statusBadge}">${entry.status}</span>
-        ${wasTruncated ? '<span class="badge badge-warn">truncated</span>' : ''}
-      </td>
+      <td>${statusCellHtml}</td>
       <td>${formatDateTimeHtml(entry.timestamp)}</td>
     `;
     el.callLogBody.appendChild(tr);

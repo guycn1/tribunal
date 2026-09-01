@@ -82,6 +82,26 @@ const rawHandler: Handler = async (event) => {
   const callFailed = result.status === 'failed' || !result.content;
   const unparseable = !callFailed && !parsed;
 
+  // Every attempt that truncated/degenerated and was discarded in favor
+  // of a retry or escalation gets its own real call-log row too, logged
+  // before the kept/final row so the two stay in the chronological order
+  // they actually happened in - the call log should show a fallback
+  // happening, not just silently absorb it into whichever attempt won.
+  for (const discarded of result.discardedAttempts ?? []) {
+    await logApiCall({
+      trialId: id,
+      agentRole: judgeRole,
+      callType: 'judge',
+      modelUsed: discarded.model,
+      promptTokens: discarded.promptTokens,
+      completionTokens: discarded.completionTokens,
+      totalTokens: discarded.totalTokens,
+      cost: discarded.cost,
+      status: 'failed',
+      errorMessage: discarded.errorMessage,
+    });
+  }
+
   await logApiCall({
     trialId: id,
     agentRole: judgeRole,

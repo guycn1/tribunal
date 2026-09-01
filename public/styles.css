@@ -485,6 +485,22 @@ table.call-log tbody tr:last-child td {
   border-bottom: none;
 }
 
+/* A discarded attempt that was truncated/degenerate but recovered by a
+   retry or escalation (see DEGENERATE_RETRIED_*_MARKER in app.js) -
+   dimmed to signal the failure wasn't fatal, distinct from a
+   [degenerate-final] row (the last available tier failing too), which
+   deliberately stays at full opacity since that outcome genuinely is
+   fatal. */
+table.call-log tbody tr.row-degenerated-retried {
+  opacity: 0.53;
+}
+
+.status-caption {
+  color: var(--text-dim);
+  font-size: 0.72rem;
+  margin-top: 2px;
+}
+
 /* Smaller text and tighter padding buy real room back for the table's
    fixed-percentage columns on a narrower viewport - the actual fix for
    less wrapping here, rather than a horizontal scrollbar (deliberately not
