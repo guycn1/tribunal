@@ -39,7 +39,7 @@ body {
 }
 
 .sidebar {
-  /* Shrinks fluidly with the viewport instead of staying a fixed 280px
+  /* Shrinks fluidly with the viewport instead of staying a fixed size
      until the single hard breakpoint below forces it full-width - gives
      the main content (including the call log table, which needs real
      width of its own) more room on viewports that are narrower than
@@ -47,10 +47,18 @@ body {
      wanted anywhere on this page (see table.call-log below), so this is
      load-bearing, not cosmetic - shrinking the sidebar is real width the
      table gets to work with instead.
-     Every bound cut by more than 20% from its old value (170/20vw/280 ->
-     135/16vw/220) specifically to hand that width to .main's max-width
-     below, not just to make the sidebar smaller for its own sake. */
-  width: clamp(135px, 16vw, 220px);
+     The 220px ceiling this used to have was itself the problem on wide
+     viewports: .main is capped at its own max-width (below) and centered
+     within whatever's left over, so once the sidebar stopped growing,
+     every extra pixel of a wide window just became empty margin around
+     .main instead of going anywhere useful - real, measured waste (over
+     200px per side at a 1728px viewport). Raised the preferred rate
+     (16vw -> 20vw) and the ceiling (220px -> 360px) so the sidebar keeps
+     absorbing width as the viewport grows, rather than handing it to
+     nothing. 360px is still a deliberate ceiling, not unlimited growth -
+     on a genuinely huge display this keeps the sidebar from becoming
+     disproportionate even though .main's own max-width caps it too. */
+  width: clamp(135px, 20vw, 360px);
   flex-shrink: 0;
   background: var(--bg-raised);
   border-right: 1px solid var(--border);
