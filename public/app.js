@@ -122,11 +122,11 @@ function shortModelName(modelId) {
   return modelId.replace(/^[^/]+\//, '').replace(/:free$/, '');
 }
 
-// Only "representative" is long enough to matter for the call log's Type
-// column - "judge" is already short. <abbr> keeps the full word available
-// on hover/long-press rather than just silently truncating it.
+// Single-letter Type column, with the full word kept available via <abbr>
+// (hover/long-press) rather than silently discarding it.
 function formatCallTypeHtml(callType) {
-  if (callType === 'representative') return '<abbr title="representative">rep.</abbr>';
+  if (callType === 'representative') return '<abbr title="representative">R</abbr>';
+  if (callType === 'judge') return '<abbr title="judge">J</abbr>';
   return callType;
 }
 
@@ -950,7 +950,7 @@ function renderCallLog() {
     tr.innerHTML = `
       <td>${entry.agentRole}</td>
       <td>${formatCallTypeHtml(entry.callType)}</td>
-      <td title="${entry.modelUsed}">${shortModelName(entry.modelUsed)}</td>
+      <td><abbr title="${entry.modelUsed}">${shortModelName(entry.modelUsed)}</abbr></td>
       <td>${tokens}</td>
       <td>${formatCost(entry.cost)}</td>
       <td>${statusCellHtml}</td>
