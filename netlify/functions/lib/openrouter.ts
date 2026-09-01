@@ -107,10 +107,59 @@ function buildRetryTiers(defaultModel: string, defaultMaxTokens: number): RetryT
   ];
 }
 
+// A second, independent failure signal alongside finish_reason==='length'.
+// A real response was found (Grey Worm, 2026-09-01) that finished on its
+// own (finish_reason='stop', well under the token cap) but degenerated
+// mid-response into one long, comma-less run-on sentence collapsing into
+// an immediately-repeated word ("...nonetheless nonetheless
+// nonetheless...") - a genuine coherence failure finish_reason cannot see
+// at all, since the model did reach a real stopping point, just a bad
+// one. Re-scanning every one of the 168 real texts this project had
+// already generated (every representative argument and judge ruling
+// across 50 real trials, zero additional OpenRouter cost since it only
+// reads already-stored content) found exactly one earlier, unnoticed
+// occurrence of the same signature (also grey_worm, also on the
+// mistral-large-2512 tier) - 2 of 168 total (166 and 85 words). The next
+// highest real run, at 62 words, was inspected in full and is itself a
+// genuine borderline case (a comma-less run-on trailing into a tonally
+// strange, semi-incoherent invocation) rather than clean prose - it is
+// deliberately NOT treated as the safe ceiling. Every run of 28 words or
+// fewer across the entire corpus, by contrast, was a completely normal,
+// coherent sentence on inspection - a real cliff, not a continuum.
+// DEGENERATE_RUN_THRESHOLD is set at 40: real margin (12+ words) above
+// every text actually confirmed clean, while also catching the 62-word
+// borderline case rather than gambling on it, per the deliberate choice
+// to risk an occasional unnecessary escalation over risking a missed
+// degeneration.
+const DEGENERATE_RUN_THRESHOLD = 40;
+// Anything that plausibly ends a clause/sentence, or is markdown noise,
+// counts as a break for this purpose - matches the calibration script
+// this threshold was measured with.
+const PUNCTUATION_BREAK_CHARS = /[.,;:!?()"'“”‘’—–\-\n*]+/g;
+
+function detectDegenerateRun(content: string): { degenerate: boolean; runLength: number; sample: string } {
+  const chunks = content.split(PUNCTUATION_BREAK_CHARS);
+  let max = 0;
+  let sample = '';
+  for (const chunk of chunks) {
+    const words = chunk.trim().split(/\s+/).filter(Boolean);
+    if (words.length > max) {
+      max = words.length;
+      sample = words.slice(0, 12).join(' ');
+    }
+  }
+  return { degenerate: max >= DEGENERATE_RUN_THRESHOLD, runLength: max, sample };
+}
+
+// Sent on every fallback-tier attempt, regardless of which of the two
+// failure modes above triggered escalation - kept deliberately general
+// rather than naming a specific cause, since a wrong guess (e.g. telling
+// a degenerate-but-not-truncated response it was "cut off") would be
+// actively misleading to the model on the retry.
 const CONCISENESS_REMINDER: OpenRouterMessage = {
   role: 'user',
   content:
-    'Your previous attempt ran past the length target and was cut off before reaching a conclusion. Write your response again from scratch, more concisely this time, and make sure to reach a clear, complete ending well within the word count you were given.',
+    'Your previous attempt did not produce a usable response - it either ran past the length target and was cut off, or trailed into repetitive, run-on text without normal punctuation before finishing. Write your response again from scratch: stay well within the word count you were given, use clear sentences with normal punctuation throughout, and make sure to reach a clear, complete ending.',
 };
 
 export interface OpenRouterResult {
@@ -305,14 +354,26 @@ export async function callOpenRouter(
       console.log(
         `[openrouter] ${label}: attempt ${attempt} - success, served by ${servingModel}, ${completionTokens} completion tokens, finish_reason=${finishReason ?? 'unknown'}, ${Date.now() - startedAt}ms total`
       );
-      if (finishReason === 'length') {
-        // The model was still generating when it hit max_tokens - the
-        // content returned is real, not an error, but it's cut off
-        // mid-thought rather than finished. console.warn (not .log) and a
-        // distinct prefix specifically so this is easy to spot/grep in
-        // terminal output without having to notice that completionTokens
-        // happens to equal the configured cap.
-        console.warn(`[openrouter] ${label}: TRUNCATED - response hit the max_tokens limit (${attemptMaxTokens}) before finishing naturally.`);
+      const lengthTruncated = finishReason === 'length';
+      // Only worth checking when the model didn't already hit the token
+      // cap - that failure is already caught above, and a real cut-off
+      // response is likely to contain an in-progress, comma-less clause
+      // of its own that would otherwise trigger a false positive here.
+      const degenerateCheck = !lengthTruncated ? detectDegenerateRun(content) : null;
+      if (lengthTruncated || degenerateCheck?.degenerate) {
+        if (lengthTruncated) {
+          // The model was still generating when it hit max_tokens - the
+          // content returned is real, not an error, but it's cut off
+          // mid-thought rather than finished. console.warn (not .log) and
+          // a distinct prefix specifically so this is easy to spot/grep
+          // in terminal output without having to notice that
+          // completionTokens happens to equal the configured cap.
+          console.warn(`[openrouter] ${label}: TRUNCATED - response hit the max_tokens limit (${attemptMaxTokens}) before finishing naturally.`);
+        } else {
+          console.warn(
+            `[openrouter] ${label}: DEGENERATE - response finished on its own (finish_reason=${finishReason}) but contains a ${degenerateCheck!.runLength}-word run with no punctuation ("${degenerateCheck!.sample}...") - treating as a failure rather than trusting a technically-complete but incoherent result.`
+          );
+        }
 
         attemptsAtTier++;
         let nextTierIndex = tierIndex;
@@ -343,17 +404,18 @@ export async function callOpenRouter(
           // discarded attempt, so it shouldn't also spend budget waiting.
           continue;
         }
-        // Still truncated after using every attempt at every tier (or there
-        // was no budget left for another) - a response cut off mid-thought
-        // is not a degraded-but-usable result, it's not a real answer at
-        // all (an argument or ruling that stops mid-sentence isn't fair to
-        // present as the character's actual position). Treated as a real
-        // failure, not returned as a truncated "success" for the caller to
-        // badge and move on - representative.ts/judge.ts already treat any
-        // `status: 'failed'` result as a normal, visible failure, so this
-        // needs no special handling on their side. Cost/token totals still
-        // include every attempt, since each one genuinely spent money.
-        console.warn(`[openrouter] ${label}: still truncated after every tier - returning failed rather than a cut-off result.`);
+        // Still bad (truncated or degenerate) after using every attempt at
+        // every tier (or there was no budget left for another) - neither
+        // failure mode is a degraded-but-usable result, and an argument or
+        // ruling that's cut off, or that collapses into repetitive
+        // run-on text, isn't fair to present as the character's actual
+        // position. Treated as a real failure, not returned as a
+        // technically-successful result for the caller to badge and move
+        // on - representative.ts/judge.ts already treat any `status:
+        // 'failed'` result as a normal, visible failure, so this needs no
+        // special handling on their side. Cost/token totals still include
+        // every attempt, since each one genuinely spent money.
+        console.warn(`[openrouter] ${label}: still ${lengthTruncated ? 'truncated' : 'degenerate'} after every tier - returning failed rather than an unusable result.`);
         // Built directly rather than via failure() - the attempts can span
         // different models (see attemptModel above) with different
         // per-token prices, so cost has to be summed as separate dollar
@@ -367,7 +429,9 @@ export async function callOpenRouter(
           completionTokens: completionTokens + extraCompletionTokens,
           totalTokens: totalTokens + extraTotalTokens,
           cost: calculateCost(servingModel, promptTokens, completionTokens) + extraCost,
-          errorMessage: `Response was still truncated after ${attempt} attempt(s) across ${tierIndex + 1} escalation tier(s). The generated content was incomplete and was not saved.`,
+          errorMessage: lengthTruncated
+            ? `Response was still truncated after ${attempt} attempt(s) across ${tierIndex + 1} escalation tier(s). The generated content was incomplete and was not saved.`
+            : `Response was still incoherent (a long run-on with no punctuation) after ${attempt} attempt(s) across ${tierIndex + 1} escalation tier(s). The generated content was not saved.`,
         };
       }
 
