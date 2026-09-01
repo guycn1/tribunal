@@ -549,6 +549,37 @@ table.call-log abbr {
   margin-top: 2px;
 }
 
+/* The sidebar-stacking breakpoint further down is 900px, but that alone
+   doesn't mean the table has real room again the moment it's crossed -
+   the sidebar (clamp(135px, 20vw, 360px)) keeps taking a fifth of the
+   viewport right up to ~1800px, so from 900px up to roughly 1150px, the
+   two are still splitting a viewport too narrow for both: at exactly
+   960px, .main is only left with ~700px after the sidebar and its own
+   padding - well under what the base sizing above assumes. Content
+   overflowing a column at this width is what produced a "skewed,
+   cropped" look reported at 960px (text-align: center still centers the
+   content, but a neighboring cell's background then paints over
+   whichever side overflows past the column's real boundary) - the actual
+   fix is making sure nothing overflows in the first place, not the
+   centering rule itself.
+   Placed before the narrower 480px breakpoint below, not after - both
+   match at a sub-480px viewport, and CSS resolves that tie by source
+   order (equal specificity, last one wins), so the more aggressive
+   480px sizing needs to come second or it would be silently overridden
+   by this milder tier at the very viewports that need the most help. */
+@media (max-width: 1150px) {
+  table.call-log {
+    font-size: 0.74rem;
+  }
+  table.call-log th,
+  table.call-log td {
+    padding: 6px 6px;
+  }
+  table.call-log th {
+    font-size: 0.66rem;
+  }
+}
+
 /* A real narrow-phone viewport (below this, .layout's own 900px
    breakpoint has already stacked the sidebar above the content, so the
    table gets the full viewport width minus .main's 20px padding either
