@@ -955,16 +955,20 @@ function renderCallLog() {
     // the same dim, secondary-line treatment status-caption already uses
     // for "why" text, rather than three equally-weighted numbers.
     const tokens = `
-      <strong>${entry.totalTokens.toLocaleString()}</strong>
-      <div class="status-caption">${entry.promptTokens.toLocaleString()} in / ${entry.completionTokens.toLocaleString()} out</div>
+      <div class="cell-stack">
+        <strong>${entry.totalTokens.toLocaleString()}</strong>
+        <div class="status-caption">${entry.promptTokens.toLocaleString()} in / ${entry.completionTokens.toLocaleString()} out</div>
+      </div>
     `;
 
     let statusCellHtml;
     if (isDegenerateRetried) {
       const caption = isRetriedSameModel ? 'retried with the same model' : 'fell back to a different model';
       statusCellHtml = `
-        <span class="badge badge-warn">Degenerated</span>
-        <div class="status-caption">(${caption})</div>
+        <div class="cell-stack">
+          <span class="badge badge-warn">Degenerated</span>
+          <div class="status-caption">(${caption})</div>
+        </div>
       `;
     } else if (isDegenerateFinal) {
       // Red, not yellow - this is the priciest fallback tier failing too,

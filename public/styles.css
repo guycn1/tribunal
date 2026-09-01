@@ -549,6 +549,23 @@ table.call-log abbr {
   margin-top: 2px;
 }
 
+/* Deterministic centering for a cell that stacks two elements vertically
+   (a bold total over a dim breakdown in the Tokens column; a badge over
+   a status-caption in the Status column) - text-align: center on the
+   <td> alone left room for doubt here: an inline badge/strong followed
+   by a block-level status-caption <div> makes the browser wrap the
+   leading inline content in its own anonymous block box, and depending
+   on exactly how surrounding template-literal whitespace collapses,
+   that anonymous box is not guaranteed to end up the same width as the
+   explicit block below it. flex + align-items: center centers each
+   child by its own actual box, sidestepping that question entirely
+   rather than trusting the anonymous-box behavior to work out. */
+.cell-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
 /* The sidebar-stacking breakpoint further down is 900px, but that alone
    doesn't mean the table has real room again the moment it's crossed -
    the sidebar (clamp(135px, 20vw, 360px)) keeps taking a fifth of the
