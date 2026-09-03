@@ -132,6 +132,7 @@ body {
 
 .main {
   flex: 1;
+  position: relative;
   padding: 28px 32px 60px;
   /* Raised from 960px by roughly what the sidebar's width above just
      gave up (its widest case shrank from 280px to 220px) - the sidebar
@@ -141,6 +142,45 @@ body {
   margin: 0 auto;
   width: 100%;
   overflow-x: hidden;
+}
+
+/* Shown while a history entry's trial data is being fetched (see
+   loadTrial() in app.js) - covers .main only, not the sidebar, since the
+   sidebar stays independently readable/clickable (or not - see
+   pointer-events below) during that fetch. position:fixed rather than
+   absolute so it stays covering the visible viewport regardless of how
+   tall .main's own content is or how far the page is scrolled. */
+.main-loading-overlay {
+  position: fixed;
+  inset: 0;
+  left: clamp(135px, 20vw, 360px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--bg) 70%, transparent);
+  z-index: 5;
+}
+
+.main-loading-overlay.hidden {
+  display: none;
+}
+
+/* Applied to the sidebar for the same span the overlay above is shown -
+   stops a rapid double-click on a second history entry (or the "Begin new
+   trial" button) from piling a second request on top of one already in
+   flight. */
+.sidebar.loading-locked {
+  pointer-events: none;
+  opacity: 0.6;
+}
+
+@media (max-width: 900px) {
+  /* Matches the sidebar-stacking breakpoint - once the sidebar sits above
+     .main instead of beside it, the overlay should cover the full width
+     again rather than leaving a sidebar-sized gap on the left. */
+  .main-loading-overlay {
+    left: 0;
+  }
 }
 
 .btn {

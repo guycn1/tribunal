@@ -8,7 +8,7 @@
 </head>
 <body>
   <div class="layout">
-    <aside class="sidebar">
+    <aside id="sidebar" class="sidebar">
       <h1 class="app-title">Tribunal</h1>
       <button id="new-trial-btn" class="btn btn-primary">Begin new trial</button>
       <button id="abort-btn" class="btn btn-danger hidden">Abort</button>
@@ -17,6 +17,9 @@
     </aside>
 
     <main class="main">
+      <div id="main-loading-overlay" class="main-loading-overlay hidden">
+        <span class="spinner spinner-lg"></span>
+      </div>
       <section class="case-card">
         <p class="case-code">Case T-001</p>
         <h2 id="case-title">The Realm v. Jon Snow</h2>

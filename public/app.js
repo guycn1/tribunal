@@ -54,10 +54,13 @@ const state = {
   callLog: [],
   history: [],
   running: false,
+  loadingTrial: false,
   abortController: null,
 };
 
 const el = {
+  sidebar: document.getElementById('sidebar'),
+  mainLoadingOverlay: document.getElementById('main-loading-overlay'),
   newTrialBtn: document.getElementById('new-trial-btn'),
   abortBtn: document.getElementById('abort-btn'),
   historyList: document.getElementById('history-list'),
@@ -160,7 +163,7 @@ function isTruncated(entry) {
 }
 
 async function beginTrial() {
-  if (state.running) return;
+  if (state.running || state.loadingTrial) return;
   state.running = true;
   el.newTrialBtn.disabled = true;
   el.abortBtn.classList.remove('hidden');
@@ -653,35 +656,44 @@ async function refreshHistory() {
 }
 
 async function loadTrial(trialId) {
-  if (state.running) return;
-  const res = await fetch(`/api/trials/${trialId}`);
-  if (!res.ok) {
-    alert('Could not load that trial.');
-    return;
+  if (state.running || state.loadingTrial) return;
+  state.loadingTrial = true;
+  el.mainLoadingOverlay.classList.remove('hidden');
+  el.sidebar.classList.add('loading-locked');
+  try {
+    const res = await fetch(`/api/trials/${trialId}`);
+    if (!res.ok) {
+      alert('Could not load that trial.');
+      return;
+    }
+    const data = await res.json();
+
+    state.trialId = trialId;
+    state.caseDef = data.caseDef;
+    state.callLog = data.apiCallLogs || [];
+
+    // Same derivation pollForRoles() uses for a live trial (see
+    // deriveRoleStates) - a role with no success is backfilled with a real
+    // 'failed'/'aborted' entry from its own last logged attempt rather than
+    // left with no state entry at all, which would otherwise make
+    // buildAgentStatusBody's generic "no entry" case the only thing shown
+    // for it, even though the real error is sitting right there in the log.
+    const derived = deriveRoleStates(data);
+    state.representatives = derived.representatives;
+    state.judges = derived.judges;
+
+    renderCaseSheet();
+    el.phaseRepresentatives.classList.toggle('hidden', Object.keys(state.representatives).length === 0);
+    el.phaseJudges.classList.toggle('hidden', Object.keys(state.judges).length === 0);
+    renderRepresentatives();
+    renderJudges();
+    renderCallLog();
+    renderHistory();
+  } finally {
+    state.loadingTrial = false;
+    el.mainLoadingOverlay.classList.add('hidden');
+    el.sidebar.classList.remove('loading-locked');
   }
-  const data = await res.json();
-
-  state.trialId = trialId;
-  state.caseDef = data.caseDef;
-  state.callLog = data.apiCallLogs || [];
-
-  // Same derivation pollForRoles() uses for a live trial (see
-  // deriveRoleStates) - a role with no success is backfilled with a real
-  // 'failed'/'aborted' entry from its own last logged attempt rather than
-  // left with no state entry at all, which would otherwise make
-  // buildAgentStatusBody's generic "no entry" case the only thing shown
-  // for it, even though the real error is sitting right there in the log.
-  const derived = deriveRoleStates(data);
-  state.representatives = derived.representatives;
-  state.judges = derived.judges;
-
-  renderCaseSheet();
-  el.phaseRepresentatives.classList.toggle('hidden', Object.keys(state.representatives).length === 0);
-  el.phaseJudges.classList.toggle('hidden', Object.keys(state.judges).length === 0);
-  renderRepresentatives();
-  renderJudges();
-  renderCallLog();
-  renderHistory();
 }
 
 function renderCaseSheet() {
