@@ -567,42 +567,90 @@ body {
    The dragging tier is unrelated to any of the above: real
    ::-webkit-scrollbar-thumb:active, snapping instantly rather than
    fading - direct feedback to a physical mouse press, deliberately not
-   softened the way the ambient hover cue is. Only Chromium/WebKit get
-   this tier at all: Firefox's scrollbar-color has no thumb-scoped
-   pseudo-classes, no equivalent of :active exists there, so it has no
-   way to detect "the thumb is actively being dragged" - genuinely
-   unrelated to the custom-property mechanism above, which Firefox
-   otherwise participates in on equal footing with Chromium (a real
-   improvement over the old class-swap design: :hover was skipped there
-   entirely since scrollbar-color has no pseudo-classes, but writing a
-   plain custom property recalculates a rule that reads it exactly the
-   same way in every browser, so Firefox gets the full fade too now, not
-   just an instant two-state jump). */
+   softened the way the ambient hover cue is. This tier is now, in
+   practice, only reachable on a genuinely older Chromium/WebKit browser
+   that predates native scrollbar-width support - see the
+   @supports not (scrollbar-width: thin) gate further down, added
+   2026-09-04 after a real Firefox regression (full detail there). Any
+   browser new enough to support the standard property at all - which by
+   now includes Firefox (always has) and modern Chrome/Edge/Safari alike
+   - falls outside that gate and never sees the webkit rules, so none of
+   them get a distinct dragging tier: dragging just stays at whatever the
+   hover tier already shows. A real, disclosed narrowing of the original
+   3-tier design, traded for actually working at all in current Firefox -
+   and it has the side benefit of making every current, real-world
+   browser behave identically instead of Chromium alone having a tier
+   nothing else does.
+
+   The custom-property fade mechanism above (--scrollbar-thumb-opacity)
+   is unrelated to any of this and unaffected by it - Firefox
+   participates in that on equal footing with Chromium regardless of the
+   @supports gate below, since it's driven by the standard scrollbar-color
+   property, not the webkit fallback (a real improvement over the older
+   class-swap design: :hover was skipped in Firefox there entirely since
+   scrollbar-color has no pseudo-classes, but writing a plain custom
+   property recalculates a rule that reads it exactly the same way in
+   every browser, so Firefox gets the full fade too, not just an instant
+   two-state jump). */
 .history-list,
 .card-body-scroll {
   scrollbar-width: thin;
   scrollbar-color: color-mix(in srgb, var(--text) var(--scrollbar-thumb-opacity, 15%), transparent) transparent;
 }
 
-.history-list::-webkit-scrollbar,
-.card-body-scroll::-webkit-scrollbar {
-  width: 8px;
-}
+/* Real root cause, found 2026-09-04 by reading Firefox's own release
+   notes rather than continuing to guess (Firefox 153 through 155):
+   these ::-webkit-scrollbar-* rules were always written purely as a
+   fallback for browsers lacking the standard scrollbar-color/
+   scrollbar-width properties above - Firefox was never supposed to look
+   at them at all. As of Firefox 153, Firefox started recognizing
+   ::-webkit-scrollbar selectors for site-compat purposes; it still
+   doesn't apply their actual styling (colors, border-radius are
+   "intentionally not supported," per Mozilla's own notes), but it DOES
+   act on one specific side effect: "rules with non-zero width/height
+   disable overlay scrollbars for the affected container." The width:
+   8px rule below is exactly that - present since this scrollbar
+   treatment's very first commit, purely for Chrome/Edge/Safari, latent
+   and harmless until a Firefox version crossed into recognizing it. The
+   result: Firefox's own nice scrollbar-color-styled overlay scrollbar
+   got silently disabled, falling back to the classic native one -
+   completely unrelated to any of this file's other scrollbar work
+   (transform, the JS-driven fade, etc.) despite very suspicious timing
+   with a browser auto-update the user happened to hit mid-session.
+   Real, sourced, not guessed: https://www.firefox.com/en-US/firefox/153.0/releasenotes/,
+   https://www.firefox.com/en-US/firefox/155.0/releasenotes/.
 
-.history-list::-webkit-scrollbar-track,
-.card-body-scroll::-webkit-scrollbar-track {
-  background: transparent;
-}
+   Fixed by gating this whole fallback behind a genuine feature-support
+   check instead of ever letting Firefox parse it as applicable in the
+   first place: @supports not (scrollbar-width: thin) is true only for a
+   browser that doesn't understand the standard property at all - real
+   proper feature detection, not a browser-sniffing guess. Firefox has
+   supported scrollbar-width since it introduced the property; Chrome/
+   Edge/Safari have all supported it natively since sometime in 2024, so
+   in practice this fallback now only matters for a genuinely older
+   Chromium/WebKit browser - which is exactly the audience it was always
+   meant for. */
+@supports not (scrollbar-width: thin) {
+  .history-list::-webkit-scrollbar,
+  .card-body-scroll::-webkit-scrollbar {
+    width: 8px;
+  }
 
-.history-list::-webkit-scrollbar-thumb,
-.card-body-scroll::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--text) var(--scrollbar-thumb-opacity, 15%), transparent);
-  border-radius: 999px;
-}
+  .history-list::-webkit-scrollbar-track,
+  .card-body-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
 
-.history-list::-webkit-scrollbar-thumb:active,
-.card-body-scroll::-webkit-scrollbar-thumb:active {
-  background: color-mix(in srgb, var(--text) 50%, transparent);
+  .history-list::-webkit-scrollbar-thumb,
+  .card-body-scroll::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--text) var(--scrollbar-thumb-opacity, 15%), transparent);
+    border-radius: 999px;
+  }
+
+  .history-list::-webkit-scrollbar-thumb:active,
+  .card-body-scroll::-webkit-scrollbar-thumb:active {
+    background: color-mix(in srgb, var(--text) 50%, transparent);
+  }
 }
 
 .badge {
