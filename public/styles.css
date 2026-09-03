@@ -110,6 +110,7 @@ body {
   flex-direction: column;
   gap: 8px;
   overflow-y: auto;
+  padding-right: 4px;
   /* Fills whatever vertical space .sidebar's fixed 100vh has left over
      after its other children (title, buttons, heading) - min-height: 0
      overrides flex's default min-height: auto, which would otherwise let
@@ -487,42 +488,75 @@ body {
   max-height: 340px;
   overflow-y: auto;
   padding-right: 4px;
-  /* Firefox has no equivalent of the ancestor-hover-scoped webkit rules
-     below (scrollbar-color takes one flat value, no pseudo-selectors) -
-     this in-between tone is the compromise: still clearly present at
-     rest, without being as prominent as the hover states webkit gets. */
-  scrollbar-width: thin;
-  scrollbar-color: color-mix(in srgb, var(--text) 32%, transparent) transparent;
 }
 
+/* Shared scrollbar treatment for the two scrollable regions on this page
+   (agent-card bodies, and .history-list below) - same weight, same
+   3-tier white-opacity behavior, in every browser. .history-list
+   previously had NO scrollbar styling at all, which is exactly why
+   Chrome/Edge fell back to their bulky native default there (wide enough
+   to visually collide with a history card's own border - a real,
+   reported bug) while .card-body-scroll looked fine - it already had
+   this treatment, .history-list simply never got it.
+
+   Three tiers, per exact spec: very transparent white at rest; more
+   opaque once the *container* (the card, or the history list) is
+   hovered, for discoverability; most opaque while the thumb itself is
+   actively being clicked and dragged - not just hovered, which is why
+   the brightest tier below is keyed to :active, not :hover, on the
+   thumb pseudo-element itself.
+
+   Firefox can only ever reach the first two tiers: scrollbar-color is a
+   single flat value with no thumb-scoped pseudo-classes at all (no
+   equivalent of ::-webkit-scrollbar-thumb:active exists), so there is no
+   way to detect "the thumb is actively being dragged" there - it
+   re-evaluates on the plain :hover rule below (a real CSS property, not
+   pseudo-element-scoped, so this part of the cascade genuinely works in
+   Firefox), but tops out at the hover tier's brightness regardless of
+   whether a drag is in progress. Only Chromium/WebKit get the true third
+   tier via ::-webkit-scrollbar-thumb:active. */
+.history-list,
+.card-body-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--text) 15%, transparent) transparent;
+}
+
+.history-list:hover,
+.card:hover .card-body-scroll {
+  scrollbar-color: color-mix(in srgb, var(--text) 35%, transparent) transparent;
+}
+
+.history-list::-webkit-scrollbar,
 .card-body-scroll::-webkit-scrollbar {
   width: 8px;
 }
 
-/* A faint but real track background (not fully transparent) - reads more
-   like an actual scrollbar channel than a bare floating thumb, which
-   previously looked closer to a decorative accent bar than a control. */
+.history-list::-webkit-scrollbar-track,
 .card-body-scroll::-webkit-scrollbar-track {
-  background: color-mix(in srgb, var(--text) 6%, transparent);
-  border-radius: 999px;
+  background: transparent;
 }
 
-/* Whitish/neutral rather than the theme's gold accent - the accent color
-   is used elsewhere for interactive/branded elements (buttons, links),
-   which made this scrollbar read as decoration rather than a functional
-   control. Three-stage prominence, dimmest to brightest: resting (card
-   not hovered) -> card hovered -> the thumb itself hovered/dragged. */
+.history-list::-webkit-scrollbar-thumb,
 .card-body-scroll::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--text) 18%, transparent);
+  background: color-mix(in srgb, var(--text) 15%, transparent);
   border-radius: 999px;
 }
 
+.history-list:hover::-webkit-scrollbar-thumb,
 .card:hover .card-body-scroll::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--text) 42%, transparent);
+  background: color-mix(in srgb, var(--text) 35%, transparent);
 }
 
-.card-body-scroll::-webkit-scrollbar-thumb:hover {
-  background: color-mix(in srgb, var(--text) 70%, transparent);
+/* Must come after the :hover rules above, not before - :active and
+   :hover both genuinely apply throughout a real drag (the pointer is
+   over the thumb AND pressed), and these two rules are equal-specificity
+   (one class/pseudo-class plus one pseudo-element each), so source order
+   is what decides the winner. Placed last on purpose, so the brightest
+   tier wins during an actual drag rather than being silently overridden
+   by the dimmer hover rule that also matches at the same time. */
+.history-list::-webkit-scrollbar-thumb:active,
+.card-body-scroll::-webkit-scrollbar-thumb:active {
+  background: color-mix(in srgb, var(--text) 55%, transparent);
 }
 
 .badge {
