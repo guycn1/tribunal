@@ -74,15 +74,14 @@ const rawHandler: Handler = async (event) => {
   const caseDef = await getChargeSheet();
   const messages = buildRepresentativeMessages(repRole, caseDef);
 
-  const result = await callOpenRouter(getModelForRole(repRole), messages, MAX_TOKENS, `representative:${repRole}`);
-
-  // Every attempt that truncated/degenerated and was discarded in favor
-  // of a retry or escalation gets its own real call-log row too, logged
-  // before the kept/final row so the two stay in the chronological order
-  // they actually happened in - the call log should show a fallback
-  // happening, not just silently absorb it into whichever attempt won.
-  for (const discarded of result.discardedAttempts ?? []) {
-    await logApiCall({
+  // Every attempt that truncated/degenerated and was discarded in favor of
+  // a retry or escalation gets its own real call-log row too, written the
+  // moment callOpenRouter() decides to discard it (not batched after the
+  // whole chain finishes) - this is what lets a client polling GET
+  // /api/trials/:id see the escalation happening live, mid-call, instead
+  // of only learning about it once this role's result is already final.
+  const result = await callOpenRouter(getModelForRole(repRole), messages, MAX_TOKENS, `representative:${repRole}`, (discarded) =>
+    logApiCall({
       trialId: id,
       agentRole: repRole,
       callType: 'representative',
@@ -94,8 +93,8 @@ const rawHandler: Handler = async (event) => {
       status: 'failed',
       errorMessage: discarded.errorMessage,
       durationMs: discarded.durationMs,
-    });
-  }
+    })
+  );
 
   await logApiCall({
     trialId: id,

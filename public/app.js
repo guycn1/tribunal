@@ -363,17 +363,38 @@ async function triggerAgent(url, signal) {
   return { accepted: false, result: { status: 'failed', error: message } };
 }
 
-// Derives a {representatives, judges} status map from one GET
-// /api/trials/:id response - the single source of truth for "what has
+// True for a 'failed' log row that represents a discarded-but-recovered
+// attempt (openrouter.ts's onDiscardedAttempt callback writes these live,
+// mid-escalation - see representative-background.ts/judge-background.ts) -
+// NOT a terminal outcome for the role. The role is still genuinely running
+// server-side on a later tier when a row like this exists with no
+// success/final-failure row after it yet.
+function isRetriedMarkerLog(log) {
+  return (
+    typeof log.errorMessage === 'string' &&
+    (log.errorMessage.startsWith(DEGENERATE_RETRIED_SAME_MODEL_MARKER) || log.errorMessage.startsWith(DEGENERATE_RETRIED_DIFF_MODEL_MARKER))
+  );
+}
+
+// Derives a {representatives, judges, currentModels} status map from one
+// GET /api/trials/:id response - the single source of truth for "what has
 // actually happened so far in this trial," used identically whether
 // reopening a finished historical trial (loadTrial) or polling a live one
 // (pollForRoles), so the two call sites can't quietly drift into
 // disagreeing about what the same trial record means. apiCallLogs is
 // ordered ascending by timestamp (see getFullTrial in db.ts), so the last
 // matching row for a role is its most recent attempt.
+//
+// currentModels is deliberately separate from representatives/judges: a
+// retried-marker row is real signal (the escalation chain has moved on to
+// a specific model) but not a terminal state, and pollForRoles treats any
+// entry present in representatives/judges as "this role is done" - folding
+// live-progress info into that map would make it stop waiting on a role
+// that's still genuinely running.
 function deriveRoleStates(data) {
   const representatives = {};
   const judges = {};
+  const currentModels = {};
 
   for (const arg of data.representativeArguments || []) {
     representatives[arg.role] = {
@@ -396,6 +417,13 @@ function deriveRoleStates(data) {
     const store = log.callType === 'representative' ? representatives : judges;
     if (log.status !== 'success') {
       if (store[log.agentRole] && store[log.agentRole].status === 'success') continue;
+      if (isRetriedMarkerLog(log)) {
+        // Not a terminal outcome - record which model the chain is now
+        // trying next and keep waiting, rather than reporting a false
+        // "Call failed" for a role that's actually still in progress.
+        currentModels[log.agentRole] = log.modelUsed;
+        continue;
+      }
       store[log.agentRole] =
         log.errorMessage === ABORTED_BY_USER_MESSAGE
           ? { status: 'aborted', error: log.errorMessage }
@@ -408,7 +436,7 @@ function deriveRoleStates(data) {
     }
   }
 
-  return { representatives, judges };
+  return { representatives, judges, currentModels };
 }
 
 // How long to keep polling a phase for a role that hasn't resolved yet
@@ -465,6 +493,16 @@ async function pollForRoles(pendingRoles, bucket, render, signal) {
       if (entry) {
         bucket[role] = entry;
         remaining.delete(role);
+        changed = true;
+        continue;
+      }
+      // Still genuinely pending, but the escalation chain may have moved
+      // on to a later tier since the last tick - surface that live rather
+      // than leaving buildAgentStatusBody showing the static default model
+      // for the whole call regardless of how far it's actually escalated.
+      const currentModel = derived.currentModels[role];
+      if (currentModel && bucket[role] && bucket[role].currentModel !== currentModel) {
+        bucket[role] = { ...bucket[role], currentModel };
         changed = true;
       }
     }
@@ -705,8 +743,22 @@ function buildAgentStatusBody(entry, role, verb) {
 
   if (entry.status === 'loading') {
     body.className = 'card-body dim';
-    const modelId = state.modelInfo && state.modelInfo[role];
-    const modelLine = modelId ? `<div class="model-chain">Model: <span class="model-name">${shortModelName(modelId)}</span></div>` : '';
+    // entry.currentModel (set by pollForRoles from a live discarded-attempt
+    // log row - see deriveRoleStates) is the model whose *last* attempt was
+    // just discarded, not the one now in flight (the call log row for a
+    // discarded attempt reports the model that produced it, per
+    // openrouter.ts) - the chain has since moved on to a later, stronger
+    // tier, but which exact model that is isn't known client-side until it
+    // either finishes or is itself discarded. Still a real, live
+    // improvement over showing state.modelInfo[role] (only ever the
+    // starting default) completely unchanged for a call that has already
+    // escalated past it.
+    const modelId = entry.currentModel || (state.modelInfo && state.modelInfo[role]);
+    const modelLine = modelId
+      ? `<div class="model-chain">Model: <span class="model-name">${shortModelName(modelId)}</span>${
+          entry.currentModel ? ' <span class="status-caption">(that attempt was discarded — escalating to a fallback model)</span>' : ''
+        }</div>`
+      : '';
     body.innerHTML = `${spinnerHtml()}${verb}…${modelLine}`;
     return body;
   }

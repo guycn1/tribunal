@@ -215,7 +215,21 @@ export async function callOpenRouter(
   model: string,
   messages: OpenRouterMessage[],
   maxTokens: number,
-  label: string
+  label: string,
+  // Fired the moment a discarded attempt is decided (see the `continue`
+  // branch below), before the chain moves on to the next attempt/tier -
+  // lets the caller persist it to the DB immediately, rather than only
+  // after this whole function returns. This is what makes the escalation
+  // chain's progress visible to a client polling GET /api/trials/:id
+  // mid-call - without it, every discarded attempt only became visible
+  // once the entire chain had already finished (see representative-
+  // background.ts/judge-background.ts, which used to log the whole
+  // discardedAttempts array in one batch after awaiting this function).
+  // Optional and fire-and-forget-tolerant (awaited if it returns a
+  // promise, but a rejection here should never break the actual retry
+  // logic) - a caller that doesn't care about live progress can simply
+  // omit it and rely on the returned discardedAttempts array instead.
+  onDiscardedAttempt?: (attempt: DiscardedAttempt) => Promise<void> | void
 ): Promise<OpenRouterResult> {
   const apiKey = process.env.OPENROUTER_API_KEY;
 
@@ -429,7 +443,7 @@ export async function callOpenRouter(
           const reason = lengthTruncated
             ? 'hit the max_tokens limit before finishing naturally'
             : `collapsed into a ${degenerateCheck!.runLength}-word run with no punctuation`;
-          discardedAttempts.push({
+          const discarded: DiscardedAttempt = {
             model: servingModel,
             promptTokens,
             completionTokens,
@@ -437,7 +451,21 @@ export async function callOpenRouter(
             cost: calculateCost(servingModel, promptTokens, completionTokens),
             errorMessage: `${sameModel ? DEGENERATE_RETRIED_SAME_MODEL_MARKER : DEGENERATE_RETRIED_DIFF_MODEL_MARKER} This attempt ${reason} - ${sameModel ? 're-tried with the same model' : `escalated to ${nextModel}`}.`,
             durationMs: Date.now() - lastAttemptStartedAt,
-          });
+          };
+          discardedAttempts.push(discarded);
+          if (onDiscardedAttempt) {
+            try {
+              await onDiscardedAttempt(discarded);
+            } catch (err) {
+              // Never let a logging failure interrupt the actual escalation
+              // - this callback exists purely to make progress visible
+              // sooner, not to gate whether the chain can keep going. The
+              // final row logged by the caller after this function returns
+              // still carries the complete discardedAttempts array as a
+              // fallback if a live write like this one is ever lost.
+              console.warn(`[openrouter] ${label}: onDiscardedAttempt callback failed, continuing anyway: ${err instanceof Error ? err.message : String(err)}`);
+            }
+          }
           if (nextTierIndex !== tierIndex) {
             tierIndex = nextTierIndex;
             attemptsAtTier = 0;
