@@ -565,92 +565,99 @@ body {
    sync with them by hand, since CSS can't read a JS constant.
 
    The dragging tier is unrelated to any of the above: real
-   ::-webkit-scrollbar-thumb:active, snapping instantly rather than
-   fading - direct feedback to a physical mouse press, deliberately not
-   softened the way the ambient hover cue is. This tier is now, in
-   practice, only reachable on a genuinely older Chromium/WebKit browser
-   that predates native scrollbar-width support - see the
-   @supports not (scrollbar-width: thin) gate further down, added
-   2026-09-04 after a real Firefox regression (full detail there). Any
-   browser new enough to support the standard property at all - which by
-   now includes Firefox (always has) and modern Chrome/Edge/Safari alike
-   - falls outside that gate and never sees the webkit rules, so none of
-   them get a distinct dragging tier: dragging just stays at whatever the
-   hover tier already shows. A real, disclosed narrowing of the original
-   3-tier design, traded for actually working at all in current Firefox -
-   and it has the side benefit of making every current, real-world
-   browser behave identically instead of Chromium alone having a tier
-   nothing else does.
+   ::-webkit-scrollbar-thumb:active (see the fallback block further
+   down), snapping instantly rather than fading - direct feedback to a
+   physical mouse press, deliberately not softened the way the ambient
+   hover cue is. Chromium/WebKit-only in practice: Firefox does not
+   apply styling (colors, border-radius) from a ::-webkit-scrollbar-*
+   rule regardless of whether it recognizes the selector at all - see
+   the full history in the comment on that fallback block below,
+   including why gating it behind @supports was tried and reverted the
+   same day.
 
    The custom-property fade mechanism above (--scrollbar-thumb-opacity)
    is unrelated to any of this and unaffected by it - Firefox
-   participates in that on equal footing with Chromium regardless of the
-   @supports gate below, since it's driven by the standard scrollbar-color
-   property, not the webkit fallback (a real improvement over the older
-   class-swap design: :hover was skipped in Firefox there entirely since
-   scrollbar-color has no pseudo-classes, but writing a plain custom
-   property recalculates a rule that reads it exactly the same way in
-   every browser, so Firefox gets the full fade too, not just an instant
-   two-state jump). */
+   participates in that on equal footing with Chromium, since it's
+   driven by the standard scrollbar-color property, not the webkit
+   fallback (a real improvement over the older class-swap design: :hover
+   was skipped in Firefox there entirely since scrollbar-color has no
+   pseudo-classes, but writing a plain custom property recalculates a
+   rule that reads it exactly the same way in every browser, so Firefox
+   gets the full fade too, not just an instant two-state jump) - at
+   least on Firefox versions/settings where scrollbar-color is actually
+   honored at all; see the fallback block below for the current, real
+   caveat to that on Firefox specifically. */
 .history-list,
 .card-body-scroll {
   scrollbar-width: thin;
   scrollbar-color: color-mix(in srgb, var(--text) var(--scrollbar-thumb-opacity, 15%), transparent) transparent;
 }
 
-/* Real root cause, found 2026-09-04 by reading Firefox's own release
-   notes rather than continuing to guess (Firefox 153 through 155):
-   these ::-webkit-scrollbar-* rules were always written purely as a
-   fallback for browsers lacking the standard scrollbar-color/
-   scrollbar-width properties above - Firefox was never supposed to look
-   at them at all. As of Firefox 153, Firefox started recognizing
-   ::-webkit-scrollbar selectors for site-compat purposes; it still
-   doesn't apply their actual styling (colors, border-radius are
-   "intentionally not supported," per Mozilla's own notes), but it DOES
-   act on one specific side effect: "rules with non-zero width/height
-   disable overlay scrollbars for the affected container." The width:
-   8px rule below is exactly that - present since this scrollbar
-   treatment's very first commit, purely for Chrome/Edge/Safari, latent
-   and harmless until a Firefox version crossed into recognizing it. The
-   result: Firefox's own nice scrollbar-color-styled overlay scrollbar
-   got silently disabled, falling back to the classic native one -
-   completely unrelated to any of this file's other scrollbar work
-   (transform, the JS-driven fade, etc.) despite very suspicious timing
-   with a browser auto-update the user happened to hit mid-session.
-   Real, sourced, not guessed: https://www.firefox.com/en-US/firefox/153.0/releasenotes/,
-   https://www.firefox.com/en-US/firefox/155.0/releasenotes/.
+/* Chrome/Edge/Safari fallback for browsers that don't support the
+   standard scrollbar-width/scrollbar-color properties above. History,
+   worth reading before touching this again (2026-09-04): a non-zero
+   width here was found to have an undocumented-to-us side effect in
+   Firefox 153/154 - per Firefox's own 153 release notes, "rules with
+   non-zero width/height disable overlay scrollbars for the affected
+   container" - which had been silently forcing Firefox into classic,
+   always-visible scrollbar rendering this whole time, unbeknownst to
+   this project. Firefox 155 restricted that recognition to Mozilla's
+   own internal allowlist of sites, closing it off for ordinary sites
+   including this one - confirmed for real, not guessed, with an
+   isolated two-box test page in the user's own Firefox 155: even the
+   RAW rule below, completely unconditional, with zero scrollbar-color
+   involved at all, still showed Firefox's native hidden-until-hover
+   overlay behavior. A same-day attempt to "fix" this by gating the
+   whole block behind @supports not (scrollbar-width: thin) was ALSO
+   reverted, once that same test proved the gate could not possibly be
+   helping Firefox either way (Firefox shows identical behavior gated
+   or not) while carrying a real, unverified risk of also excluding
+   modern Chrome/Edge from these rules (they support scrollbar-width
+   too), which would have silently cost them their explicit 8px sizing
+   and the :active/dragging tier for zero corresponding benefit.
+   Restored to plain and unconditional, exactly as it was before any of
+   that - the only version confirmed, by the user directly, to render
+   correctly in both Chrome and Edge.
 
-   Fixed by gating this whole fallback behind a genuine feature-support
-   check instead of ever letting Firefox parse it as applicable in the
-   first place: @supports not (scrollbar-width: thin) is true only for a
-   browser that doesn't understand the standard property at all - real
-   proper feature detection, not a browser-sniffing guess. Firefox has
-   supported scrollbar-width since it introduced the property; Chrome/
-   Edge/Safari have all supported it natively since sometime in 2024, so
-   in practice this fallback now only matters for a genuinely older
-   Chromium/WebKit browser - which is exactly the audience it was always
-   meant for. */
-@supports not (scrollbar-width: thin) {
-  .history-list::-webkit-scrollbar,
-  .card-body-scroll::-webkit-scrollbar {
-    width: 8px;
-  }
+   Bottom line: there is no CSS available to this project (or any
+   website) that restores Firefox's classic scrollbar rendering here -
+   confirmed via Firefox's own release notes, a Mozilla engineer's
+   direct statement on bugzilla.mozilla.org ("no built-in CSS property
+   to globally disable overlay scrollbars; this is controlled by the
+   operating system"), and the user's own isolated test. Firefox 155 on
+   Windows renders its own native overlay scrollbar for this page
+   instead - hidden at rest, a thin indicator on hover, expanding
+   further when the pointer moves onto the scrollbar itself - still
+   tinted with the color from scrollbar-color above (confirmed
+   respected even in that mode), just not matching Chrome/Edge's
+   always-visible weight/timing. Two real, user-machine-level (not
+   website-level) ways to get classic rendering back on a specific
+   Windows install, for whoever's testing this later: the Windows 11
+   Settings -> Accessibility -> Visual effects -> "Always show
+   scrollbars" toggle, or the Firefox-internal about:config preference
+   widget.non-native-theme.scrollbar.style set to 4 - neither is
+   something this site can turn on for an arbitrary visitor. Disclosed,
+   accepted, not chased further - a real, documented cross-browser
+   platform difference, not a bug in this codebase. */
+.history-list::-webkit-scrollbar,
+.card-body-scroll::-webkit-scrollbar {
+  width: 8px;
+}
 
-  .history-list::-webkit-scrollbar-track,
-  .card-body-scroll::-webkit-scrollbar-track {
-    background: transparent;
-  }
+.history-list::-webkit-scrollbar-track,
+.card-body-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
 
-  .history-list::-webkit-scrollbar-thumb,
-  .card-body-scroll::-webkit-scrollbar-thumb {
-    background: color-mix(in srgb, var(--text) var(--scrollbar-thumb-opacity, 15%), transparent);
-    border-radius: 999px;
-  }
+.history-list::-webkit-scrollbar-thumb,
+.card-body-scroll::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--text) var(--scrollbar-thumb-opacity, 15%), transparent);
+  border-radius: 999px;
+}
 
-  .history-list::-webkit-scrollbar-thumb:active,
-  .card-body-scroll::-webkit-scrollbar-thumb:active {
-    background: color-mix(in srgb, var(--text) 50%, transparent);
-  }
+.history-list::-webkit-scrollbar-thumb:active,
+.card-body-scroll::-webkit-scrollbar-thumb:active {
+  background: color-mix(in srgb, var(--text) 50%, transparent);
 }
 
 .badge {
