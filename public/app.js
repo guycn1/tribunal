@@ -1061,15 +1061,22 @@ function renderCallLog() {
   }
 }
 
-// Representatives run concurrently as a group - worst case per group is
-// one server-side call's own internal retry budget (TOTAL_BUDGET_MS in
-// openrouter.ts, ~26s) plus the small stagger between kickoffs, not 4x
-// that, since roles don't wait on each other. Judges then run as their own
-// concurrent group after, so a genuinely still-working trial takes at most
-// roughly 2x that per-group figure end to end. This threshold has to sit
-// safely above that, or a trial that's actually still working gets
-// mislabeled as abandoned.
-const INTERRUPTED_THRESHOLD_MS = 3 * 60 * 1000;
+// Stale until this fix: this used to assume TOTAL_BUDGET_MS (openrouter.ts)
+// was ~26s and that representatives all run in one fully-concurrent group.
+// Neither is true any more - TOTAL_BUDGET_MS is 650000ms (real margin for
+// the full 4-tier escalation chain), and representatives are dispatched
+// through a worker pool capped at MAX_CONCURRENT_CALLS (3), not run all 4
+// at once - see runWithConcurrencyLimit() below. Worst case: the 4th
+// representative doesn't even start until one of the first 3 finishes, so
+// the representatives phase alone can take up to ~2x TOTAL_BUDGET_MS
+// (~1300s) before the judges phase (all 3 concurrent, up to another
+// ~650s) even begins - roughly 1950s (32.5 min) end to end in the genuine
+// worst case, not the few minutes the old comment assumed. Set with real
+// margin above that (not just enough to scrape by, consistent with every
+// other budget in this app), so a trial that's actually still working -
+// however slowly - doesn't get mislabeled "Interrupted" in the history
+// sidebar before it's had a real chance to finish.
+const INTERRUPTED_THRESHOLD_MS = 40 * 60 * 1000;
 
 // What "Completed - with failures" is based on: whether the trial's final,
 // persisted results are actually incomplete - NOT whether any individual
