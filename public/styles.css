@@ -711,10 +711,32 @@ body {
   color: var(--aborted);
 }
 
+/* Backlog item 8: a soft-edged separator above the "Model: ..."/
+   "Answered by: ..." line - .model-chain is the shared class for both
+   (the still-loading model line in buildAgentStatusBody() and the
+   post-success "Answered by:" line in renderRepresentatives()/
+   renderJudges()), so one rule covers both cases. A plain border-top
+   would read as a harsh, abrupt cutoff against the surrounding
+   prose - ::before with a gradient background instead tapers to
+   transparent at both ends, positioned in the gap padding-top opens up
+   above the text (position: relative on .model-chain gives ::before's
+   absolute positioning something to anchor to). */
 .model-chain {
   color: var(--text-dim);
   font-size: 0.78rem;
   margin: 6px 0 0;
+  padding-top: 10px;
+  position: relative;
+}
+
+.model-chain::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(to right, transparent, var(--border) 15%, var(--border) 85%, transparent);
 }
 
 .model-name {
