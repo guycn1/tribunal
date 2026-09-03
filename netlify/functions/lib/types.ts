@@ -49,6 +49,9 @@ export interface ApiCallLogRecord {
   status: CallStatus;
   errorMessage: string | null;
   timestamp: string;
+  // Wall-clock time this specific row's attempt took, in ms - null only
+  // for rows logged before this column existed.
+  durationMs: number | null;
 }
 
 export interface TrialRecord {

@@ -185,6 +185,10 @@ export async function getFullTrial(trialId: string) {
       status: row.status as CallStatus,
       errorMessage: row.error_message,
       timestamp: row.timestamp,
+      // Nullable for rows logged before this column existed - the
+      // frontend shows a plain "—" for those rather than a fabricated 0,
+      // which would misleadingly read as an instant response.
+      durationMs: row.duration_ms ?? null,
     })),
   };
 }
@@ -308,6 +312,10 @@ export async function logApiCall(params: {
   cost: number;
   status: CallStatus;
   errorMessage?: string | null;
+  // Optional: an abort (see abort.ts) has no real generation time to
+  // report, since it's logging the fact of a client-side cancellation,
+  // not a completed attempt.
+  durationMs?: number | null;
 }): Promise<void> {
   const supabase = getSupabaseClient();
   const { error } = await supabase.from('api_call_logs').insert({
@@ -321,6 +329,7 @@ export async function logApiCall(params: {
     cost: params.cost,
     status: params.status,
     error_message: params.errorMessage ?? null,
+    duration_ms: params.durationMs ?? null,
   });
 
   if (error) {

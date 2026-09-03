@@ -7,6 +7,15 @@ const JUDGE_ROLES = ['barak', 'elon', 'shamgar'];
 // of the generic "Call failed" one.
 const ABORTED_BY_USER_MESSAGE = 'Aborted by user before this call could complete.';
 
+// Must match the three DEGENERATE_*_MARKER exports in
+// netlify/functions/lib/openrouter.ts exactly - used by renderCallLog()
+// to tell a discarded-but-recovered attempt (the role went on to succeed
+// or is still trying a further tier) from a discarded-and-fatal one (this
+// was the last available tier, and it was also truncated/degenerate).
+const DEGENERATE_RETRIED_SAME_MODEL_MARKER = '[degenerate-retried-same-model]';
+const DEGENERATE_RETRIED_DIFF_MODEL_MARKER = '[degenerate-retried-diff-model]';
+const DEGENERATE_FINAL_MARKER = '[degenerate-final]';
+
 // Sent as the X-Site-Gate header on every call that creates a trial or
 // spends OpenRouter quota (see isSiteGateOk in
 // netlify/functions/lib/siteGate.ts). This is NOT a real secret and isn't
@@ -45,10 +54,13 @@ const state = {
   callLog: [],
   history: [],
   running: false,
+  loadingTrial: false,
   abortController: null,
 };
 
 const el = {
+  sidebar: document.getElementById('sidebar'),
+  mainLoadingOverlay: document.getElementById('main-loading-overlay'),
   newTrialBtn: document.getElementById('new-trial-btn'),
   abortBtn: document.getElementById('abort-btn'),
   historyList: document.getElementById('history-list'),
@@ -67,6 +79,7 @@ const el = {
   judgeCards: document.getElementById('judge-cards'),
   phaseLog: document.getElementById('phase-log'),
   callLogBody: document.getElementById('call-log-body'),
+  callLogFoot: document.getElementById('call-log-foot'),
 };
 
 el.newTrialBtn.addEventListener('click', () => {
@@ -113,6 +126,14 @@ function shortModelName(modelId) {
   return modelId.replace(/^[^/]+\//, '').replace(/:free$/, '');
 }
 
+// Single-letter Type column, with the full word kept available via <abbr>
+// (hover/long-press) rather than silently discarding it.
+function formatCallTypeHtml(callType) {
+  if (callType === 'representative') return '<abbr title="Representative">R</abbr>';
+  if (callType === 'judge') return '<abbr title="Judge">J</abbr>';
+  return callType;
+}
+
 // True when a successful call's completion hit the shared token cap
 // (state.maxTokens, from /api/case) rather than finishing naturally - the
 // server already logs this distinctly via finish_reason (see openrouter.ts),
@@ -143,7 +164,7 @@ function isTruncated(entry) {
 }
 
 async function beginTrial() {
-  if (state.running) return;
+  if (state.running || state.loadingTrial) return;
   state.running = true;
   el.newTrialBtn.disabled = true;
   el.abortBtn.classList.remove('hidden');
@@ -168,6 +189,7 @@ async function beginTrial() {
     el.phaseRepresentatives.classList.remove('hidden');
     el.phaseJudges.classList.add('hidden');
     el.phaseLog.classList.add('hidden');
+    el.phaseRepresentatives.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
     await runRepresentativesPhase(controller.signal);
     if (!controller.signal.aborted) {
@@ -346,17 +368,38 @@ async function triggerAgent(url, signal) {
   return { accepted: false, result: { status: 'failed', error: message } };
 }
 
-// Derives a {representatives, judges} status map from one GET
-// /api/trials/:id response - the single source of truth for "what has
+// True for a 'failed' log row that represents a discarded-but-recovered
+// attempt (openrouter.ts's onDiscardedAttempt callback writes these live,
+// mid-escalation - see representative-background.ts/judge-background.ts) -
+// NOT a terminal outcome for the role. The role is still genuinely running
+// server-side on a later tier when a row like this exists with no
+// success/final-failure row after it yet.
+function isRetriedMarkerLog(log) {
+  return (
+    typeof log.errorMessage === 'string' &&
+    (log.errorMessage.startsWith(DEGENERATE_RETRIED_SAME_MODEL_MARKER) || log.errorMessage.startsWith(DEGENERATE_RETRIED_DIFF_MODEL_MARKER))
+  );
+}
+
+// Derives a {representatives, judges, currentModels} status map from one
+// GET /api/trials/:id response - the single source of truth for "what has
 // actually happened so far in this trial," used identically whether
 // reopening a finished historical trial (loadTrial) or polling a live one
 // (pollForRoles), so the two call sites can't quietly drift into
 // disagreeing about what the same trial record means. apiCallLogs is
 // ordered ascending by timestamp (see getFullTrial in db.ts), so the last
 // matching row for a role is its most recent attempt.
+//
+// currentModels is deliberately separate from representatives/judges: a
+// retried-marker row is real signal (the escalation chain has moved on to
+// a specific model) but not a terminal state, and pollForRoles treats any
+// entry present in representatives/judges as "this role is done" - folding
+// live-progress info into that map would make it stop waiting on a role
+// that's still genuinely running.
 function deriveRoleStates(data) {
   const representatives = {};
   const judges = {};
+  const currentModels = {};
 
   for (const arg of data.representativeArguments || []) {
     representatives[arg.role] = {
@@ -379,6 +422,13 @@ function deriveRoleStates(data) {
     const store = log.callType === 'representative' ? representatives : judges;
     if (log.status !== 'success') {
       if (store[log.agentRole] && store[log.agentRole].status === 'success') continue;
+      if (isRetriedMarkerLog(log)) {
+        // Not a terminal outcome - record which model the chain is now
+        // trying next and keep waiting, rather than reporting a false
+        // "Call failed" for a role that's actually still in progress.
+        currentModels[log.agentRole] = log.modelUsed;
+        continue;
+      }
       store[log.agentRole] =
         log.errorMessage === ABORTED_BY_USER_MESSAGE
           ? { status: 'aborted', error: log.errorMessage }
@@ -391,7 +441,7 @@ function deriveRoleStates(data) {
     }
   }
 
-  return { representatives, judges };
+  return { representatives, judges, currentModels };
 }
 
 // How long to keep polling a phase for a role that hasn't resolved yet
@@ -448,6 +498,16 @@ async function pollForRoles(pendingRoles, bucket, render, signal) {
       if (entry) {
         bucket[role] = entry;
         remaining.delete(role);
+        changed = true;
+        continue;
+      }
+      // Still genuinely pending, but the escalation chain may have moved
+      // on to a later tier since the last tick - surface that live rather
+      // than leaving buildAgentStatusBody showing the static default model
+      // for the whole call regardless of how far it's actually escalated.
+      const currentModel = derived.currentModels[role];
+      if (currentModel && bucket[role] && bucket[role].currentModel !== currentModel) {
+        bucket[role] = { ...bucket[role], currentModel };
         changed = true;
       }
     }
@@ -597,35 +657,44 @@ async function refreshHistory() {
 }
 
 async function loadTrial(trialId) {
-  if (state.running) return;
-  const res = await fetch(`/api/trials/${trialId}`);
-  if (!res.ok) {
-    alert('Could not load that trial.');
-    return;
+  if (state.running || state.loadingTrial) return;
+  state.loadingTrial = true;
+  el.mainLoadingOverlay.classList.remove('hidden');
+  el.sidebar.classList.add('loading-locked');
+  try {
+    const res = await fetch(`/api/trials/${trialId}`);
+    if (!res.ok) {
+      alert('Could not load that trial.');
+      return;
+    }
+    const data = await res.json();
+
+    state.trialId = trialId;
+    state.caseDef = data.caseDef;
+    state.callLog = data.apiCallLogs || [];
+
+    // Same derivation pollForRoles() uses for a live trial (see
+    // deriveRoleStates) - a role with no success is backfilled with a real
+    // 'failed'/'aborted' entry from its own last logged attempt rather than
+    // left with no state entry at all, which would otherwise make
+    // buildAgentStatusBody's generic "no entry" case the only thing shown
+    // for it, even though the real error is sitting right there in the log.
+    const derived = deriveRoleStates(data);
+    state.representatives = derived.representatives;
+    state.judges = derived.judges;
+
+    renderCaseSheet();
+    el.phaseRepresentatives.classList.toggle('hidden', Object.keys(state.representatives).length === 0);
+    el.phaseJudges.classList.toggle('hidden', Object.keys(state.judges).length === 0);
+    renderRepresentatives();
+    renderJudges();
+    renderCallLog();
+    renderHistory();
+  } finally {
+    state.loadingTrial = false;
+    el.mainLoadingOverlay.classList.add('hidden');
+    el.sidebar.classList.remove('loading-locked');
   }
-  const data = await res.json();
-
-  state.trialId = trialId;
-  state.caseDef = data.caseDef;
-  state.callLog = data.apiCallLogs || [];
-
-  // Same derivation pollForRoles() uses for a live trial (see
-  // deriveRoleStates) - a role with no success is backfilled with a real
-  // 'failed'/'aborted' entry from its own last logged attempt rather than
-  // left with no state entry at all, which would otherwise make
-  // buildAgentStatusBody's generic "no entry" case the only thing shown
-  // for it, even though the real error is sitting right there in the log.
-  const derived = deriveRoleStates(data);
-  state.representatives = derived.representatives;
-  state.judges = derived.judges;
-
-  renderCaseSheet();
-  el.phaseRepresentatives.classList.toggle('hidden', Object.keys(state.representatives).length === 0);
-  el.phaseJudges.classList.toggle('hidden', Object.keys(state.judges).length === 0);
-  renderRepresentatives();
-  renderJudges();
-  renderCallLog();
-  renderHistory();
 }
 
 function renderCaseSheet() {
@@ -688,8 +757,22 @@ function buildAgentStatusBody(entry, role, verb) {
 
   if (entry.status === 'loading') {
     body.className = 'card-body dim';
-    const modelId = state.modelInfo && state.modelInfo[role];
-    const modelLine = modelId ? `<div class="model-chain">Model: <span class="model-name">${shortModelName(modelId)}</span></div>` : '';
+    // entry.currentModel (set by pollForRoles from a live discarded-attempt
+    // log row - see deriveRoleStates) is the model whose *last* attempt was
+    // just discarded, not the one now in flight (the call log row for a
+    // discarded attempt reports the model that produced it, per
+    // openrouter.ts) - the chain has since moved on to a later, stronger
+    // tier, but which exact model that is isn't known client-side until it
+    // either finishes or is itself discarded. Still a real, live
+    // improvement over showing state.modelInfo[role] (only ever the
+    // starting default) completely unchanged for a call that has already
+    // escalated past it.
+    const modelId = entry.currentModel || (state.modelInfo && state.modelInfo[role]);
+    const modelLine = modelId
+      ? `<div class="model-chain">Model: <span class="model-name">${shortModelName(modelId)}</span>${
+          entry.currentModel ? ' <span class="status-caption">(that attempt was discarded — escalating to a fallback model)</span>' : ''
+        }</div>`
+      : '';
     body.innerHTML = `${spinnerHtml()}${verb}…${modelLine}`;
     return body;
   }
@@ -775,7 +858,7 @@ function renderRepresentatives() {
 
     if (entry && entry.status === 'success') {
       const body = document.createElement('div');
-      body.className = 'card-body';
+      body.className = 'card-body card-body-scroll';
       body.textContent = entry.argumentText;
       card.appendChild(body);
       const answeredBy = document.createElement('p');
@@ -840,7 +923,7 @@ function renderJudges() {
       card.appendChild(verdict);
 
       const body = document.createElement('div');
-      body.className = 'card-body';
+      body.className = 'card-body card-body-scroll';
       body.textContent = entry.reasoningText;
       card.appendChild(body);
 
@@ -858,25 +941,70 @@ function renderJudges() {
   updateJudgesCaveat();
 }
 
-// A single decimal place was accurate but uninformative back when every
-// call ran on a $0 free-tier model - real per-call cost on a paid model is
-// a small fraction of a cent, which one decimal place rounds down to
-// indistinguishable from zero every time. Four places keeps real cost
-// visible (the database itself still stores full precision regardless of
-// what's shown here).
+// Shown in cents rather than dollars - real per-call cost on a paid model
+// is a small fraction of a cent, and "$0.0001" (four decimal places, to
+// stay meaningful rather than rounding down to indistinguishable-from-
+// zero) was both visually noisy and, at the call log's column widths,
+// prone to wrapping mid-number. Two decimal places of a cent is the same
+// real precision as four decimal places of a dollar (the database itself
+// still stores full, unrounded precision regardless of what's shown
+// here) in two fewer characters.
 function formatCost(cost) {
-  return `$${Number(cost).toFixed(4)}`;
+  return `${(Number(cost) * 100).toFixed(2)}¢`;
+}
+
+// "Grey Worm" instead of "grey_worm" - REPRESENTATIVE_META already has the
+// proper display name for the four representatives; judges are single
+// words, so plain capitalization gives "Barak"/"Elon"/"Shamgar" directly
+// (deliberately not JUDGE_META's name, which is "Judge — Barak method" -
+// too long for this column and redundant with the Type column showing
+// "J" already). Also means text wraps at the space in a name like
+// "Daenerys Targaryen" instead of breaking mid-word inside
+// "daenerys_targaryen".
+function formatAgentName(role) {
+  if (REPRESENTATIVE_META[role]) return REPRESENTATIVE_META[role].name;
+  return role.charAt(0).toUpperCase() + role.slice(1);
+}
+
+// null specifically for rows logged before the duration_ms column
+// existed (see ApiCallLogRecord in types.ts) - shown as a plain dash
+// rather than a fabricated 0, which would misleadingly read as an
+// instant response.
+function formatDuration(durationMs) {
+  if (durationMs === null || durationMs === undefined) return '—';
+  return `${Math.round(durationMs).toLocaleString()} ms`;
 }
 
 function renderCallLog() {
   if (state.callLog.length === 0) {
     el.phaseLog.classList.add('hidden');
+    el.callLogFoot.innerHTML = '';
     return;
   }
   el.phaseLog.classList.remove('hidden');
   el.callLogBody.innerHTML = '';
   for (const entry of state.callLog) {
     const tr = document.createElement('tr');
+    const err = entry.errorMessage || '';
+    // A discarded attempt (truncated/degenerated, then retried at the
+    // same tier or escalated to the next one) gets its own row, tagged
+    // with one of the two "retried" markers - see the DEGENERATE_*_MARKER
+    // comment above. A row tagged with the "final" marker instead means
+    // this was the last available tier and it was *also*
+    // truncated/degenerate - a genuinely fatal outcome, not a recovered
+    // one, so it's styled distinctly (red, full opacity, no retry
+    // caption) rather than folded into the same "still recovering" look.
+    const isRetriedSameModel = err.startsWith(DEGENERATE_RETRIED_SAME_MODEL_MARKER);
+    const isRetriedDiffModel = err.startsWith(DEGENERATE_RETRIED_DIFF_MODEL_MARKER);
+    const isDegenerateRetried = isRetriedSameModel || isRetriedDiffModel;
+    const isDegenerateFinal = err.startsWith(DEGENERATE_FINAL_MARKER);
+
+    if (isDegenerateRetried) {
+      // Dims the whole row - a visual cue that this failure wasn't fatal
+      // and the same call likely went on to succeed on a later row.
+      tr.classList.add('row-degenerated-retried');
+    }
+
     // A response still truncated after the conciseness retry is now a
     // real failure (openrouter.ts), correctly shown via the status column
     // below - this badge only still fires for historical rows recorded
@@ -889,33 +1017,118 @@ function renderCallLog() {
       state.maxTokens &&
       entry.completionTokens > 0 &&
       entry.completionTokens % state.maxTokens === 0;
-    const statusBadge = entry.status === 'success' ? 'badge-ok' : 'badge-fail';
-    const tokens = `${entry.promptTokens} / ${entry.completionTokens} / ${entry.totalTokens}`;
-    tr.innerHTML = `
-      <td>${entry.agentRole}</td>
-      <td>${entry.callType}</td>
-      <td>${entry.modelUsed}</td>
-      <td>${tokens}</td>
-      <td>${formatCost(entry.cost)}</td>
-      <td>
+    // Total is what actually matters at a glance (it's what the cap and
+    // cost are driven by); prompt/completion break it down underneath in
+    // the same dim, secondary-line treatment status-caption already uses
+    // for "why" text, rather than three equally-weighted numbers.
+    const tokens = `
+      <div class="cell-stack">
+        <strong>${entry.totalTokens.toLocaleString()}</strong>
+        <div class="status-caption">${entry.promptTokens.toLocaleString()} in / ${entry.completionTokens.toLocaleString()} out</div>
+      </div>
+    `;
+
+    let statusCellHtml;
+    if (isDegenerateRetried) {
+      const caption = isRetriedSameModel ? 'retried with the same model' : 'fell back to a different model';
+      statusCellHtml = `
+        <div class="cell-stack">
+          <span class="badge badge-warn">Degenerated</span>
+          <div class="status-caption">(${caption})</div>
+        </div>
+      `;
+    } else if (isDegenerateFinal) {
+      // Red, not yellow - this is the priciest fallback tier failing too,
+      // with nothing left to fall back to. As fatal as a 404/429/500.
+      statusCellHtml = `<span class="badge badge-fail">Degenerated</span>`;
+    } else {
+      const statusBadge = entry.status === 'success' ? 'badge-ok' : 'badge-fail';
+      statusCellHtml = `
         <span class="badge ${statusBadge}">${entry.status}</span>
         ${wasTruncated ? '<span class="badge badge-warn">truncated</span>' : ''}
-      </td>
+      `;
+    }
+
+    tr.innerHTML = `
+      <td>${formatAgentName(entry.agentRole)}</td>
+      <td>${formatCallTypeHtml(entry.callType)}</td>
+      <td><abbr title="${entry.modelUsed}">${shortModelName(entry.modelUsed)}</abbr></td>
+      <td>${tokens}</td>
+      <td>${formatCost(entry.cost)}</td>
+      <td>${formatDuration(entry.durationMs)}</td>
+      <td>${statusCellHtml}</td>
       <td>${formatDateTimeHtml(entry.timestamp)}</td>
     `;
     el.callLogBody.appendChild(tr);
   }
+
+  renderCallLogTotals();
 }
 
-// Representatives run concurrently as a group - worst case per group is
-// one server-side call's own internal retry budget (TOTAL_BUDGET_MS in
-// openrouter.ts, ~26s) plus the small stagger between kickoffs, not 4x
-// that, since roles don't wait on each other. Judges then run as their own
-// concurrent group after, so a genuinely still-working trial takes at most
-// roughly 2x that per-group figure end to end. This threshold has to sit
-// safely above that, or a trial that's actually still working gets
-// mislabeled as abandoned.
-const INTERRUPTED_THRESHOLD_MS = 3 * 60 * 1000;
+// Sums every real logged attempt shown above - including discarded
+// retries/escalations, not just the kept final row per role, since those
+// discarded attempts are genuinely-spent cost/tokens too (see
+// onDiscardedAttempt in openrouter.ts). Duration is summed the same way,
+// which reports total compute time across every attempt, not wall-clock
+// elapsed time for the trial - representatives/judges within a phase run
+// concurrently, so those two numbers are expected to differ; the label
+// below says "compute time" specifically to avoid implying otherwise.
+// Rows logged before the duration_ms column existed have a null value
+// (see formatDuration) and are simply skipped in this sum rather than
+// treated as 0, so an old trial's total doesn't silently understate.
+function renderCallLogTotals() {
+  let totalPromptTokens = 0;
+  let totalCompletionTokens = 0;
+  let totalTokens = 0;
+  let totalCost = 0;
+  let totalDurationMs = 0;
+  let hasDuration = false;
+
+  for (const entry of state.callLog) {
+    totalPromptTokens += entry.promptTokens || 0;
+    totalCompletionTokens += entry.completionTokens || 0;
+    totalTokens += entry.totalTokens || 0;
+    totalCost += entry.cost || 0;
+    if (entry.durationMs !== null && entry.durationMs !== undefined) {
+      totalDurationMs += entry.durationMs;
+      hasDuration = true;
+    }
+  }
+
+  const tr = document.createElement('tr');
+  tr.className = 'call-log-total-row';
+  tr.innerHTML = `
+    <td colspan="3">Total (${state.callLog.length} call${state.callLog.length === 1 ? '' : 's'})</td>
+    <td>
+      <div class="cell-stack">
+        <strong>${totalTokens.toLocaleString()}</strong>
+        <div class="status-caption">${totalPromptTokens.toLocaleString()} in / ${totalCompletionTokens.toLocaleString()} out</div>
+      </div>
+    </td>
+    <td>${formatCost(totalCost)}</td>
+    <td>${hasDuration ? formatDuration(totalDurationMs) : '—'}</td>
+    <td colspan="2" class="status-caption">(compute time, not wall clock)</td>
+  `;
+  el.callLogFoot.innerHTML = '';
+  el.callLogFoot.appendChild(tr);
+}
+
+// Stale until this fix: this used to assume TOTAL_BUDGET_MS (openrouter.ts)
+// was ~26s and that representatives all run in one fully-concurrent group.
+// Neither is true any more - TOTAL_BUDGET_MS is 650000ms (real margin for
+// the full 4-tier escalation chain), and representatives are dispatched
+// through a worker pool capped at MAX_CONCURRENT_CALLS (3), not run all 4
+// at once - see runWithConcurrencyLimit() below. Worst case: the 4th
+// representative doesn't even start until one of the first 3 finishes, so
+// the representatives phase alone can take up to ~2x TOTAL_BUDGET_MS
+// (~1300s) before the judges phase (all 3 concurrent, up to another
+// ~650s) even begins - roughly 1950s (32.5 min) end to end in the genuine
+// worst case, not the few minutes the old comment assumed. Set with real
+// margin above that (not just enough to scrape by, consistent with every
+// other budget in this app), so a trial that's actually still working -
+// however slowly - doesn't get mislabeled "Interrupted" in the history
+// sidebar before it's had a real chance to finish.
+const INTERRUPTED_THRESHOLD_MS = 40 * 60 * 1000;
 
 // What "Completed - with failures" is based on: whether the trial's final,
 // persisted results are actually incomplete - NOT whether any individual

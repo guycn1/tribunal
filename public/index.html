@@ -8,7 +8,7 @@
 </head>
 <body>
   <div class="layout">
-    <aside class="sidebar">
+    <aside id="sidebar" class="sidebar">
       <h1 class="app-title">Tribunal</h1>
       <button id="new-trial-btn" class="btn btn-primary">Begin new trial</button>
       <button id="abort-btn" class="btn btn-danger hidden">Abort</button>
@@ -17,6 +17,9 @@
     </aside>
 
     <main class="main">
+      <div id="main-loading-overlay" class="main-loading-overlay hidden">
+        <span class="spinner spinner-lg"></span>
+      </div>
       <section class="case-card">
         <p class="case-code">Case T-001</p>
         <h2 id="case-title">The Realm v. Jon Snow</h2>
@@ -60,26 +63,53 @@
         <div class="table-scroll">
           <table class="call-log">
             <colgroup>
+              <!-- Percentages tuned against the real rendered width, which
+                   is capped well under any reasonable viewport by .main's
+                   max-width:960px - a viewport-width media query alone
+                   can't tell when this table is actually cramped, so
+                   these are sized for the narrow case by default. Model
+                   is the biggest share deliberately: even with the
+                   vendor prefix stripped for display (shortModelName() in
+                   app.js), model ids are still the single longest
+                   realistic content in any column. Time is a bare
+                   fraction of its old share - each of its two stacked
+                   fragments (date, time) is under a dozen characters and
+                   never needed anywhere near this much room.
+                   Type/Cost/Duration are all short data-wise, but their
+                   *headers* ("Type", "Cost", "Duration") are single
+                   words that must never wrap (see table.call-log th's
+                   white-space: nowrap) - each is sized with real margin
+                   above what its own uppercase, letter-spaced header
+                   text needs, not just its data, funded by trimming
+                   Model and Status, both of which had more room than
+                   their content actually needed. Time took a further
+                   2% from Tokens - the bold-total-plus-dim-breakdown
+                   layout (see the Tokens cell in renderCallLog()) needs
+                   less horizontal room than a single "prompt / completion
+                   / total" line did, so it had margin to spare. -->
+              <col style="width: 13%" />
+              <col style="width: 6%" />
+              <col style="width: 22%" />
               <col style="width: 15%" />
-              <col style="width: 15%" />
-              <col style="width: 16%" />
-              <col style="width: 16%" />
               <col style="width: 7%" />
               <col style="width: 11%" />
-              <col style="width: 20%" />
+              <col style="width: 14%" />
+              <col style="width: 12%" />
             </colgroup>
             <thead>
               <tr>
                 <th>Agent</th>
                 <th>Type</th>
                 <th>Model</th>
-                <th>Tokens (prompt / completion / total)</th>
+                <th>Tokens</th>
                 <th>Cost</th>
+                <th>Duration</th>
                 <th>Status</th>
                 <th>Time</th>
               </tr>
             </thead>
             <tbody id="call-log-body"></tbody>
+            <tfoot id="call-log-foot"></tfoot>
           </table>
         </div>
       </section>

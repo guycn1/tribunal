@@ -76,7 +76,27 @@ const rawHandler: Handler = async (event) => {
 
   const messages = buildJudgeMessages(judgeRole, caseDef, availableArguments);
 
-  const result = await callOpenRouter(getModelForRole(judgeRole), messages, MAX_TOKENS, `judge:${judgeRole}`);
+  // Every attempt that truncated/degenerated and was discarded in favor of
+  // a retry or escalation gets its own real call-log row too, written the
+  // moment callOpenRouter() decides to discard it (not batched after the
+  // whole chain finishes) - this is what lets a client polling GET
+  // /api/trials/:id see the escalation happening live, mid-call, instead
+  // of only learning about it once this role's result is already final.
+  const result = await callOpenRouter(getModelForRole(judgeRole), messages, MAX_TOKENS, `judge:${judgeRole}`, (discarded) =>
+    logApiCall({
+      trialId: id,
+      agentRole: judgeRole,
+      callType: 'judge',
+      modelUsed: discarded.model,
+      promptTokens: discarded.promptTokens,
+      completionTokens: discarded.completionTokens,
+      totalTokens: discarded.totalTokens,
+      cost: discarded.cost,
+      status: 'failed',
+      errorMessage: discarded.errorMessage,
+      durationMs: discarded.durationMs,
+    })
+  );
 
   const parsed = result.status === 'success' && result.content ? parseJudgeOutput(result.content) : null;
   const callFailed = result.status === 'failed' || !result.content;
@@ -97,6 +117,7 @@ const rawHandler: Handler = async (event) => {
       : unparseable
         ? 'Model response did not include a parseable VERDICT line.'
         : null,
+    durationMs: result.durationMs,
   });
 
   // A judge call that fails outright or comes back unparseable still ends

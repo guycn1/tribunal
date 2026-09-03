@@ -162,6 +162,29 @@ const CONCISENESS_REMINDER: OpenRouterMessage = {
     'Your previous attempt did not produce a usable response - it either ran past the length target and was cut off, or trailed into repetitive, run-on text without normal punctuation before finishing. Write your response again from scratch: stay well within the word count you were given, use clear sentences with normal punctuation throughout, and make sure to reach a clear, complete ending.',
 };
 
+// Every discarded attempt (one that truncated or degenerated and was
+// abandoned in favor of a retry/escalation) gets logged as its own real
+// row via logApiCall(), not folded silently into whichever attempt was
+// eventually kept - the whole point being that a reader of the call log
+// can see that a role needed a fallback at all, not just its final
+// outcome. The three marker prefixes below are duplicated as literal
+// strings in app.js (same pattern as ABORTED_BY_USER_MESSAGE in abort.ts)
+// so the frontend can tell a discarded-but-recovered attempt from a
+// discarded-and-fatal one without any shared module between the two.
+export const DEGENERATE_RETRIED_SAME_MODEL_MARKER = '[degenerate-retried-same-model]';
+export const DEGENERATE_RETRIED_DIFF_MODEL_MARKER = '[degenerate-retried-diff-model]';
+export const DEGENERATE_FINAL_MARKER = '[degenerate-final]';
+
+export interface DiscardedAttempt {
+  model: string;
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  cost: number;
+  errorMessage: string;
+  durationMs: number;
+}
+
 export interface OpenRouterResult {
   status: 'success' | 'failed';
   content?: string;
@@ -171,6 +194,16 @@ export interface OpenRouterResult {
   totalTokens: number;
   cost: number;
   errorMessage?: string;
+  // Wall-clock time for this specific attempt (the one this result
+  // actually reports on), not the cumulative time across every attempt
+  // in the chain - consistent with promptTokens/completionTokens/cost
+  // above, which are likewise this attempt's own, not a running total.
+  durationMs: number;
+  // Attempts that truncated/degenerated and were discarded before this
+  // result was reached - each one gets its own logApiCall() row alongside
+  // this result's own row. Empty on the common path (no escalation
+  // needed).
+  discardedAttempts?: DiscardedAttempt[];
 }
 
 // label identifies the caller in the log lines below (e.g.
@@ -182,7 +215,21 @@ export async function callOpenRouter(
   model: string,
   messages: OpenRouterMessage[],
   maxTokens: number,
-  label: string
+  label: string,
+  // Fired the moment a discarded attempt is decided (see the `continue`
+  // branch below), before the chain moves on to the next attempt/tier -
+  // lets the caller persist it to the DB immediately, rather than only
+  // after this whole function returns. This is what makes the escalation
+  // chain's progress visible to a client polling GET /api/trials/:id
+  // mid-call - without it, every discarded attempt only became visible
+  // once the entire chain had already finished (see representative-
+  // background.ts/judge-background.ts, which used to log the whole
+  // discardedAttempts array in one batch after awaiting this function).
+  // Optional and fire-and-forget-tolerant (awaited if it returns a
+  // promise, but a rejection here should never break the actual retry
+  // logic) - a caller that doesn't care about live progress can simply
+  // omit it and rely on the returned discardedAttempts array instead.
+  onDiscardedAttempt?: (attempt: DiscardedAttempt) => Promise<void> | void
 ): Promise<OpenRouterResult> {
   const apiKey = process.env.OPENROUTER_API_KEY;
 
@@ -197,24 +244,29 @@ export async function callOpenRouter(
   let attempt = 0;
   // Which escalation tier we're on (0 = the default model) and how many
   // attempts have been made at that tier so far - see buildRetryTiers
-  // above. Also accumulates the real cost/tokens every discarded attempt
-  // actually spent, so the final logged cost reflects everything spent
-  // across the whole chain, not just the kept attempt.
+  // above. Every discarded attempt (truncated or degenerated, then
+  // retried/escalated) is recorded here rather than folded into whichever
+  // attempt is eventually kept - each becomes its own real logApiCall()
+  // row, so the call log shows the fallback happening rather than only
+  // its final outcome.
   const tiers = buildRetryTiers(model, maxTokens);
   let tierIndex = 0;
   let attemptsAtTier = 0;
-  let extraCost = 0;
-  let extraPromptTokens = 0;
-  let extraCompletionTokens = 0;
-  let extraTotalTokens = 0;
+  const discardedAttempts: DiscardedAttempt[] = [];
   // Tracks which model the most recent attempt actually used, so a failure
   // path reached after the chain has moved to a later tier (see
   // attemptModel below) reports and costs against the model that really
   // made that attempt, not always the original.
   let lastAttemptModel = model;
+  // Wall-clock start of the current/most recent attempt only, reset at
+  // the top of every loop iteration - the basis for every durationMs
+  // this function reports, always this attempt's own time, never the
+  // cumulative time since callOpenRouter() itself was first called.
+  let lastAttemptStartedAt = Date.now();
 
   while (remainingMs() >= MIN_REMAINING_TO_ATTEMPT_MS) {
     attempt++;
+    lastAttemptStartedAt = Date.now();
     const tier = tiers[tierIndex];
     const isFallbackAttempt = tierIndex > 0;
     const attemptModel = tier.getModel();
@@ -288,7 +340,7 @@ export async function callOpenRouter(
           const limit = response.headers.get('x-ratelimit-limit') ?? 'the account';
           const message = `OpenRouter request quota exhausted (rate limit ${limit}, 0 remaining). Resets at ${resetIso}.`;
           console.log(`[openrouter] ${label}: attempt ${attempt} - ${message}`);
-          return failure(attemptModel, message, lastUsage);
+          return failure(attemptModel, message, lastUsage, discardedAttempts, Date.now() - lastAttemptStartedAt);
         }
 
         lastError = `OpenRouter returned HTTP 429 (rate limited)`;
@@ -309,7 +361,7 @@ export async function callOpenRouter(
         // endpoints.
         const message = `OpenRouter account is out of credits (HTTP 402): ${await describeErrorBody(response)}`;
         console.log(`[openrouter] ${label}: attempt ${attempt} - ${message}`);
-        return failure(attemptModel, message);
+        return failure(attemptModel, message, undefined, discardedAttempts, Date.now() - lastAttemptStartedAt);
       }
 
       if (response.status >= 500) {
@@ -322,7 +374,7 @@ export async function callOpenRouter(
       if (!response.ok) {
         const message = `OpenRouter returned HTTP ${response.status}: ${await describeErrorBody(response)}`;
         console.log(`[openrouter] ${label}: attempt ${attempt} - ${message}`);
-        return failure(attemptModel, message);
+        return failure(attemptModel, message, undefined, discardedAttempts, Date.now() - lastAttemptStartedAt);
       }
 
       const data = (await response.json()) as any;
@@ -382,15 +434,38 @@ export async function callOpenRouter(
         }
 
         if (nextTierIndex < tiers.length && remainingMs() >= MIN_REMAINING_TO_ATTEMPT_MS) {
-          // Only fold this attempt's cost/tokens into the "extra" totals
-          // once we know it's being discarded in favor of another attempt -
-          // the final failure return below adds the *current* (last)
-          // attempt's cost separately, so folding it in here too would
-          // double-count it on that path.
-          extraCost += calculateCost(servingModel, promptTokens, completionTokens);
-          extraPromptTokens += promptTokens;
-          extraCompletionTokens += completionTokens;
-          extraTotalTokens += totalTokens;
+          // Record this discarded attempt as its own row - only once we
+          // know it's being discarded in favor of another attempt, so the
+          // final return below (for whichever attempt is actually kept,
+          // success or fatal failure) never double-reports it.
+          const sameModel = nextTierIndex === tierIndex;
+          const nextModel = tiers[nextTierIndex].getModel();
+          const reason = lengthTruncated
+            ? 'hit the max_tokens limit before finishing naturally'
+            : `collapsed into a ${degenerateCheck!.runLength}-word run with no punctuation`;
+          const discarded: DiscardedAttempt = {
+            model: servingModel,
+            promptTokens,
+            completionTokens,
+            totalTokens,
+            cost: calculateCost(servingModel, promptTokens, completionTokens),
+            errorMessage: `${sameModel ? DEGENERATE_RETRIED_SAME_MODEL_MARKER : DEGENERATE_RETRIED_DIFF_MODEL_MARKER} This attempt ${reason} - ${sameModel ? 're-tried with the same model' : `escalated to ${nextModel}`}.`,
+            durationMs: Date.now() - lastAttemptStartedAt,
+          };
+          discardedAttempts.push(discarded);
+          if (onDiscardedAttempt) {
+            try {
+              await onDiscardedAttempt(discarded);
+            } catch (err) {
+              // Never let a logging failure interrupt the actual escalation
+              // - this callback exists purely to make progress visible
+              // sooner, not to gate whether the chain can keep going. The
+              // final row logged by the caller after this function returns
+              // still carries the complete discardedAttempts array as a
+              // fallback if a live write like this one is ever lost.
+              console.warn(`[openrouter] ${label}: onDiscardedAttempt callback failed, continuing anyway: ${err instanceof Error ? err.message : String(err)}`);
+            }
+          }
           if (nextTierIndex !== tierIndex) {
             tierIndex = nextTierIndex;
             attemptsAtTier = 0;
@@ -409,29 +484,31 @@ export async function callOpenRouter(
         // failure mode is a degraded-but-usable result, and an argument or
         // ruling that's cut off, or that collapses into repetitive
         // run-on text, isn't fair to present as the character's actual
-        // position. Treated as a real failure, not returned as a
+        // position. This is the fatal case: there is no further tier to
+        // fall back to, unlike every discarded attempt already recorded
+        // above. Treated as a real failure, not returned as a
         // technically-successful result for the caller to badge and move
         // on - representative.ts/judge.ts already treat any `status:
         // 'failed'` result as a normal, visible failure, so this needs no
-        // special handling on their side. Cost/token totals still include
-        // every attempt, since each one genuinely spent money.
+        // special handling on their side. This attempt's own tokens/cost
+        // are reported on its own row here - every earlier discarded
+        // attempt already has its own row via discardedAttempts, so
+        // nothing is folded in here to avoid double-reporting spend.
         console.warn(`[openrouter] ${label}: still ${lengthTruncated ? 'truncated' : 'degenerate'} after every tier - returning failed rather than an unusable result.`);
-        // Built directly rather than via failure() - the attempts can span
-        // different models (see attemptModel above) with different
-        // per-token prices, so cost has to be summed as separate dollar
-        // amounts (one per model), not computed once from summed token
-        // counts against a single price the way failure() does internally.
-        // Same pattern the success return below already uses.
         return {
           status: 'failed',
           model: servingModel,
-          promptTokens: promptTokens + extraPromptTokens,
-          completionTokens: completionTokens + extraCompletionTokens,
-          totalTokens: totalTokens + extraTotalTokens,
-          cost: calculateCost(servingModel, promptTokens, completionTokens) + extraCost,
-          errorMessage: lengthTruncated
-            ? `Response was still truncated after ${attempt} attempt(s) across ${tierIndex + 1} escalation tier(s). The generated content was incomplete and was not saved.`
-            : `Response was still incoherent (a long run-on with no punctuation) after ${attempt} attempt(s) across ${tierIndex + 1} escalation tier(s). The generated content was not saved.`,
+          promptTokens,
+          completionTokens,
+          totalTokens,
+          cost: calculateCost(servingModel, promptTokens, completionTokens),
+          errorMessage: `${DEGENERATE_FINAL_MARKER} ${
+            lengthTruncated
+              ? `Response was still truncated after ${attempt} attempt(s) across ${tierIndex + 1} escalation tier(s). The generated content was incomplete and was not saved.`
+              : `Response was still incoherent (a long run-on with no punctuation) after ${attempt} attempt(s) across ${tierIndex + 1} escalation tier(s). The generated content was not saved.`
+          } This was the last available tier - no further fallback exists.`,
+          discardedAttempts,
+          durationMs: Date.now() - lastAttemptStartedAt,
         };
       }
 
@@ -439,10 +516,12 @@ export async function callOpenRouter(
         status: 'success',
         content,
         model: servingModel,
-        promptTokens: promptTokens + extraPromptTokens,
-        completionTokens: completionTokens + extraCompletionTokens,
-        totalTokens: totalTokens + extraTotalTokens,
-        cost: calculateCost(servingModel, promptTokens, completionTokens) + extraCost,
+        promptTokens,
+        completionTokens,
+        totalTokens,
+        cost: calculateCost(servingModel, promptTokens, completionTokens),
+        discardedAttempts,
+        durationMs: Date.now() - lastAttemptStartedAt,
       };
     } catch (err) {
       const isTimeout = err instanceof Error && err.name === 'TimeoutError';
@@ -466,13 +545,15 @@ export async function callOpenRouter(
 
   const message = `${lastError} (gave up after ${attempt} attempt(s), ${TOTAL_BUDGET_MS}ms budget)`;
   console.log(`[openrouter] ${label}: ${message}`);
-  return failure(lastAttemptModel, message, lastUsage);
+  return failure(lastAttemptModel, message, lastUsage, discardedAttempts, Date.now() - lastAttemptStartedAt);
 }
 
 function failure(
   model: string,
   errorMessage: string,
-  usage?: { promptTokens: number; completionTokens: number; totalTokens: number }
+  usage?: { promptTokens: number; completionTokens: number; totalTokens: number },
+  discardedAttempts?: DiscardedAttempt[],
+  durationMs = 0
 ): OpenRouterResult {
   return {
     status: 'failed',
@@ -482,6 +563,8 @@ function failure(
     totalTokens: usage?.totalTokens ?? 0,
     cost: usage ? calculateCost(model, usage.promptTokens, usage.completionTokens) : 0,
     errorMessage,
+    discardedAttempts,
+    durationMs,
   };
 }
 

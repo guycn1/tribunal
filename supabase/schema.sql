@@ -110,7 +110,12 @@ create table if not exists api_call_logs (
   cost numeric(12, 6) not null default 0,
   status text not null check (status in ('success', 'failed')),
   error_message text,
-  "timestamp" timestamptz not null default now()
+  "timestamp" timestamptz not null default now(),
+  -- Wall-clock time this specific row's attempt took, in ms. Nullable -
+  -- rows logged before this column existed have no value here, and the
+  -- frontend shows a plain placeholder for those rather than a
+  -- fabricated 0 (which would misleadingly read as an instant response).
+  duration_ms integer
 );
 alter table api_call_logs enable row level security;
 create index if not exists api_call_logs_trial_id_idx on api_call_logs (trial_id);
