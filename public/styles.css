@@ -129,6 +129,7 @@ body {
   padding: 10px;
   cursor: pointer;
   font-size: 0.85rem;
+  transition: border-color 0.15s ease;
 }
 
 /* White rather than the theme's gold accent (backlog item 2) - .active
