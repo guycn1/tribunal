@@ -880,6 +880,30 @@ function appendTruncationNotice(card, entry) {
   card.appendChild(note);
 }
 
+// Toggles a bottom fade (see .card-body-scroll-wrap in styles.css) on a
+// scrollable card body whenever there's real text hidden below the
+// visible area, and hides it once scrolled to the actual bottom - a
+// clearer "there's more" signal than a bare scrollbar track alone,
+// decided on explicitly (2026-09-03) over an in-place "Read full
+// response..." expand (would fight the fixed card-grid row heights this
+// same scroll region exists to keep consistent) or a modal (real added
+// complexity - backdrop, focus handling - for a benefit judged not worth
+// it here). The fade lives on bodyEl's parent (a plain sibling wrapper,
+// not a child of the scrolling element itself) specifically so it stays
+// visually pinned at the bottom of the visible box - an absolutely
+// positioned child of the SCROLLING element would scroll away along with
+// the text instead.
+function attachScrollFade(bodyEl) {
+  const wrapEl = bodyEl.parentElement;
+  const SCROLL_END_EPSILON = 2; // sub-pixel/rounding tolerance
+  function update() {
+    const hasMore = bodyEl.scrollHeight - bodyEl.scrollTop - bodyEl.clientHeight > SCROLL_END_EPSILON;
+    wrapEl.classList.toggle('has-more-below', hasMore);
+  }
+  bodyEl.addEventListener('scroll', update);
+  update();
+}
+
 function renderRepresentatives() {
   el.representativeCards.innerHTML = '';
   for (const role of REPRESENTATIVE_ROLES) {
@@ -896,11 +920,16 @@ function renderRepresentatives() {
     `;
     card.appendChild(header);
 
+    let scrollBody = null;
     if (entry && entry.status === 'success') {
+      const bodyWrap = document.createElement('div');
+      bodyWrap.className = 'card-body-scroll-wrap';
       const body = document.createElement('div');
       body.className = 'card-body card-body-scroll';
       body.textContent = entry.argumentText;
-      card.appendChild(body);
+      bodyWrap.appendChild(body);
+      card.appendChild(bodyWrap);
+      scrollBody = body;
       const answeredBy = document.createElement('p');
       answeredBy.className = 'model-chain';
       answeredBy.innerHTML = `Answered by: <span class="model-name">${shortModelName(entry.modelUsed)}</span>`;
@@ -911,6 +940,11 @@ function renderRepresentatives() {
       if (statusBody) card.appendChild(statusBody);
     }
     el.representativeCards.appendChild(card);
+    // Needs real layout to measure scrollHeight/clientHeight against, so
+    // this can only run once the card is actually attached to the
+    // document - a detached element (mid-build, before the appendChild
+    // above) has no box model at all, and both would just read 0.
+    if (scrollBody) attachScrollFade(scrollBody);
   }
 }
 
@@ -956,16 +990,21 @@ function renderJudges() {
     header.innerHTML = `<span class="card-name">${meta.name}</span>`;
     card.appendChild(header);
 
+    let scrollBody = null;
     if (entry && entry.status === 'success') {
       const verdict = document.createElement('p');
       verdict.className = entry.verdict === 'justified' ? 'verdict-justified' : 'verdict-not-justified';
       verdict.textContent = entry.verdict === 'justified' ? 'Justified' : 'Not justified';
       card.appendChild(verdict);
 
+      const bodyWrap = document.createElement('div');
+      bodyWrap.className = 'card-body-scroll-wrap';
       const body = document.createElement('div');
       body.className = 'card-body card-body-scroll';
       body.textContent = entry.reasoningText;
-      card.appendChild(body);
+      bodyWrap.appendChild(body);
+      card.appendChild(bodyWrap);
+      scrollBody = body;
 
       const answeredBy = document.createElement('p');
       answeredBy.className = 'model-chain';
@@ -977,6 +1016,7 @@ function renderJudges() {
       if (statusBody) card.appendChild(statusBody);
     }
     el.judgeCards.appendChild(card);
+    if (scrollBody) attachScrollFade(scrollBody);
   }
   updateJudgesCaveat();
 }

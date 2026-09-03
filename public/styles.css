@@ -452,30 +452,77 @@ body {
    call log below. A capped height with its own scrollbar keeps every card
    a predictable size while still showing a real, readable chunk of text
    before scrolling is needed. */
+/* Positioning anchor for the bottom fade below - see attachScrollFade()
+   in app.js for why this needs to be a plain (non-scrolling) wrapper
+   rather than putting the fade directly inside .card-body-scroll. */
+.card-body-scroll-wrap {
+  position: relative;
+}
+
+/* Hidden by default (opacity 0, see .has-more-below below) - only shown
+   once app.js confirms there's real hidden content, and hidden again
+   once scrolled to the actual bottom, so this never falsely implies more
+   text exists when there isn't any. pointer-events: none so it never
+   blocks scrolling/selecting the text underneath it. The gradient's
+   solid end matches .card's own background (--bg-card) so it blends
+   into the card rather than reading as its own separate block. */
+.card-body-scroll-wrap::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 4px;
+  bottom: 0;
+  height: 42px;
+  background: linear-gradient(to bottom, transparent, var(--bg-card));
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.card-body-scroll-wrap.has-more-below::after {
+  opacity: 1;
+}
+
 .card-body-scroll {
   max-height: 340px;
   overflow-y: auto;
   padding-right: 4px;
-  /* Firefox */
+  /* Firefox has no equivalent of the ancestor-hover-scoped webkit rules
+     below (scrollbar-color takes one flat value, no pseudo-selectors) -
+     this in-between tone is the compromise: still clearly present at
+     rest, without being as prominent as the hover states webkit gets. */
   scrollbar-width: thin;
-  scrollbar-color: var(--accent-dim) transparent;
+  scrollbar-color: color-mix(in srgb, var(--text) 32%, transparent) transparent;
 }
 
 .card-body-scroll::-webkit-scrollbar {
   width: 8px;
 }
 
+/* A faint but real track background (not fully transparent) - reads more
+   like an actual scrollbar channel than a bare floating thumb, which
+   previously looked closer to a decorative accent bar than a control. */
 .card-body-scroll::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.card-body-scroll::-webkit-scrollbar-thumb {
-  background: var(--accent-dim);
+  background: color-mix(in srgb, var(--text) 6%, transparent);
   border-radius: 999px;
 }
 
+/* Whitish/neutral rather than the theme's gold accent - the accent color
+   is used elsewhere for interactive/branded elements (buttons, links),
+   which made this scrollbar read as decoration rather than a functional
+   control. Three-stage prominence, dimmest to brightest: resting (card
+   not hovered) -> card hovered -> the thumb itself hovered/dragged. */
+.card-body-scroll::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--text) 18%, transparent);
+  border-radius: 999px;
+}
+
+.card:hover .card-body-scroll::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--text) 42%, transparent);
+}
+
 .card-body-scroll::-webkit-scrollbar-thumb:hover {
-  background: var(--accent);
+  background: color-mix(in srgb, var(--text) 70%, transparent);
 }
 
 .badge {
