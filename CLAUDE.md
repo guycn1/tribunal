@@ -285,17 +285,19 @@ Cross-session memory relevant to this project also lives outside this file, in C
 
 **OpenRouter quota:** gets exhausted fast during any round of testing/debugging (real 429s, not a bug — see [[economical-openrouter-testing]] in memory and Part 5 above). Resets daily, account-wide. Don't trust a specific remembered reset time — check current status live via `GET https://openrouter.ai/api/v1/key` (API key as Bearer token) or the `X-RateLimit-Reset` header on any 429 response.
 
-## Frontend polish backlog (flagged 2026-09-02, none of this started yet)
+## Frontend polish backlog (flagged 2026-09-02, all 7 items done as of 2026-09-03)
 
-The call log table (column widths, badges, Duration, cost-in-cents, centering) is in good shape as of `d7e259f`. These are separate, not-yet-touched frontend items flagged in one batch, explicitly not exhaustive:
+The call log table (column widths, badges, Duration, cost-in-cents, centering) reached good shape as of `d7e259f`. The 7 items flagged after that in one batch (explicitly not claimed exhaustive at the time) are now all implemented and pushed to `draft`:
 
-- **Representatives grid wraps 3-then-1 on wide viewports** (three cards in the first row, Grey Worm alone on a second row with empty space beside it) — with exactly 4 representatives, a fixed 2×2 grid would look better than the current `auto-fit` wrapping at wide widths.
-- **The model shown while a representative/judge card is still working looks static** — suspected to only ever show the default model (mistral-small) even after that tier has exhausted its retries and the real call has escalated to a later tier server-side; the actual serving model only appears once the argument/ruling is fully done. Should update live as the escalation chain actually progresses, not just report the final model after the fact. Needs checking against the real polling/status code (`pollForRoles`, `buildAgentStatusBody` in `app.js`) to confirm this suspicion before fixing it.
-- **"Begin new trial" should smooth-scroll to the Representatives section** once clicked.
-- **Clicking a run-history entry has a real but short loading delay with no visible indicator** — add a loading overlay (e.g. a large spinner) on `.main` while a historical trial's data is being fetched, and consider `pointer-events: none` on the sidebar during that fetch so rapid clicking can't pile up requests.
-- **Verify call log failures actually roll up correctly into the trial's overall sidebar status badge** — not confirmed either way, worth checking given how much the call log's own failure/degenerate handling has changed recently.
-- **Add a "total" row to the call log table** (summed cost/tokens/etc. across all rows) — a classmate's project apparently has this.
-- **Representative/judge argument cards have no height cap and wildly inconsistent heights** — long arguments force a lot of scrolling to reach the call log, and the ragged card heights are visually distracting. Consider a fixed max-height per card with its own styled (not default-ugly) scrollbar for the argument/ruling text specifically.
+1. **Representatives grid** — fixed 2×2 (`#representative-cards`), no longer auto-fit wrapping 3-then-1; `#judge-cards` (3 items) deliberately left on auto-fit. `d9df19a`.
+2. **Live model display while a card escalates** — confirmed the suspicion was correct (the model line only ever showed the static default). `callOpenRouter()` gained an `onDiscardedAttempt` callback so a discarded attempt is logged the moment it's decided, not batched after the whole chain finishes; `deriveRoleStates()` treats a discarded-but-retried row as live-progress signal (a separate `currentModels` map), not a terminal failure, so `pollForRoles` keeps waiting on the role instead of prematurely showing "Call failed." `197609b`.
+3. **Smooth-scroll to Representatives** on "Begin new trial." `54b2cba`.
+4. **Loading overlay for run-history clicks** — full-`.main` overlay with a large spinner during the fetch, sidebar locked (`pointer-events: none`, dimmed) so a second click can't pile up requests. `f0fd976`.
+5. **Sidebar status rollup** — verified correct (resultCount-based labeling already ignores discarded-attempt rows). Found and fixed an adjacent real bug while checking: `INTERRUPTED_THRESHOLD_MS` (3 min) was calibrated against a stale ~26s `TOTAL_BUDGET_MS`/fully-parallel assumption; raised to 40 min with real margin above the ~32.5 min genuine worst case (4-tier escalation chain × 3-slot concurrency pool). `ea6b211`.
+6. **Call log totals row** — sums every logged row (including discarded retries) into a `<tfoot>`: total tokens, cost, and duration (compute time, not wall clock — labeled as such). Verified offline against synthetic data. `f3959ed`.
+7. **Capped card height** — `.card-body-scroll` (340px max-height, themed scrollbar) on the actual argument/ruling text only, not the short loading/failed status text. `ed9a2de`.
+
+All 7 verified via offline tests (extracted real functions against synthetic data/DOM stubs) or structural/typecheck review — no OpenRouter calls spent on any of it. None of this has been merged to `main` or deployed yet.
 
 ## Bugs and fixes encountered (running log — add to this, don't replace it)
 
