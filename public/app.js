@@ -79,6 +79,7 @@ const el = {
   judgeCards: document.getElementById('judge-cards'),
   phaseLog: document.getElementById('phase-log'),
   callLogBody: document.getElementById('call-log-body'),
+  callLogFoot: document.getElementById('call-log-foot'),
 };
 
 el.newTrialBtn.addEventListener('click', () => {
@@ -977,6 +978,7 @@ function formatDuration(durationMs) {
 function renderCallLog() {
   if (state.callLog.length === 0) {
     el.phaseLog.classList.add('hidden');
+    el.callLogFoot.innerHTML = '';
     return;
   }
   el.phaseLog.classList.remove('hidden');
@@ -1059,6 +1061,56 @@ function renderCallLog() {
     `;
     el.callLogBody.appendChild(tr);
   }
+
+  renderCallLogTotals();
+}
+
+// Sums every real logged attempt shown above - including discarded
+// retries/escalations, not just the kept final row per role, since those
+// discarded attempts are genuinely-spent cost/tokens too (see
+// onDiscardedAttempt in openrouter.ts). Duration is summed the same way,
+// which reports total compute time across every attempt, not wall-clock
+// elapsed time for the trial - representatives/judges within a phase run
+// concurrently, so those two numbers are expected to differ; the label
+// below says "compute time" specifically to avoid implying otherwise.
+// Rows logged before the duration_ms column existed have a null value
+// (see formatDuration) and are simply skipped in this sum rather than
+// treated as 0, so an old trial's total doesn't silently understate.
+function renderCallLogTotals() {
+  let totalPromptTokens = 0;
+  let totalCompletionTokens = 0;
+  let totalTokens = 0;
+  let totalCost = 0;
+  let totalDurationMs = 0;
+  let hasDuration = false;
+
+  for (const entry of state.callLog) {
+    totalPromptTokens += entry.promptTokens || 0;
+    totalCompletionTokens += entry.completionTokens || 0;
+    totalTokens += entry.totalTokens || 0;
+    totalCost += entry.cost || 0;
+    if (entry.durationMs !== null && entry.durationMs !== undefined) {
+      totalDurationMs += entry.durationMs;
+      hasDuration = true;
+    }
+  }
+
+  const tr = document.createElement('tr');
+  tr.className = 'call-log-total-row';
+  tr.innerHTML = `
+    <td colspan="3">Total (${state.callLog.length} call${state.callLog.length === 1 ? '' : 's'})</td>
+    <td>
+      <div class="cell-stack">
+        <strong>${totalTokens.toLocaleString()}</strong>
+        <div class="status-caption">${totalPromptTokens.toLocaleString()} in / ${totalCompletionTokens.toLocaleString()} out</div>
+      </div>
+    </td>
+    <td>${formatCost(totalCost)}</td>
+    <td>${hasDuration ? formatDuration(totalDurationMs) : '—'}</td>
+    <td colspan="2" class="status-caption">(compute time, not wall clock)</td>
+  `;
+  el.callLogFoot.innerHTML = '';
+  el.callLogFoot.appendChild(tr);
 }
 
 // Stale until this fix: this used to assume TOTAL_BUDGET_MS (openrouter.ts)

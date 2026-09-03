@@ -588,6 +588,20 @@ table.call-log tbody tr:last-child td {
   border-bottom: none;
 }
 
+/* Sums every logged row, including discarded retries/escalations - see
+   renderCallLogTotals() in app.js. Set off from the ordinary rows above it
+   (a heavier top border, a slightly raised background, bold first cell)
+   since it's a computed summary, not another real call. */
+table.call-log tfoot tr.call-log-total-row td {
+  border-top: 2px solid var(--border);
+  background: var(--bg-raised);
+  font-weight: 600;
+}
+
+table.call-log tfoot tr.call-log-total-row td:first-child {
+  text-align: left;
+}
+
 /* A discarded attempt that was truncated/degenerate but recovered by a
    retry or escalation (see DEGENERATE_RETRIED_*_MARKER in app.js) -
    dimmed to signal the failure wasn't fatal, distinct from a
