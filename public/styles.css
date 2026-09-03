@@ -416,6 +416,40 @@ body {
   color: var(--text-dim);
 }
 
+/* Only the actual argument/ruling text (renderRepresentatives/renderJudges
+   in app.js) gets this, not the short status/dim text buildAgentStatusBody
+   renders while a call is loading or failed - real arguments/rulings run
+   long enough (up to ~600 words) to make card heights wildly inconsistent
+   across a grid otherwise, forcing a lot of scrolling just to reach the
+   call log below. A capped height with its own scrollbar keeps every card
+   a predictable size while still showing a real, readable chunk of text
+   before scrolling is needed. */
+.card-body-scroll {
+  max-height: 340px;
+  overflow-y: auto;
+  padding-right: 4px;
+  /* Firefox */
+  scrollbar-width: thin;
+  scrollbar-color: var(--accent-dim) transparent;
+}
+
+.card-body-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+
+.card-body-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.card-body-scroll::-webkit-scrollbar-thumb {
+  background: var(--accent-dim);
+  border-radius: 999px;
+}
+
+.card-body-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--accent);
+}
+
 .badge {
   display: inline-block;
   border-radius: 999px;

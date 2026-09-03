@@ -858,7 +858,7 @@ function renderRepresentatives() {
 
     if (entry && entry.status === 'success') {
       const body = document.createElement('div');
-      body.className = 'card-body';
+      body.className = 'card-body card-body-scroll';
       body.textContent = entry.argumentText;
       card.appendChild(body);
       const answeredBy = document.createElement('p');
@@ -923,7 +923,7 @@ function renderJudges() {
       card.appendChild(verdict);
 
       const body = document.createElement('div');
-      body.className = 'card-body';
+      body.className = 'card-body card-body-scroll';
       body.textContent = entry.reasoningText;
       card.appendChild(body);
 
