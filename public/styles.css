@@ -111,15 +111,16 @@ body {
   display: inline-flex;
   flex-shrink: 0;
   color: var(--text);
-  opacity: 0.55;
+  opacity: 0.65;
   transition:
     opacity 0.2s ease,
     filter 0.2s ease;
 }
 
 .github-link:hover,
-.github-link:active {
-  opacity: 0.92;
+.github-link:active,
+.github-link:focus {
+  opacity: 0.95;
   filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.55));
 }
 
@@ -291,8 +292,16 @@ body {
   font-weight: 600;
 }
 
-.btn-primary:hover:not(:disabled) {
+/* :active/:focus included, not just :hover, so a press or keyboard-focus
+   without a preceding mouse hover still gets the same treatment - the
+   shared .btn:hover:not(:disabled) rule (border-color) has the same gap,
+   but that's left alone here since only this button's own hover styling
+   was asked to extend, not every button's shared hover rule. */
+.btn-primary:hover:not(:disabled),
+.btn-primary:active:not(:disabled),
+.btn-primary:focus:not(:disabled) {
   background: #d9b46e;
+  border-color: var(--accent-dim);
 }
 
 .btn-danger {
