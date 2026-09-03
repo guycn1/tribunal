@@ -90,11 +90,6 @@ el.abortBtn.addEventListener('click', () => {
   abortCurrentTrial();
 });
 
-// #history-list itself is a stable, static element (only its children
-// get rebuilt, by renderHistory() - see attachScrollbarFade's own
-// comment further down) - attached once here rather than per-render.
-attachScrollbarFade(el.historyList);
-
 // Explicit European format (DD/MM/YYYY, 24-hour) regardless of the
 // browser's own locale - bare toLocaleString() would otherwise follow
 // whatever the browser is configured to (commonly US-style M/D/YYYY,
@@ -992,6 +987,19 @@ function attachScrollbarFade(el) {
   el.addEventListener('mouseenter', () => animateTo(SCROLLBAR_HOVER_OPACITY));
   el.addEventListener('mouseleave', () => animateTo(SCROLLBAR_REST_OPACITY));
 }
+
+// #history-list itself is a stable, static element (only its children
+// get rebuilt, by renderHistory()) - attached once here rather than
+// per-render. Must come after SCROLLBAR_REST_OPACITY/etc. and the
+// function itself are actually defined, not just after the function
+// declaration (which is hoisted) - unlike a function declaration, a
+// const's value doesn't exist until execution reaches its line, and
+// calling attachScrollbarFade() from any earlier point in the script
+// (this used to sit right after the button listeners near the top)
+// throws a real ReferenceError reading those consts before they're
+// initialized. Real bug, caught live (2026-09-04): the page failed to
+// load at all, not just a visual glitch.
+attachScrollbarFade(el.historyList);
 
 function renderRepresentatives() {
   el.representativeCards.innerHTML = '';
