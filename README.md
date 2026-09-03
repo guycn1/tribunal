@@ -48,5 +48,3 @@ This project was built with Claude Code. `CLAUDE.md`, tracked in this repository
 ## Status
 
 Feature-complete and stable. The full pipeline (four representatives in parallel, three judges after, independent rulings never combined) has been verified across many real end-to-end trials, including the reliability chain (escalation, degenerate-output detection) and the anti-abuse layers, both locally and against the live deployed site. A long round of frontend polish (layout, live status display, call log transparency, cross-browser scrollbar/interaction details) is also done. Treated as done pending any further issue noticed on inspection, not as a hard, permanent freeze.
-
-This repository's `main` branch is what's actually deployed at the live URL above; `draft` is the full working history and may sit ahead of it between merges — see `CLAUDE.md`'s status log for exactly what's landed where.
