@@ -90,6 +90,11 @@ el.abortBtn.addEventListener('click', () => {
   abortCurrentTrial();
 });
 
+// #history-list itself is a stable, static element (only its children
+// get rebuilt, by renderHistory() - see attachScrollbarHoverIntent's own
+// comment further down) - attached once here rather than per-render.
+attachScrollbarHoverIntent(el.historyList);
+
 // Explicit European format (DD/MM/YYYY, 24-hour) regardless of the
 // browser's own locale - bare toLocaleString() would otherwise follow
 // whatever the browser is configured to (commonly US-style M/D/YYYY,
@@ -921,6 +926,33 @@ function attachScrollFade(bodyEl) {
   update();
 }
 
+// Delays the scrollbar's "hovered" brightening (see .scrollbar-hover in
+// styles.css) by a short interval rather than triggering it the instant
+// the pointer crosses into the element - a bare CSS :hover fired on
+// every incidental pass of the mouse over a card/the history list while
+// moving toward somewhere else on the page, which read as an unwanted
+// flash rather than a deliberate "about to scroll this" signal (real
+// user report, 2026-09-04). Kept in JS rather than a CSS
+// transition/animation on the scrollbar color itself, since
+// ::-webkit-scrollbar-thumb and Firefox's scrollbar-color do not
+// actually support animated property changes in real browsers - a
+// transition would be silently ignored in exactly the browsers
+// (Chrome/Edge) the scrollbar work this builds on was written to fix.
+// Only entering is delayed; leaving removes the class immediately, so
+// the brightened state never lingers after the pointer has genuinely
+// moved on.
+const SCROLLBAR_HOVER_INTENT_MS = 220;
+function attachScrollbarHoverIntent(el) {
+  let timer = null;
+  el.addEventListener('mouseenter', () => {
+    timer = setTimeout(() => el.classList.add('scrollbar-hover'), SCROLLBAR_HOVER_INTENT_MS);
+  });
+  el.addEventListener('mouseleave', () => {
+    clearTimeout(timer);
+    el.classList.remove('scrollbar-hover');
+  });
+}
+
 function renderRepresentatives() {
   el.representativeCards.innerHTML = '';
   for (const role of REPRESENTATIVE_ROLES) {
@@ -928,6 +960,9 @@ function renderRepresentatives() {
     const entry = state.representatives[role];
     const card = document.createElement('div');
     card.className = 'card';
+    // Cards (unlike #history-list) are torn down and recreated on every
+    // render, so this attaches fresh each time rather than once.
+    attachScrollbarHoverIntent(card);
 
     const header = document.createElement('div');
     header.className = 'card-header';
@@ -1001,6 +1036,9 @@ function renderJudges() {
     const entry = state.judges[role];
     const card = document.createElement('div');
     card.className = 'card';
+    // Cards (unlike #history-list) are torn down and recreated on every
+    // render, so this attaches fresh each time rather than once.
+    attachScrollbarHoverIntent(card);
 
     const header = document.createElement('div');
     header.className = 'card-header';

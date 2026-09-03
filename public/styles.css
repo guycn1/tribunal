@@ -529,13 +529,29 @@ body {
    the brightest tier below is keyed to :active, not :hover, on the
    thumb pseudo-element itself.
 
+   The middle tier is NOT triggered by plain CSS :hover - a bare :hover
+   fired on every incidental pass of the pointer over a card while
+   moving toward somewhere else on the page, which read as an unwanted
+   flash rather than a deliberate "about to scroll this" signal (real
+   user report, 2026-09-04). Fixed with a short hover-intent delay
+   instead: .scrollbar-hover is a JS-toggled class (see
+   attachScrollbarHoverIntent() in app.js), added only after the pointer
+   has stayed on the element for SCROLLBAR_HOVER_INTENT_MS, removed
+   immediately on leaving - only entering is deliberately slow. A CSS
+   transition/animation on the color itself was considered and rejected:
+   ::-webkit-scrollbar-thumb and Firefox's scrollbar-color do not
+   actually support animated property changes in real browsers - a
+   transition here would be silently ignored in exactly the browsers
+   (Chrome/Edge) this whole scrollbar treatment was built to fix, not a
+   softer version of the effect.
+
    Firefox can only ever reach the first two tiers: scrollbar-color is a
    single flat value with no thumb-scoped pseudo-classes at all (no
    equivalent of ::-webkit-scrollbar-thumb:active exists), so there is no
    way to detect "the thumb is actively being dragged" there - it
-   re-evaluates on the plain :hover rule below (a real CSS property, not
-   pseudo-element-scoped, so this part of the cascade genuinely works in
-   Firefox), but tops out at the hover tier's brightness regardless of
+   re-evaluates on the .scrollbar-hover rule below (a real CSS property,
+   not pseudo-element-scoped, so this part of the cascade genuinely works
+   in Firefox), but tops out at the hover tier's brightness regardless of
    whether a drag is in progress. Only Chromium/WebKit get the true third
    tier via ::-webkit-scrollbar-thumb:active. */
 .history-list,
@@ -544,9 +560,9 @@ body {
   scrollbar-color: color-mix(in srgb, var(--text) 15%, transparent) transparent;
 }
 
-.history-list:hover,
-.card:hover .card-body-scroll {
-  scrollbar-color: color-mix(in srgb, var(--text) 35%, transparent) transparent;
+.history-list.scrollbar-hover,
+.card.scrollbar-hover .card-body-scroll {
+  scrollbar-color: color-mix(in srgb, var(--text) 30%, transparent) transparent;
 }
 
 .history-list::-webkit-scrollbar,
@@ -565,21 +581,23 @@ body {
   border-radius: 999px;
 }
 
-.history-list:hover::-webkit-scrollbar-thumb,
-.card:hover .card-body-scroll::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--text) 35%, transparent);
+.history-list.scrollbar-hover::-webkit-scrollbar-thumb,
+.card.scrollbar-hover .card-body-scroll::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--text) 30%, transparent);
 }
 
-/* Must come after the :hover rules above, not before - :active and
-   :hover both genuinely apply throughout a real drag (the pointer is
-   over the thumb AND pressed), and these two rules are equal-specificity
-   (one class/pseudo-class plus one pseudo-element each), so source order
-   is what decides the winner. Placed last on purpose, so the brightest
-   tier wins during an actual drag rather than being silently overridden
-   by the dimmer hover rule that also matches at the same time. */
+/* Must come after the hover rules above, not before - :active and
+   .scrollbar-hover both genuinely apply throughout a real drag (the
+   pointer is over the thumb AND pressed, and has already been resting
+   on the card/list long enough for the hover-intent delay to have
+   fired), and these two rules are equal-specificity (one class plus one
+   pseudo-element/pseudo-class each), so source order is what decides
+   the winner. Placed last on purpose, so the brightest tier wins during
+   an actual drag rather than being silently overridden by the dimmer
+   hover rule that also matches at the same time. */
 .history-list::-webkit-scrollbar-thumb:active,
 .card-body-scroll::-webkit-scrollbar-thumb:active {
-  background: color-mix(in srgb, var(--text) 55%, transparent);
+  background: color-mix(in srgb, var(--text) 50%, transparent);
 }
 
 .badge {
