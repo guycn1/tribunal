@@ -185,6 +185,7 @@ async function beginTrial() {
     el.phaseRepresentatives.classList.remove('hidden');
     el.phaseJudges.classList.add('hidden');
     el.phaseLog.classList.add('hidden');
+    el.phaseRepresentatives.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
     await runRepresentativesPhase(controller.signal);
     if (!controller.signal.aborted) {
