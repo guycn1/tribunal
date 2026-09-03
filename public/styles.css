@@ -131,12 +131,16 @@ body {
   font-size: 0.85rem;
 }
 
+/* White rather than the theme's gold accent (backlog item 2) - .active
+   (below) has two classes vs. this rule's one, so it naturally wins on
+   specificity alone when an entry is both the active one and currently
+   hovered, without needing a combined :hover.active selector. */
 .history-item:hover {
-  border-color: var(--accent-dim);
+  border-color: color-mix(in srgb, var(--text) 45%, transparent);
 }
 
 .history-item.active {
-  border-color: var(--accent);
+  border-color: color-mix(in srgb, var(--text) 85%, transparent);
 }
 
 .history-item-date {
