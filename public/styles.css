@@ -251,7 +251,7 @@ body {
 
 .btn:disabled {
   opacity: 0.5;
-  cursor: default;
+  cursor: not-allowed;
 }
 
 .btn-primary {
