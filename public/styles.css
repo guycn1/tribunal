@@ -66,6 +66,32 @@ body {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  /* Pinned to the viewport (title/buttons/"Run history" heading always
+     reachable) rather than scrolling away with the rest of the page once
+     .main's own content (case card, agent cards, call log) grows taller
+     than one viewport, which it routinely does. position: sticky rather
+     than fixed specifically so this stays a normal flex child of
+     .layout, sharing width with .main exactly as before - fixed would
+     take it out of flow entirely and need its own hand-maintained
+     width/offset math duplicating the clamp() above. align-self:
+     flex-start stops .layout's default stretch behavior from fighting
+     the explicit height below. Capped at 100vh (never taller than the
+     viewport) with overflow hidden - the fix for the sidebar previously
+     growing past .main's height and dragging the whole page down with
+     it - .history-list below is the one part that actually scrolls,
+     internally, once real content forces the issue. */
+  position: sticky;
+  top: 0;
+  align-self: flex-start;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.sidebar-top-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .app-title {
@@ -73,6 +99,34 @@ body {
   font-size: 1.4rem;
   letter-spacing: 0.02em;
   color: var(--accent);
+}
+
+/* GitHub link icon, top-right of the sidebar. Semi-transparent at rest,
+   nearly opaque on hover/active (not fully 1 - keeping a hair of restraint
+   reads a little more deliberate than a flat, stark 100%), with a soft
+   shape-aware shadow on hover - drop-shadow (not box-shadow) so the
+   shadow follows the actual octocat silhouette instead of the icon's
+   rectangular bounding box. */
+.github-link {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--text);
+  opacity: 0.65;
+  transition:
+    opacity 0.2s ease,
+    filter 0.2s ease;
+}
+
+.github-link:hover,
+.github-link:active,
+.github-link:focus {
+  opacity: 0.95;
+  /* A dark shadow reads as much fainter against this page's already-dark
+     sidebar background than it would on a light page - pushed well past
+     what would look reasonable there to actually register here. Two
+     layered shadows (a tighter, darker one plus a softer, wider one) for
+     real depth rather than a single flat blur. */
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.9)) drop-shadow(0 4px 10px rgba(0, 0, 0, 0.6));
 }
 
 .sidebar-heading {
@@ -91,6 +145,16 @@ body {
   flex-direction: column;
   gap: 8px;
   overflow-y: auto;
+  padding-right: 4px;
+  /* Fills whatever vertical space .sidebar's fixed 100vh has left over
+     after its other children (title, buttons, heading) - min-height: 0
+     overrides flex's default min-height: auto, which would otherwise let
+     this list's real content size push .sidebar taller than 100vh
+     instead of actually scrolling within the space it's given. This is
+     the one thing inside .sidebar that scrolls; everything above it
+     stays fixed in place regardless of history length or page scroll. */
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .history-item {
@@ -100,14 +164,38 @@ body {
   padding: 10px;
   cursor: pointer;
   font-size: 0.85rem;
+  transition: border-color 0.2s ease;
 }
 
+/* White rather than the theme's gold accent (backlog item 2) - .active
+   (below) has two classes vs. this rule's one, so it naturally wins on
+   specificity alone when an entry is both the active one and currently
+   hovered, without needing a combined :hover.active selector. */
 .history-item:hover {
-  border-color: var(--accent-dim);
+  border-color: color-mix(in srgb, var(--text) 45%, transparent);
 }
 
 .history-item.active {
-  border-color: var(--accent);
+  border-color: color-mix(in srgb, var(--text) 85%, transparent);
+}
+
+/* Applied to .history-list while a trial is running (see
+   updateHistoryLockState() in app.js) - clicking an entry already
+   correctly does nothing during a live run (loadTrial()'s own
+   state.running guard), this makes that visible instead of leaving
+   every entry looking clickable with nothing happening when clicked.
+   No pointer-events: none here (unlike .sidebar.loading-locked, the
+   separate lock used for a loadTrial() fetch) - the point is to
+   actively show a not-allowed cursor, which pointer-events: none would
+   prevent by taking the element out of hit-testing (and hover) entirely
+   and falling through to whatever's underneath for cursor purposes. */
+.history-list.running-locked .history-item {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.history-list.running-locked .history-item:hover {
+  border-color: var(--border);
 }
 
 .history-item-date {
@@ -199,7 +287,7 @@ body {
 
 .btn:disabled {
   opacity: 0.5;
-  cursor: default;
+  cursor: not-allowed;
 }
 
 .btn-primary {
@@ -209,8 +297,16 @@ body {
   font-weight: 600;
 }
 
-.btn-primary:hover:not(:disabled) {
+/* :active/:focus included, not just :hover, so a press or keyboard-focus
+   without a preceding mouse hover still gets the same treatment - the
+   shared .btn:hover:not(:disabled) rule (border-color) has the same gap,
+   but that's left alone here since only this button's own hover styling
+   was asked to extend, not every button's shared hover rule. */
+.btn-primary:hover:not(:disabled),
+.btn-primary:active:not(:disabled),
+.btn-primary:focus:not(:disabled) {
   background: #d9b46e;
+  border-color: var(--accent-dim);
 }
 
 .btn-danger {
@@ -220,8 +316,19 @@ body {
   font-weight: 600;
 }
 
-.btn-danger:hover:not(:disabled) {
+/* border-color needs its own explicit override here - the shared
+   .btn:hover:not(:disabled) rule (border-color: var(--accent-dim), the
+   gold accent) otherwise wins on specificity over .btn-danger's own
+   resting border-color: var(--fail), so without this the Abort button's
+   border would turn gold on hover instead of staying red. :active
+   included too (not just :hover) so a press without a preceding hover
+   - keyboard activation, touch - gets the same red border rather than
+   falling back to the shared gold rule there too. */
+.btn-danger:hover:not(:disabled),
+.btn-danger:active:not(:disabled),
+.btn-danger:focus:not(:disabled) {
   background: color-mix(in srgb, var(--fail) 30%, var(--bg-card));
+  border-color: var(--fail);
 }
 
 .case-card {
@@ -424,30 +531,188 @@ body {
    call log below. A capped height with its own scrollbar keeps every card
    a predictable size while still showing a real, readable chunk of text
    before scrolling is needed. */
+/* Positioning anchor for the bottom fade below - see attachScrollFade()
+   in app.js for why this needs to be a plain (non-scrolling) wrapper
+   rather than putting the fade directly inside .card-body-scroll. */
+.card-body-scroll-wrap {
+  position: relative;
+}
+
+/* A real, reported Firefox-only rendering glitch (2026-09-04): the
+   bottom-fade gradient below composited on top of scrolling card text
+   came out jagged/"torn" per line instead of a smooth blend (not
+   reproduced in Chrome). Two attempted fixes, both transform:
+   translateZ(0) (a real, standard mitigation for exactly this class of
+   text-under-overlay compositing issue in principle) - first directly
+   on .card-body-scroll, then on this wrapper instead once that broke
+   its scrollbar-color styling - were both reverted (2026-09-04): the
+   user reported zero improvement to the jaggedness from either, AND
+   the second attempt's scrollbar regression turned out to extend to
+   .history-list too, an element with no DOM/CSS relationship to
+   .card-body-scroll-wrap at all - a result that contradicts the actual
+   mechanism this fix was supposed to rely on, meaning the diagnosis
+   itself was likely wrong, not just its placement. Left as a known,
+   disclosed cosmetic limitation rather than continuing to guess at
+   variations of the same technique without a real Firefox instance to
+   actually test against (none available in this environment) - a
+   different approach (e.g. a shorter/subtler fade, or dropping it for
+   Firefox specifically) would need to be verified by the user directly
+   before attempting again. */
+
+/* Hidden by default (opacity 0, see .has-more-below below) - only shown
+   once app.js confirms there's real hidden content, and hidden again
+   once scrolled to the actual bottom, so this never falsely implies more
+   text exists when there isn't any. pointer-events: none so it never
+   blocks scrolling/selecting the text underneath it. The gradient's
+   solid end matches .card's own background (--bg-card) so it blends
+   into the card rather than reading as its own separate block. */
+.card-body-scroll-wrap::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 4px;
+  bottom: 0;
+  height: 42px;
+  background: linear-gradient(to bottom, transparent, var(--bg-card));
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.card-body-scroll-wrap.has-more-below::after {
+  opacity: 1;
+}
+
 .card-body-scroll {
   max-height: 340px;
   overflow-y: auto;
   padding-right: 4px;
-  /* Firefox */
-  scrollbar-width: thin;
-  scrollbar-color: var(--accent-dim) transparent;
 }
 
+/* Shared scrollbar treatment for the two scrollable regions on this page
+   (agent-card bodies, and .history-list below) - same weight, same
+   3-tier white-opacity behavior, in every browser. .history-list
+   previously had NO scrollbar styling at all, which is exactly why
+   Chrome/Edge fell back to their bulky native default there (wide enough
+   to visually collide with a history card's own border - a real,
+   reported bug) while .card-body-scroll looked fine - it already had
+   this treatment, .history-list simply never got it.
+
+   Three tiers, per exact spec: very transparent white at rest; more
+   opaque once the *container* (the card, or the history list) is
+   hovered, for discoverability; most opaque while the thumb itself is
+   actively being clicked and dragged.
+
+   The rest<->hover tiers are driven by --scrollbar-thumb-opacity, a CSS
+   custom property written every animation frame by attachScrollbarFade()
+   in app.js - NOT a bare CSS :hover selector, and NOT a CSS
+   transition/animation on the color itself (real browsers don't support
+   animating ::-webkit-scrollbar-thumb or Firefox's scrollbar-color at
+   all - a transition here would be silently ignored in exactly the
+   browsers, Chrome/Edge, this whole treatment was built to fix). Each
+   individual frame is just an ordinary instant custom-property change,
+   which every browser already handles fine - repeated every frame for
+   ~SCROLLBAR_FADE_MS, that produces a real smooth fade despite no
+   browser ever animating anything itself. The 15%/30% literals below are
+   only the fallback for the (practically unreachable) case the custom
+   property was never set - the real values live in app.js's
+   SCROLLBAR_REST_OPACITY/SCROLLBAR_HOVER_OPACITY and must be kept in
+   sync with them by hand, since CSS can't read a JS constant.
+
+   The dragging tier is unrelated to any of the above: real
+   ::-webkit-scrollbar-thumb:active (see the fallback block further
+   down), snapping instantly rather than fading - direct feedback to a
+   physical mouse press, deliberately not softened the way the ambient
+   hover cue is. Chromium/WebKit-only in practice: Firefox does not
+   apply styling (colors, border-radius) from a ::-webkit-scrollbar-*
+   rule regardless of whether it recognizes the selector at all - see
+   the full history in the comment on that fallback block below,
+   including why gating it behind @supports was tried and reverted the
+   same day.
+
+   The custom-property fade mechanism above (--scrollbar-thumb-opacity)
+   is unrelated to any of this and unaffected by it - Firefox
+   participates in that on equal footing with Chromium, since it's
+   driven by the standard scrollbar-color property, not the webkit
+   fallback (a real improvement over the older class-swap design: :hover
+   was skipped in Firefox there entirely since scrollbar-color has no
+   pseudo-classes, but writing a plain custom property recalculates a
+   rule that reads it exactly the same way in every browser, so Firefox
+   gets the full fade too, not just an instant two-state jump) - at
+   least on Firefox versions/settings where scrollbar-color is actually
+   honored at all; see the fallback block below for the current, real
+   caveat to that on Firefox specifically. */
+.history-list,
+.card-body-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--text) var(--scrollbar-thumb-opacity, 15%), transparent) transparent;
+}
+
+/* Chrome/Edge/Safari fallback for browsers that don't support the
+   standard scrollbar-width/scrollbar-color properties above. History,
+   worth reading before touching this again (2026-09-04): a non-zero
+   width here was found to have an undocumented-to-us side effect in
+   Firefox 153/154 - per Firefox's own 153 release notes, "rules with
+   non-zero width/height disable overlay scrollbars for the affected
+   container" - which had been silently forcing Firefox into classic,
+   always-visible scrollbar rendering this whole time, unbeknownst to
+   this project. Firefox 155 restricted that recognition to Mozilla's
+   own internal allowlist of sites, closing it off for ordinary sites
+   including this one - confirmed for real, not guessed, with an
+   isolated two-box test page in the user's own Firefox 155: even the
+   RAW rule below, completely unconditional, with zero scrollbar-color
+   involved at all, still showed Firefox's native hidden-until-hover
+   overlay behavior. A same-day attempt to "fix" this by gating the
+   whole block behind @supports not (scrollbar-width: thin) was ALSO
+   reverted, once that same test proved the gate could not possibly be
+   helping Firefox either way (Firefox shows identical behavior gated
+   or not) while carrying a real, unverified risk of also excluding
+   modern Chrome/Edge from these rules (they support scrollbar-width
+   too), which would have silently cost them their explicit 8px sizing
+   and the :active/dragging tier for zero corresponding benefit.
+   Restored to plain and unconditional, exactly as it was before any of
+   that - the only version confirmed, by the user directly, to render
+   correctly in both Chrome and Edge.
+
+   Bottom line: there is no CSS available to this project (or any
+   website) that restores Firefox's classic scrollbar rendering here -
+   confirmed via Firefox's own release notes, a Mozilla engineer's
+   direct statement on bugzilla.mozilla.org ("no built-in CSS property
+   to globally disable overlay scrollbars; this is controlled by the
+   operating system"), and the user's own isolated test. Firefox 155 on
+   Windows renders its own native overlay scrollbar for this page
+   instead - hidden at rest, a thin indicator on hover, expanding
+   further when the pointer moves onto the scrollbar itself - still
+   tinted with the color from scrollbar-color above (confirmed
+   respected even in that mode), just not matching Chrome/Edge's
+   always-visible weight/timing. Two real, user-machine-level (not
+   website-level) ways to get classic rendering back on a specific
+   Windows install, for whoever's testing this later: the Windows 11
+   Settings -> Accessibility -> Visual effects -> "Always show
+   scrollbars" toggle, or the Firefox-internal about:config preference
+   widget.non-native-theme.scrollbar.style set to 4 - neither is
+   something this site can turn on for an arbitrary visitor. Disclosed,
+   accepted, not chased further - a real, documented cross-browser
+   platform difference, not a bug in this codebase. */
+.history-list::-webkit-scrollbar,
 .card-body-scroll::-webkit-scrollbar {
   width: 8px;
 }
 
+.history-list::-webkit-scrollbar-track,
 .card-body-scroll::-webkit-scrollbar-track {
   background: transparent;
 }
 
+.history-list::-webkit-scrollbar-thumb,
 .card-body-scroll::-webkit-scrollbar-thumb {
-  background: var(--accent-dim);
+  background: color-mix(in srgb, var(--text) var(--scrollbar-thumb-opacity, 15%), transparent);
   border-radius: 999px;
 }
 
-.card-body-scroll::-webkit-scrollbar-thumb:hover {
-  background: var(--accent);
+.history-list::-webkit-scrollbar-thumb:active,
+.card-body-scroll::-webkit-scrollbar-thumb:active {
+  background: color-mix(in srgb, var(--text) 50%, transparent);
 }
 
 .badge {
@@ -491,10 +756,32 @@ body {
   color: var(--aborted);
 }
 
+/* Backlog item 8: a soft-edged separator above the "Model: ..."/
+   "Answered by: ..." line - .model-chain is the shared class for both
+   (the still-loading model line in buildAgentStatusBody() and the
+   post-success "Answered by:" line in renderRepresentatives()/
+   renderJudges()), so one rule covers both cases. A plain border-top
+   would read as a harsh, abrupt cutoff against the surrounding
+   prose - ::before with a gradient background instead tapers to
+   transparent at both ends, positioned in the gap padding-top opens up
+   above the text (position: relative on .model-chain gives ::before's
+   absolute positioning something to anchor to). */
 .model-chain {
   color: var(--text-dim);
   font-size: 0.78rem;
   margin: 6px 0 0;
+  padding-top: 10px;
+  position: relative;
+}
+
+.model-chain::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(to right, transparent, var(--border) 15%, var(--border) 85%, transparent);
 }
 
 .model-name {
@@ -745,6 +1032,21 @@ table.call-log abbr {
     width: 100%;
     border-right: none;
     border-bottom: 1px solid var(--border);
+    /* Stacked full-width at the top of the page, not a real side-by-side
+       sidebar any more - sticky-pinning it here would keep it plastered
+       across the whole viewport indefinitely as the user scrolls through
+       .main below, which reads as broken rather than useful at this
+       width. Reverts to plain, unpositioned flow. The history list still
+       needs its own bound, though - a full run history stacked inline
+       above the case content would otherwise push everything else an
+       arbitrary distance down the page. */
+    position: static;
+    height: auto;
+    overflow: visible;
+  }
+  .history-list {
+    flex: none;
+    max-height: 260px;
   }
   .main {
     padding: 20px;

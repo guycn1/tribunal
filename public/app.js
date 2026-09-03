@@ -177,6 +177,7 @@ function isTruncated(entry) {
 async function beginTrial() {
   if (state.running || state.loadingTrial) return;
   state.running = true;
+  updateHistoryLockState();
   el.newTrialBtn.disabled = true;
   el.abortBtn.classList.remove('hidden');
   const controller = new AbortController();
@@ -210,10 +211,26 @@ async function beginTrial() {
     await refreshHistory();
   } finally {
     state.running = false;
+    updateHistoryLockState();
     state.abortController = null;
     el.newTrialBtn.disabled = false;
     el.abortBtn.classList.add('hidden');
   }
+}
+
+// Visual "you can't click these right now" cue for the whole run-history
+// list while a trial is running - clicking a history entry mid-run
+// already correctly does nothing (loadTrial()'s own state.running guard,
+// verified directly against the code - the only click handler a history
+// entry has), this just makes that fact visible instead of silent.
+// Toggled directly on state.running transitions (both in beginTrial())
+// rather than folded into renderHistory(), since that function only
+// actually runs on a fresh fetch/reload of the list - relying on it here
+// would leave the lock indicator not appearing until well after a trial
+// had already started, or not clearing until the next unrelated
+// re-render after one finishes.
+function updateHistoryLockState() {
+  el.historyList.classList.toggle('running-locked', state.running);
 }
 
 // Records which roles were still pending, tells the in-flight calls to stop,
@@ -880,6 +897,110 @@ function appendTruncationNotice(card, entry) {
   card.appendChild(note);
 }
 
+// Toggles a bottom fade (see .card-body-scroll-wrap in styles.css) on a
+// scrollable card body whenever there's real text hidden below the
+// visible area, and hides it once scrolled to the actual bottom - a
+// clearer "there's more" signal than a bare scrollbar track alone,
+// decided on explicitly (2026-09-03) over an in-place "Read full
+// response..." expand (would fight the fixed card-grid row heights this
+// same scroll region exists to keep consistent) or a modal (real added
+// complexity - backdrop, focus handling - for a benefit judged not worth
+// it here). The fade lives on bodyEl's parent (a plain sibling wrapper,
+// not a child of the scrolling element itself) specifically so it stays
+// visually pinned at the bottom of the visible box - an absolutely
+// positioned child of the SCROLLING element would scroll away along with
+// the text instead.
+function attachScrollFade(bodyEl) {
+  const wrapEl = bodyEl.parentElement;
+  const SCROLL_END_EPSILON = 2; // sub-pixel/rounding tolerance
+  function update() {
+    const hasMore = bodyEl.scrollHeight - bodyEl.scrollTop - bodyEl.clientHeight > SCROLL_END_EPSILON;
+    wrapEl.classList.toggle('has-more-below', hasMore);
+  }
+  bodyEl.addEventListener('scroll', update);
+  update();
+}
+
+// Real browsers don't support a CSS transition/animation on
+// ::-webkit-scrollbar-thumb or Firefox's scrollbar-color at all - a
+// transition on either is silently ignored, which is why an earlier
+// version of this used a fixed hover-intent delay instead (wait, then
+// snap) to keep an incidental pointer pass from flashing the scrollbar
+// bright. That read as sluggish on a deliberate hover (real user
+// report, 2026-09-04): motion didn't start until the delay had already
+// elapsed. This drives the fade itself in JS instead - a plain
+// rAF loop writes progressively interpolated values into a CSS custom
+// property (--scrollbar-thumb-opacity, read by the color-mix() calls in
+// styles.css) every frame. Each individual frame is just an ordinary,
+// instant custom-property change, which every browser already handles
+// fine (that's exactly the mechanism the old .scrollbar-hover class swap
+// used) - repeating it ~13 times over SCROLLBAR_FADE_MS produces a real
+// smooth fade without needing the browser to animate the scrollbar
+// itself. This incidentally fixes the original flash problem better
+// than the delay did, with no artificial dead time: a quick pass only
+// reaches a small partial brightening before reversing back toward
+// rest, rather than either waiting through a delay or snapping to full
+// brightness instantly. animateTo() reverses smoothly from wherever the
+// fade currently is if the target flips mid-animation (e.g. the pointer
+// leaves while still fading in), not by restarting from rest.
+//
+// A bonus not asked for: this also gives Firefox the actual fade effect
+// for the first time - its scrollbar-color has no thumb-scoped
+// pseudo-classes for a genuine :hover-driven CSS rule to key off, but a
+// plain custom-property value it's already reading recalculates on
+// every write exactly like Chromium does, so the same JS loop works
+// identically there. The dragging tier is untouched - real
+// ::-webkit-scrollbar-thumb:active, snapping instantly, unaffected by
+// any of this - direct-manipulation feedback to a physical mouse press
+// arguably should stay instant, not fade in.
+const SCROLLBAR_REST_OPACITY = 15;
+const SCROLLBAR_HOVER_OPACITY = 30;
+const SCROLLBAR_FADE_MS = 220;
+function attachScrollbarFade(el) {
+  let current = SCROLLBAR_REST_OPACITY;
+  let target = SCROLLBAR_REST_OPACITY;
+  let fadeFrom = current;
+  let fadeStartedAt = null;
+  let rafId = null;
+
+  function paint(opacity) {
+    current = opacity;
+    el.style.setProperty('--scrollbar-thumb-opacity', `${opacity}%`);
+  }
+  paint(current);
+
+  function tick(now) {
+    if (fadeStartedAt === null) fadeStartedAt = now;
+    const t = Math.min(1, (now - fadeStartedAt) / SCROLLBAR_FADE_MS);
+    paint(fadeFrom + (target - fadeFrom) * t);
+    rafId = t < 1 ? requestAnimationFrame(tick) : null;
+  }
+
+  function animateTo(newTarget) {
+    if (newTarget === target) return;
+    target = newTarget;
+    fadeFrom = current;
+    fadeStartedAt = null;
+    if (rafId === null) rafId = requestAnimationFrame(tick);
+  }
+
+  el.addEventListener('mouseenter', () => animateTo(SCROLLBAR_HOVER_OPACITY));
+  el.addEventListener('mouseleave', () => animateTo(SCROLLBAR_REST_OPACITY));
+}
+
+// #history-list itself is a stable, static element (only its children
+// get rebuilt, by renderHistory()) - attached once here rather than
+// per-render. Must come after SCROLLBAR_REST_OPACITY/etc. and the
+// function itself are actually defined, not just after the function
+// declaration (which is hoisted) - unlike a function declaration, a
+// const's value doesn't exist until execution reaches its line, and
+// calling attachScrollbarFade() from any earlier point in the script
+// (this used to sit right after the button listeners near the top)
+// throws a real ReferenceError reading those consts before they're
+// initialized. Real bug, caught live (2026-09-04): the page failed to
+// load at all, not just a visual glitch.
+attachScrollbarFade(el.historyList);
+
 function renderRepresentatives() {
   el.representativeCards.innerHTML = '';
   for (const role of REPRESENTATIVE_ROLES) {
@@ -887,6 +1008,9 @@ function renderRepresentatives() {
     const entry = state.representatives[role];
     const card = document.createElement('div');
     card.className = 'card';
+    // Cards (unlike #history-list) are torn down and recreated on every
+    // render, so this attaches fresh each time rather than once.
+    attachScrollbarFade(card);
 
     const header = document.createElement('div');
     header.className = 'card-header';
@@ -896,11 +1020,16 @@ function renderRepresentatives() {
     `;
     card.appendChild(header);
 
+    let scrollBody = null;
     if (entry && entry.status === 'success') {
+      const bodyWrap = document.createElement('div');
+      bodyWrap.className = 'card-body-scroll-wrap';
       const body = document.createElement('div');
       body.className = 'card-body card-body-scroll';
       body.textContent = entry.argumentText;
-      card.appendChild(body);
+      bodyWrap.appendChild(body);
+      card.appendChild(bodyWrap);
+      scrollBody = body;
       const answeredBy = document.createElement('p');
       answeredBy.className = 'model-chain';
       answeredBy.innerHTML = `Answered by: <span class="model-name">${shortModelName(entry.modelUsed)}</span>`;
@@ -911,6 +1040,11 @@ function renderRepresentatives() {
       if (statusBody) card.appendChild(statusBody);
     }
     el.representativeCards.appendChild(card);
+    // Needs real layout to measure scrollHeight/clientHeight against, so
+    // this can only run once the card is actually attached to the
+    // document - a detached element (mid-build, before the appendChild
+    // above) has no box model at all, and both would just read 0.
+    if (scrollBody) attachScrollFade(scrollBody);
   }
 }
 
@@ -950,22 +1084,30 @@ function renderJudges() {
     const entry = state.judges[role];
     const card = document.createElement('div');
     card.className = 'card';
+    // Cards (unlike #history-list) are torn down and recreated on every
+    // render, so this attaches fresh each time rather than once.
+    attachScrollbarFade(card);
 
     const header = document.createElement('div');
     header.className = 'card-header';
     header.innerHTML = `<span class="card-name">${meta.name}</span>`;
     card.appendChild(header);
 
+    let scrollBody = null;
     if (entry && entry.status === 'success') {
       const verdict = document.createElement('p');
       verdict.className = entry.verdict === 'justified' ? 'verdict-justified' : 'verdict-not-justified';
       verdict.textContent = entry.verdict === 'justified' ? 'Justified' : 'Not justified';
       card.appendChild(verdict);
 
+      const bodyWrap = document.createElement('div');
+      bodyWrap.className = 'card-body-scroll-wrap';
       const body = document.createElement('div');
       body.className = 'card-body card-body-scroll';
       body.textContent = entry.reasoningText;
-      card.appendChild(body);
+      bodyWrap.appendChild(body);
+      card.appendChild(bodyWrap);
+      scrollBody = body;
 
       const answeredBy = document.createElement('p');
       answeredBy.className = 'model-chain';
@@ -977,6 +1119,7 @@ function renderJudges() {
       if (statusBody) card.appendChild(statusBody);
     }
     el.judgeCards.appendChild(card);
+    if (scrollBody) attachScrollFade(scrollBody);
   }
   updateJudgesCaveat();
 }
@@ -1213,6 +1356,10 @@ function trialStatusClass(trial) {
 
 function renderHistory() {
   el.historyList.innerHTML = '';
+  // innerHTML above doesn't touch classList, so running-locked would
+  // already survive a rebuild regardless - this just makes that
+  // self-evident rather than relying on it as an unstated invariant.
+  updateHistoryLockState();
   for (const trial of state.history) {
     const li = document.createElement('li');
     li.className = 'history-item' + (trial.id === state.trialId ? ' active' : '');
