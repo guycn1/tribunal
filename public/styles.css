@@ -525,44 +525,42 @@ body {
    Three tiers, per exact spec: very transparent white at rest; more
    opaque once the *container* (the card, or the history list) is
    hovered, for discoverability; most opaque while the thumb itself is
-   actively being clicked and dragged - not just hovered, which is why
-   the brightest tier below is keyed to :active, not :hover, on the
-   thumb pseudo-element itself.
+   actively being clicked and dragged.
 
-   The middle tier is NOT triggered by plain CSS :hover - a bare :hover
-   fired on every incidental pass of the pointer over a card while
-   moving toward somewhere else on the page, which read as an unwanted
-   flash rather than a deliberate "about to scroll this" signal (real
-   user report, 2026-09-04). Fixed with a short hover-intent delay
-   instead: .scrollbar-hover is a JS-toggled class (see
-   attachScrollbarHoverIntent() in app.js), added only after the pointer
-   has stayed on the element for SCROLLBAR_HOVER_INTENT_MS, removed
-   immediately on leaving - only entering is deliberately slow. A CSS
-   transition/animation on the color itself was considered and rejected:
-   ::-webkit-scrollbar-thumb and Firefox's scrollbar-color do not
-   actually support animated property changes in real browsers - a
-   transition here would be silently ignored in exactly the browsers
-   (Chrome/Edge) this whole scrollbar treatment was built to fix, not a
-   softer version of the effect.
+   The rest<->hover tiers are driven by --scrollbar-thumb-opacity, a CSS
+   custom property written every animation frame by attachScrollbarFade()
+   in app.js - NOT a bare CSS :hover selector, and NOT a CSS
+   transition/animation on the color itself (real browsers don't support
+   animating ::-webkit-scrollbar-thumb or Firefox's scrollbar-color at
+   all - a transition here would be silently ignored in exactly the
+   browsers, Chrome/Edge, this whole treatment was built to fix). Each
+   individual frame is just an ordinary instant custom-property change,
+   which every browser already handles fine - repeated every frame for
+   ~SCROLLBAR_FADE_MS, that produces a real smooth fade despite no
+   browser ever animating anything itself. The 15%/30% literals below are
+   only the fallback for the (practically unreachable) case the custom
+   property was never set - the real values live in app.js's
+   SCROLLBAR_REST_OPACITY/SCROLLBAR_HOVER_OPACITY and must be kept in
+   sync with them by hand, since CSS can't read a JS constant.
 
-   Firefox can only ever reach the first two tiers: scrollbar-color is a
-   single flat value with no thumb-scoped pseudo-classes at all (no
-   equivalent of ::-webkit-scrollbar-thumb:active exists), so there is no
-   way to detect "the thumb is actively being dragged" there - it
-   re-evaluates on the .scrollbar-hover rule below (a real CSS property,
-   not pseudo-element-scoped, so this part of the cascade genuinely works
-   in Firefox), but tops out at the hover tier's brightness regardless of
-   whether a drag is in progress. Only Chromium/WebKit get the true third
-   tier via ::-webkit-scrollbar-thumb:active. */
+   The dragging tier is unrelated to any of the above: real
+   ::-webkit-scrollbar-thumb:active, snapping instantly rather than
+   fading - direct feedback to a physical mouse press, deliberately not
+   softened the way the ambient hover cue is. Only Chromium/WebKit get
+   this tier at all: Firefox's scrollbar-color has no thumb-scoped
+   pseudo-classes, no equivalent of :active exists there, so it has no
+   way to detect "the thumb is actively being dragged" - genuinely
+   unrelated to the custom-property mechanism above, which Firefox
+   otherwise participates in on equal footing with Chromium (a real
+   improvement over the old class-swap design: :hover was skipped there
+   entirely since scrollbar-color has no pseudo-classes, but writing a
+   plain custom property recalculates a rule that reads it exactly the
+   same way in every browser, so Firefox gets the full fade too now, not
+   just an instant two-state jump). */
 .history-list,
 .card-body-scroll {
   scrollbar-width: thin;
-  scrollbar-color: color-mix(in srgb, var(--text) 15%, transparent) transparent;
-}
-
-.history-list.scrollbar-hover,
-.card.scrollbar-hover .card-body-scroll {
-  scrollbar-color: color-mix(in srgb, var(--text) 30%, transparent) transparent;
+  scrollbar-color: color-mix(in srgb, var(--text) var(--scrollbar-thumb-opacity, 15%), transparent) transparent;
 }
 
 .history-list::-webkit-scrollbar,
@@ -577,24 +575,10 @@ body {
 
 .history-list::-webkit-scrollbar-thumb,
 .card-body-scroll::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--text) 15%, transparent);
+  background: color-mix(in srgb, var(--text) var(--scrollbar-thumb-opacity, 15%), transparent);
   border-radius: 999px;
 }
 
-.history-list.scrollbar-hover::-webkit-scrollbar-thumb,
-.card.scrollbar-hover .card-body-scroll::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--text) 30%, transparent);
-}
-
-/* Must come after the hover rules above, not before - :active and
-   .scrollbar-hover both genuinely apply throughout a real drag (the
-   pointer is over the thumb AND pressed, and has already been resting
-   on the card/list long enough for the hover-intent delay to have
-   fired), and these two rules are equal-specificity (one class plus one
-   pseudo-element/pseudo-class each), so source order is what decides
-   the winner. Placed last on purpose, so the brightest tier wins during
-   an actual drag rather than being silently overridden by the dimmer
-   hover rule that also matches at the same time. */
 .history-list::-webkit-scrollbar-thumb:active,
 .card-body-scroll::-webkit-scrollbar-thumb:active {
   background: color-mix(in srgb, var(--text) 50%, transparent);

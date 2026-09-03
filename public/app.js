@@ -91,9 +91,9 @@ el.abortBtn.addEventListener('click', () => {
 });
 
 // #history-list itself is a stable, static element (only its children
-// get rebuilt, by renderHistory() - see attachScrollbarHoverIntent's own
+// get rebuilt, by renderHistory() - see attachScrollbarFade's own
 // comment further down) - attached once here rather than per-render.
-attachScrollbarHoverIntent(el.historyList);
+attachScrollbarFade(el.historyList);
 
 // Explicit European format (DD/MM/YYYY, 24-hour) regardless of the
 // browser's own locale - bare toLocaleString() would otherwise follow
@@ -926,31 +926,71 @@ function attachScrollFade(bodyEl) {
   update();
 }
 
-// Delays the scrollbar's "hovered" brightening (see .scrollbar-hover in
-// styles.css) by a short interval rather than triggering it the instant
-// the pointer crosses into the element - a bare CSS :hover fired on
-// every incidental pass of the mouse over a card/the history list while
-// moving toward somewhere else on the page, which read as an unwanted
-// flash rather than a deliberate "about to scroll this" signal (real
-// user report, 2026-09-04). Kept in JS rather than a CSS
-// transition/animation on the scrollbar color itself, since
-// ::-webkit-scrollbar-thumb and Firefox's scrollbar-color do not
-// actually support animated property changes in real browsers - a
-// transition would be silently ignored in exactly the browsers
-// (Chrome/Edge) the scrollbar work this builds on was written to fix.
-// Only entering is delayed; leaving removes the class immediately, so
-// the brightened state never lingers after the pointer has genuinely
-// moved on.
-const SCROLLBAR_HOVER_INTENT_MS = 220;
-function attachScrollbarHoverIntent(el) {
-  let timer = null;
-  el.addEventListener('mouseenter', () => {
-    timer = setTimeout(() => el.classList.add('scrollbar-hover'), SCROLLBAR_HOVER_INTENT_MS);
-  });
-  el.addEventListener('mouseleave', () => {
-    clearTimeout(timer);
-    el.classList.remove('scrollbar-hover');
-  });
+// Real browsers don't support a CSS transition/animation on
+// ::-webkit-scrollbar-thumb or Firefox's scrollbar-color at all - a
+// transition on either is silently ignored, which is why an earlier
+// version of this used a fixed hover-intent delay instead (wait, then
+// snap) to keep an incidental pointer pass from flashing the scrollbar
+// bright. That read as sluggish on a deliberate hover (real user
+// report, 2026-09-04): motion didn't start until the delay had already
+// elapsed. This drives the fade itself in JS instead - a plain
+// rAF loop writes progressively interpolated values into a CSS custom
+// property (--scrollbar-thumb-opacity, read by the color-mix() calls in
+// styles.css) every frame. Each individual frame is just an ordinary,
+// instant custom-property change, which every browser already handles
+// fine (that's exactly the mechanism the old .scrollbar-hover class swap
+// used) - repeating it ~13 times over SCROLLBAR_FADE_MS produces a real
+// smooth fade without needing the browser to animate the scrollbar
+// itself. This incidentally fixes the original flash problem better
+// than the delay did, with no artificial dead time: a quick pass only
+// reaches a small partial brightening before reversing back toward
+// rest, rather than either waiting through a delay or snapping to full
+// brightness instantly. animateTo() reverses smoothly from wherever the
+// fade currently is if the target flips mid-animation (e.g. the pointer
+// leaves while still fading in), not by restarting from rest.
+//
+// A bonus not asked for: this also gives Firefox the actual fade effect
+// for the first time - its scrollbar-color has no thumb-scoped
+// pseudo-classes for a genuine :hover-driven CSS rule to key off, but a
+// plain custom-property value it's already reading recalculates on
+// every write exactly like Chromium does, so the same JS loop works
+// identically there. The dragging tier is untouched - real
+// ::-webkit-scrollbar-thumb:active, snapping instantly, unaffected by
+// any of this - direct-manipulation feedback to a physical mouse press
+// arguably should stay instant, not fade in.
+const SCROLLBAR_REST_OPACITY = 15;
+const SCROLLBAR_HOVER_OPACITY = 30;
+const SCROLLBAR_FADE_MS = 220;
+function attachScrollbarFade(el) {
+  let current = SCROLLBAR_REST_OPACITY;
+  let target = SCROLLBAR_REST_OPACITY;
+  let fadeFrom = current;
+  let fadeStartedAt = null;
+  let rafId = null;
+
+  function paint(opacity) {
+    current = opacity;
+    el.style.setProperty('--scrollbar-thumb-opacity', `${opacity}%`);
+  }
+  paint(current);
+
+  function tick(now) {
+    if (fadeStartedAt === null) fadeStartedAt = now;
+    const t = Math.min(1, (now - fadeStartedAt) / SCROLLBAR_FADE_MS);
+    paint(fadeFrom + (target - fadeFrom) * t);
+    rafId = t < 1 ? requestAnimationFrame(tick) : null;
+  }
+
+  function animateTo(newTarget) {
+    if (newTarget === target) return;
+    target = newTarget;
+    fadeFrom = current;
+    fadeStartedAt = null;
+    if (rafId === null) rafId = requestAnimationFrame(tick);
+  }
+
+  el.addEventListener('mouseenter', () => animateTo(SCROLLBAR_HOVER_OPACITY));
+  el.addEventListener('mouseleave', () => animateTo(SCROLLBAR_REST_OPACITY));
 }
 
 function renderRepresentatives() {
@@ -962,7 +1002,7 @@ function renderRepresentatives() {
     card.className = 'card';
     // Cards (unlike #history-list) are torn down and recreated on every
     // render, so this attaches fresh each time rather than once.
-    attachScrollbarHoverIntent(card);
+    attachScrollbarFade(card);
 
     const header = document.createElement('div');
     header.className = 'card-header';
@@ -1038,7 +1078,7 @@ function renderJudges() {
     card.className = 'card';
     // Cards (unlike #history-list) are torn down and recreated on every
     // render, so this attaches fresh each time rather than once.
-    attachScrollbarHoverIntent(card);
+    attachScrollbarFade(card);
 
     const header = document.createElement('div');
     header.className = 'card-header';
