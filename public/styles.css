@@ -66,6 +66,25 @@ body {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  /* Pinned to the viewport (title/buttons/"Run history" heading always
+     reachable) rather than scrolling away with the rest of the page once
+     .main's own content (case card, agent cards, call log) grows taller
+     than one viewport, which it routinely does. position: sticky rather
+     than fixed specifically so this stays a normal flex child of
+     .layout, sharing width with .main exactly as before - fixed would
+     take it out of flow entirely and need its own hand-maintained
+     width/offset math duplicating the clamp() above. align-self:
+     flex-start stops .layout's default stretch behavior from fighting
+     the explicit height below. Capped at 100vh (never taller than the
+     viewport) with overflow hidden - the fix for the sidebar previously
+     growing past .main's height and dragging the whole page down with
+     it - .history-list below is the one part that actually scrolls,
+     internally, once real content forces the issue. */
+  position: sticky;
+  top: 0;
+  align-self: flex-start;
+  height: 100vh;
+  overflow: hidden;
 }
 
 .app-title {
@@ -91,6 +110,15 @@ body {
   flex-direction: column;
   gap: 8px;
   overflow-y: auto;
+  /* Fills whatever vertical space .sidebar's fixed 100vh has left over
+     after its other children (title, buttons, heading) - min-height: 0
+     overrides flex's default min-height: auto, which would otherwise let
+     this list's real content size push .sidebar taller than 100vh
+     instead of actually scrolling within the space it's given. This is
+     the one thing inside .sidebar that scrolls; everything above it
+     stays fixed in place regardless of history length or page scroll. */
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .history-item {
@@ -745,6 +773,21 @@ table.call-log abbr {
     width: 100%;
     border-right: none;
     border-bottom: 1px solid var(--border);
+    /* Stacked full-width at the top of the page, not a real side-by-side
+       sidebar any more - sticky-pinning it here would keep it plastered
+       across the whole viewport indefinitely as the user scrolls through
+       .main below, which reads as broken rather than useful at this
+       width. Reverts to plain, unpositioned flow. The history list still
+       needs its own bound, though - a full run history stacked inline
+       above the case content would otherwise push everything else an
+       arbitrary distance down the page. */
+    position: static;
+    height: auto;
+    overflow: visible;
+  }
+  .history-list {
+    flex: none;
+    max-height: 260px;
   }
   .main {
     padding: 20px;
