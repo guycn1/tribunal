@@ -481,6 +481,32 @@ body {
    rather than putting the fade directly inside .card-body-scroll. */
 .card-body-scroll-wrap {
   position: relative;
+  /* Real, reported Firefox-only rendering glitch (2026-09-04, screenshot -
+     not reproduced in Chrome): the bottom-fade gradient overlay
+     (::after below) composited on top of the scrolling text inside
+     .card-body-scroll came out visibly jagged/"torn" per line instead
+     of a smooth blend. Matches a known category of Firefox issue -
+     subpixel-antialiased text (ClearType on Windows) doesn't always
+     recomposite cleanly under a semi-transparent overlay, where
+     Chrome's grayscale AA doesn't show the same artifact.
+     transform: translateZ(0) forces a new compositor layer, the
+     standard mitigation for this failure mode - deliberately placed
+     HERE, on the non-scrolling wrapper, not on .card-body-scroll
+     itself: putting it directly on .card-body-scroll (the first attempt
+     at this fix) triggered a second, worse Firefox-only regression -
+     its custom scrollbar-color/scrollbar-width silently fell back to
+     the native default scrollbar, a known Firefox interaction where a
+     transform on the actual scrolling element can break its own
+     overlay-scrollbar styling. Layering the fix on an ANCESTOR instead
+     still isolates the same visual region into its own compositor
+     layer without transforming the scrollbar-owning element at all, so
+     its custom styling should be unaffected. Still only a partial fix
+     for the jaggedness even in its first form (the user's own report:
+     "some ... still sloppy") and not visually re-confirmed against a
+     real Firefox instance either way (none available in this
+     environment) - flagging both limitations honestly rather than
+     claiming this is fully resolved. */
+  transform: translateZ(0);
 }
 
 /* Hidden by default (opacity 0, see .has-more-below below) - only shown
@@ -511,23 +537,6 @@ body {
   max-height: 340px;
   overflow-y: auto;
   padding-right: 4px;
-  /* Real, reported Firefox-only rendering glitch (2026-09-04, screenshot -
-     not reproduced in Chrome): the bottom-fade gradient overlay
-     (.card-body-scroll-wrap::after) composited on top of this scrolling
-     text came out visibly jagged/"torn" per line instead of a smooth
-     blend. This is a known category of Firefox issue - subpixel-
-     antialiased text (ClearType on Windows) doesn't always recomposite
-     cleanly under a semi-transparent overlay, where Chrome's grayscale
-     AA doesn't show the same artifact. transform: translateZ(0) forces
-     this element onto its own compositor layer, the standard mitigation
-     for exactly this failure mode - promoting it off the main paint
-     layer sidesteps the broken recomposite path rather than fixing
-     whatever Firefox is doing internally. Reasoned from a known bug
-     class and applied as the standard fix, not visually re-confirmed
-     against a real Firefox instance (none available in this
-     environment) - flagging that honestly rather than claiming
-     certainty; worth a second look after this change. */
-  transform: translateZ(0);
 }
 
 /* Shared scrollbar treatment for the two scrollable regions on this page
