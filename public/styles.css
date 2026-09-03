@@ -272,8 +272,18 @@ body {
   font-weight: 600;
 }
 
-.btn-danger:hover:not(:disabled) {
+/* border-color needs its own explicit override here - the shared
+   .btn:hover:not(:disabled) rule (border-color: var(--accent-dim), the
+   gold accent) otherwise wins on specificity over .btn-danger's own
+   resting border-color: var(--fail), so without this the Abort button's
+   border would turn gold on hover instead of staying red. :active
+   included too (not just :hover) so a press without a preceding hover
+   - keyboard activation, touch - gets the same red border rather than
+   falling back to the shared gold rule there too. */
+.btn-danger:hover:not(:disabled),
+.btn-danger:active:not(:disabled) {
   background: color-mix(in srgb, var(--fail) 30%, var(--bg-card));
+  border-color: var(--fail);
 }
 
 .case-card {
