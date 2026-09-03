@@ -302,7 +302,20 @@ The call log table (column widths, badges, Duration, cost-in-cents, centering) r
 6. **Call log totals row** — sums every logged row (including discarded retries) into a `<tfoot>`: total tokens, cost, and duration (compute time, not wall clock — labeled as such). Verified offline against synthetic data. `f3959ed`.
 7. **Capped card height** — `.card-body-scroll` (340px max-height, themed scrollbar) on the actual argument/ruling text only, not the short loading/failed status text. `ed9a2de`.
 
-All 7 verified via offline tests (extracted real functions against synthetic data/DOM stubs) or structural/typecheck review — no OpenRouter calls spent on any of it. None of this has been merged to `main` or deployed yet.
+All 7 verified via offline tests (extracted real functions against synthetic data/DOM stubs) or structural/typecheck review — no OpenRouter calls spent on any of it. Merged to `main` and pushed on 2026-09-03 (merge commit `945f28a`), alongside the live-attempt-display fix below.
+
+## Sidebar/scrollbar/card polish backlog (flagged 2026-09-03, not started)
+
+Flagged in one batch, explicitly "for later" — not yet touched:
+
+1. **Sidebar height/scroll**: the sidebar currently grows past `.main`'s height and scrolls with the whole page. It should instead be fixed to the viewport (stretch to page height, never taller), with everything above the run-history entries (including the "Run history" heading) staying fixed at the top, and only the history entries themselves scrolling independently. Needs different handling below the sidebar-stacking breakpoint (900px) — even there, the history entries shouldn't be allowed to grow the page indefinitely; still needs their own scroll boundary.
+2. **History entry border color**: white on hover (not the current yellow/accent); a brighter/more opaque white for the active (currently-viewed) entry.
+3. **History entries unclickable during a live trial**: clicking already correctly does nothing while `state.running`, but there's no visual cue. Gray out all history cards and set `cursor: not-allowed` on them while a trial is running.
+4. **Abort button hover/active border**: should be red, not the current yellow.
+5. **"Begin new trial" cursor while running**: should show `cursor: not-allowed` while disabled. Believed already non-functional when clicked (disabled) — worth verifying, not just assuming.
+6. **Agent-card scrollbar color/prominence**: less yellow, more a whitish tone; less visually prominent when not hovering the card; and styled to read more clearly as an actual scrollbar rather than a decorative bar.
+7. **Open design question, explicitly left to Claude's judgment** (not a request to always keep or always remove scrollbars): reconsider whether the card-body scrollbar (item #7 of the prior backlog) and a possible history-list scrollbar (item #1 above) are actually the right UI, or whether "Read full response…" / "View more…" reveal-style controls would be better — for history specifically, a "View more…" button that reveals 5 more entries at a time and disappears once the full list is shown. Decide deliberately when this is picked up, don't default to either without weighing it.
+8. **Separator line above "Model:"/"Answered by:" text** in each agent card — a fancy-looking, soft-edged divider, purely cosmetic.
 
 ## Bugs and fixes encountered (running log — add to this, don't replace it)
 
