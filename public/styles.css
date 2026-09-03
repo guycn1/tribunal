@@ -481,33 +481,28 @@ body {
    rather than putting the fade directly inside .card-body-scroll. */
 .card-body-scroll-wrap {
   position: relative;
-  /* Real, reported Firefox-only rendering glitch (2026-09-04, screenshot -
-     not reproduced in Chrome): the bottom-fade gradient overlay
-     (::after below) composited on top of the scrolling text inside
-     .card-body-scroll came out visibly jagged/"torn" per line instead
-     of a smooth blend. Matches a known category of Firefox issue -
-     subpixel-antialiased text (ClearType on Windows) doesn't always
-     recomposite cleanly under a semi-transparent overlay, where
-     Chrome's grayscale AA doesn't show the same artifact.
-     transform: translateZ(0) forces a new compositor layer, the
-     standard mitigation for this failure mode - deliberately placed
-     HERE, on the non-scrolling wrapper, not on .card-body-scroll
-     itself: putting it directly on .card-body-scroll (the first attempt
-     at this fix) triggered a second, worse Firefox-only regression -
-     its custom scrollbar-color/scrollbar-width silently fell back to
-     the native default scrollbar, a known Firefox interaction where a
-     transform on the actual scrolling element can break its own
-     overlay-scrollbar styling. Layering the fix on an ANCESTOR instead
-     still isolates the same visual region into its own compositor
-     layer without transforming the scrollbar-owning element at all, so
-     its custom styling should be unaffected. Still only a partial fix
-     for the jaggedness even in its first form (the user's own report:
-     "some ... still sloppy") and not visually re-confirmed against a
-     real Firefox instance either way (none available in this
-     environment) - flagging both limitations honestly rather than
-     claiming this is fully resolved. */
-  transform: translateZ(0);
 }
+
+/* A real, reported Firefox-only rendering glitch (2026-09-04): the
+   bottom-fade gradient below composited on top of scrolling card text
+   came out jagged/"torn" per line instead of a smooth blend (not
+   reproduced in Chrome). Two attempted fixes, both transform:
+   translateZ(0) (a real, standard mitigation for exactly this class of
+   text-under-overlay compositing issue in principle) - first directly
+   on .card-body-scroll, then on this wrapper instead once that broke
+   its scrollbar-color styling - were both reverted (2026-09-04): the
+   user reported zero improvement to the jaggedness from either, AND
+   the second attempt's scrollbar regression turned out to extend to
+   .history-list too, an element with no DOM/CSS relationship to
+   .card-body-scroll-wrap at all - a result that contradicts the actual
+   mechanism this fix was supposed to rely on, meaning the diagnosis
+   itself was likely wrong, not just its placement. Left as a known,
+   disclosed cosmetic limitation rather than continuing to guess at
+   variations of the same technique without a real Firefox instance to
+   actually test against (none available in this environment) - a
+   different approach (e.g. a shorter/subtler fade, or dropping it for
+   Firefox specifically) would need to be verified by the user directly
+   before attempting again. */
 
 /* Hidden by default (opacity 0, see .has-more-below below) - only shown
    once app.js confirms there's real hidden content, and hidden again
