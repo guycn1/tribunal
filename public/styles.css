@@ -307,6 +307,26 @@ body {
   gap: 16px;
 }
 
+/* Exactly 4 representatives, always - auto-fit above was giving 3 cards
+   one row and stranding the 4th alone on a second row with empty space
+   beside it on any viewport wide enough to fit 3+ columns. A fixed 2x2
+   is a better fit for a fixed count than a column count that varies with
+   width. Doesn't touch #judge-cards (3 judges - a fixed 2-column grid
+   would leave the same kind of lonely third card, so auto-fit is still
+   the right call there). */
+#representative-cards {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+@media (max-width: 600px) {
+  /* Below this, two 260px-minimum columns plus their gap no longer fit
+     comfortably - single column instead of letting cards get uncomfortably
+     narrow. */
+  #representative-cards {
+    grid-template-columns: 1fr;
+  }
+}
+
 .card {
   background: var(--bg-card);
   border: 1px solid var(--border);

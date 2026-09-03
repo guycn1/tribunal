@@ -285,6 +285,18 @@ Cross-session memory relevant to this project also lives outside this file, in C
 
 **OpenRouter quota:** gets exhausted fast during any round of testing/debugging (real 429s, not a bug — see [[economical-openrouter-testing]] in memory and Part 5 above). Resets daily, account-wide. Don't trust a specific remembered reset time — check current status live via `GET https://openrouter.ai/api/v1/key` (API key as Bearer token) or the `X-RateLimit-Reset` header on any 429 response.
 
+## Frontend polish backlog (flagged 2026-09-02, none of this started yet)
+
+The call log table (column widths, badges, Duration, cost-in-cents, centering) is in good shape as of `d7e259f`. These are separate, not-yet-touched frontend items flagged in one batch, explicitly not exhaustive:
+
+- **Representatives grid wraps 3-then-1 on wide viewports** (three cards in the first row, Grey Worm alone on a second row with empty space beside it) — with exactly 4 representatives, a fixed 2×2 grid would look better than the current `auto-fit` wrapping at wide widths.
+- **The model shown while a representative/judge card is still working looks static** — suspected to only ever show the default model (mistral-small) even after that tier has exhausted its retries and the real call has escalated to a later tier server-side; the actual serving model only appears once the argument/ruling is fully done. Should update live as the escalation chain actually progresses, not just report the final model after the fact. Needs checking against the real polling/status code (`pollForRoles`, `buildAgentStatusBody` in `app.js`) to confirm this suspicion before fixing it.
+- **"Begin new trial" should smooth-scroll to the Representatives section** once clicked.
+- **Clicking a run-history entry has a real but short loading delay with no visible indicator** — add a loading overlay (e.g. a large spinner) on `.main` while a historical trial's data is being fetched, and consider `pointer-events: none` on the sidebar during that fetch so rapid clicking can't pile up requests.
+- **Verify call log failures actually roll up correctly into the trial's overall sidebar status badge** — not confirmed either way, worth checking given how much the call log's own failure/degenerate handling has changed recently.
+- **Add a "total" row to the call log table** (summed cost/tokens/etc. across all rows) — a classmate's project apparently has this.
+- **Representative/judge argument cards have no height cap and wildly inconsistent heights** — long arguments force a lot of scrolling to reach the call log, and the ragged card heights are visually distracting. Consider a fixed max-height per card with its own styled (not default-ugly) scrollbar for the argument/ruling text specifically.
+
 ## Bugs and fixes encountered (running log — add to this, don't replace it)
 
 Kept so a fix already found once doesn't get re-discovered from scratch, and so the same mistake isn't repeated (the DEFAULT_MODEL one below happened because this log didn't exist yet to check against).
