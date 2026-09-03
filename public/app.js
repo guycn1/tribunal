@@ -177,6 +177,7 @@ function isTruncated(entry) {
 async function beginTrial() {
   if (state.running || state.loadingTrial) return;
   state.running = true;
+  updateHistoryLockState();
   el.newTrialBtn.disabled = true;
   el.abortBtn.classList.remove('hidden');
   const controller = new AbortController();
@@ -210,10 +211,26 @@ async function beginTrial() {
     await refreshHistory();
   } finally {
     state.running = false;
+    updateHistoryLockState();
     state.abortController = null;
     el.newTrialBtn.disabled = false;
     el.abortBtn.classList.add('hidden');
   }
+}
+
+// Visual "you can't click these right now" cue for the whole run-history
+// list while a trial is running - clicking a history entry mid-run
+// already correctly does nothing (loadTrial()'s own state.running guard,
+// verified directly against the code - the only click handler a history
+// entry has), this just makes that fact visible instead of silent.
+// Toggled directly on state.running transitions (both in beginTrial())
+// rather than folded into renderHistory(), since that function only
+// actually runs on a fresh fetch/reload of the list - relying on it here
+// would leave the lock indicator not appearing until well after a trial
+// had already started, or not clearing until the next unrelated
+// re-render after one finishes.
+function updateHistoryLockState() {
+  el.historyList.classList.toggle('running-locked', state.running);
 }
 
 // Records which roles were still pending, tells the in-flight calls to stop,
@@ -1253,6 +1270,10 @@ function trialStatusClass(trial) {
 
 function renderHistory() {
   el.historyList.innerHTML = '';
+  // innerHTML above doesn't touch classList, so running-locked would
+  // already survive a rebuild regardless - this just makes that
+  // self-evident rather than relying on it as an unstated invariant.
+  updateHistoryLockState();
   for (const trial of state.history) {
     const li = document.createElement('li');
     li.className = 'history-item' + (trial.id === state.trialId ? ' active' : '');

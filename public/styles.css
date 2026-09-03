@@ -143,6 +143,25 @@ body {
   border-color: color-mix(in srgb, var(--text) 85%, transparent);
 }
 
+/* Applied to .history-list while a trial is running (see
+   updateHistoryLockState() in app.js) - clicking an entry already
+   correctly does nothing during a live run (loadTrial()'s own
+   state.running guard), this makes that visible instead of leaving
+   every entry looking clickable with nothing happening when clicked.
+   No pointer-events: none here (unlike .sidebar.loading-locked, the
+   separate lock used for a loadTrial() fetch) - the point is to
+   actively show a not-allowed cursor, which pointer-events: none would
+   prevent by taking the element out of hit-testing (and hover) entirely
+   and falling through to whatever's underneath for cursor purposes. */
+.history-list.running-locked .history-item {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.history-list.running-locked .history-item:hover {
+  border-color: var(--border);
+}
+
 .history-item-date {
   color: var(--text-dim);
   font-size: 0.75rem;
