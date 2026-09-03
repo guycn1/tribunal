@@ -320,7 +320,8 @@ body {
    - keyboard activation, touch - gets the same red border rather than
    falling back to the shared gold rule there too. */
 .btn-danger:hover:not(:disabled),
-.btn-danger:active:not(:disabled) {
+.btn-danger:active:not(:disabled),
+.btn-danger:focus:not(:disabled) {
   background: color-mix(in srgb, var(--fail) 30%, var(--bg-card));
   border-color: var(--fail);
 }
