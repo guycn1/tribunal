@@ -175,6 +175,18 @@ export const DEGENERATE_RETRIED_SAME_MODEL_MARKER = '[degenerate-retried-same-mo
 export const DEGENERATE_RETRIED_DIFF_MODEL_MARKER = '[degenerate-retried-diff-model]';
 export const DEGENERATE_FINAL_MARKER = '[degenerate-final]';
 
+// Passed to onAttemptStart the moment each attempt begins - see the
+// parameter's own comment on callOpenRouter() for why this exists
+// alongside DiscardedAttempt rather than being folded into it.
+export interface AttemptStartInfo {
+  model: string;
+  tierIndex: number;
+  // 1-based within the current tier (the tier's first attempt is 1, not
+  // 0) - matches how a human would count "first attempt, second attempt."
+  attemptInTier: number;
+  tierMaxAttempts: number;
+}
+
 export interface DiscardedAttempt {
   model: string;
   promptTokens: number;
@@ -229,7 +241,17 @@ export async function callOpenRouter(
   // promise, but a rejection here should never break the actual retry
   // logic) - a caller that doesn't care about live progress can simply
   // omit it and rely on the returned discardedAttempts array instead.
-  onDiscardedAttempt?: (attempt: DiscardedAttempt) => Promise<void> | void
+  onDiscardedAttempt?: (attempt: DiscardedAttempt) => Promise<void> | void,
+  // Fired right before each attempt's fetch(), with the model/tier info for
+  // the attempt about to run - the moment-it-starts counterpart to
+  // onDiscardedAttempt (which only fires once an attempt is over and being
+  // thrown away). This is what a client polling mid-call actually needs to
+  // show "currently trying X" instead of "the last thing that failed was
+  // Y" - onDiscardedAttempt alone is always one step behind, since the
+  // attempt that's actually in flight right now has nothing to report yet.
+  // Same fire-and-forget-tolerant contract as onDiscardedAttempt: awaited,
+  // but a rejection here must never block or fail the real call.
+  onAttemptStart?: (info: AttemptStartInfo) => Promise<void> | void
 ): Promise<OpenRouterResult> {
   const apiKey = process.env.OPENROUTER_API_KEY;
 
@@ -276,6 +298,15 @@ export async function callOpenRouter(
     console.log(
       `[openrouter] ${label}: attempt ${attempt} starting, tier=${tierIndex + 1}/${tiers.length}, model=${attemptModel}, maxTokens=${attemptMaxTokens}, timeout=${attemptTimeout}ms, remaining budget=${remainingMs()}ms`
     );
+    if (onAttemptStart) {
+      try {
+        await onAttemptStart({ model: attemptModel, tierIndex, attemptInTier: attemptsAtTier + 1, tierMaxAttempts: tier.maxAttempts });
+      } catch (err) {
+        // Same tolerance as onDiscardedAttempt below - a failure to record
+        // "this attempt started" must never block or fail the actual call.
+        console.warn(`[openrouter] ${label}: onAttemptStart callback failed, continuing anyway: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
     try {
       const response = await fetch(OPENROUTER_URL, {
         method: 'POST',
@@ -340,7 +371,7 @@ export async function callOpenRouter(
           const limit = response.headers.get('x-ratelimit-limit') ?? 'the account';
           const message = `OpenRouter request quota exhausted (rate limit ${limit}, 0 remaining). Resets at ${resetIso}.`;
           console.log(`[openrouter] ${label}: attempt ${attempt} - ${message}`);
-          return failure(attemptModel, message, lastUsage, discardedAttempts, Date.now() - lastAttemptStartedAt);
+          return failure(attemptModel, message, lastUsage, discardedAttempts, Date.now() - lastAttemptStartedAt, { tierIndex, tierCount: tiers.length });
         }
 
         lastError = `OpenRouter returned HTTP 429 (rate limited)`;
@@ -361,7 +392,7 @@ export async function callOpenRouter(
         // endpoints.
         const message = `OpenRouter account is out of credits (HTTP 402): ${await describeErrorBody(response)}`;
         console.log(`[openrouter] ${label}: attempt ${attempt} - ${message}`);
-        return failure(attemptModel, message, undefined, discardedAttempts, Date.now() - lastAttemptStartedAt);
+        return failure(attemptModel, message, undefined, discardedAttempts, Date.now() - lastAttemptStartedAt, { tierIndex, tierCount: tiers.length });
       }
 
       if (response.status >= 500) {
@@ -374,7 +405,7 @@ export async function callOpenRouter(
       if (!response.ok) {
         const message = `OpenRouter returned HTTP ${response.status}: ${await describeErrorBody(response)}`;
         console.log(`[openrouter] ${label}: attempt ${attempt} - ${message}`);
-        return failure(attemptModel, message, undefined, discardedAttempts, Date.now() - lastAttemptStartedAt);
+        return failure(attemptModel, message, undefined, discardedAttempts, Date.now() - lastAttemptStartedAt, { tierIndex, tierCount: tiers.length });
       }
 
       const data = (await response.json()) as any;
@@ -495,6 +526,21 @@ export async function callOpenRouter(
         // attempt already has its own row via discardedAttempts, so
         // nothing is folded in here to avoid double-reporting spend.
         console.warn(`[openrouter] ${label}: still ${lengthTruncated ? 'truncated' : 'degenerate'} after every tier - returning failed rather than an unusable result.`);
+        // Two genuinely different situations were previously conflated into
+        // one message here: nextTierIndex >= tiers.length means every tier
+        // this chain offers really was tried; nextTierIndex < tiers.length
+        // (but the `if` above didn't take it) means the time budget ran out
+        // before a real further tier could even be attempted - a tier still
+        // existed, it just was never reached. Claiming "no further fallback
+        // exists" in the second case would be false, so each gets its own
+        // accurate wording.
+        const allTiersExhausted = nextTierIndex >= tiers.length;
+        const reason = lengthTruncated
+          ? 'hit the max_tokens limit before finishing naturally'
+          : 'collapsed into a long run-on with no punctuation';
+        const errorMessage = allTiersExhausted
+          ? `${DEGENERATE_FINAL_MARKER} Every model tier was tried (${tiers.length} in total, ending with ${servingModel}) and none produced a usable response - the final attempt ${reason}. Nothing was saved.`
+          : `${DEGENERATE_FINAL_MARKER} This attempt (tier ${tierIndex + 1} of ${tiers.length}, ${servingModel}) ${reason}, and the remaining time budget ran out before a further escalation tier could be tried. Nothing was saved.`;
         return {
           status: 'failed',
           model: servingModel,
@@ -502,11 +548,7 @@ export async function callOpenRouter(
           completionTokens,
           totalTokens,
           cost: calculateCost(servingModel, promptTokens, completionTokens),
-          errorMessage: `${DEGENERATE_FINAL_MARKER} ${
-            lengthTruncated
-              ? `Response was still truncated after ${attempt} attempt(s) across ${tierIndex + 1} escalation tier(s). The generated content was incomplete and was not saved.`
-              : `Response was still incoherent (a long run-on with no punctuation) after ${attempt} attempt(s) across ${tierIndex + 1} escalation tier(s). The generated content was not saved.`
-          } This was the last available tier - no further fallback exists.`,
+          errorMessage,
           discardedAttempts,
           durationMs: Date.now() - lastAttemptStartedAt,
         };
@@ -545,7 +587,23 @@ export async function callOpenRouter(
 
   const message = `${lastError} (gave up after ${attempt} attempt(s), ${TOTAL_BUDGET_MS}ms budget)`;
   console.log(`[openrouter] ${label}: ${message}`);
-  return failure(lastAttemptModel, message, lastUsage, discardedAttempts, Date.now() - lastAttemptStartedAt);
+  return failure(lastAttemptModel, message, lastUsage, discardedAttempts, Date.now() - lastAttemptStartedAt, { tierIndex, tierCount: tiers.length });
+}
+
+// Applied to a terminal failure only when it happened on the LAST
+// escalation tier (tierIndex === tierCount - 1) - i.e. every tier this
+// chain offers was genuinely tried and none of them produced a kept
+// result, regardless of which specific failure mode ended it (a plain
+// HTTP error, exhausted quota, a timeout, or truncation/degeneracy - see
+// the dedicated wording in the DEGENERATE_FINAL_MARKER branch above for
+// that last one specifically). A failure that happens on an EARLIER tier
+// (most commonly: the total time budget ran out before the chain even
+// reached the last tier) is a different, less complete situation and
+// keeps its own specific message instead of falsely claiming every tier
+// was exhausted.
+function withTierContext(rawMessage: string, tierIndex: number, tierCount: number, attemptModel: string): string {
+  if (tierIndex !== tierCount - 1) return rawMessage;
+  return `Every model tier was tried (${tierCount} in total, ending with ${attemptModel}) and none produced a usable response. Last attempt: ${rawMessage}`;
 }
 
 function failure(
@@ -553,7 +611,8 @@ function failure(
   errorMessage: string,
   usage?: { promptTokens: number; completionTokens: number; totalTokens: number },
   discardedAttempts?: DiscardedAttempt[],
-  durationMs = 0
+  durationMs = 0,
+  tierContext?: { tierIndex: number; tierCount: number }
 ): OpenRouterResult {
   return {
     status: 'failed',
@@ -562,7 +621,7 @@ function failure(
     completionTokens: usage?.completionTokens ?? 0,
     totalTokens: usage?.totalTokens ?? 0,
     cost: usage ? calculateCost(model, usage.promptTokens, usage.completionTokens) : 0,
-    errorMessage,
+    errorMessage: tierContext ? withTierContext(errorMessage, tierContext.tierIndex, tierContext.tierCount, model) : errorMessage,
     discardedAttempts,
     durationMs,
   };
