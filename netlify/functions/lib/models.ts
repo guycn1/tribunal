@@ -16,7 +16,7 @@ const ROLE_ENV_VAR: Record<string, string> = {
 
 // All seven agent roles, for endpoints that report model configuration
 // across the whole roster (see case.ts) rather than one role at a time.
-export const ALL_AGENT_ROLES = Object.keys(ROLE_ENV_VAR);
+export const ALL_AGENT_ROLES = Object.keys( ROLE_ENV_VAR );
 
 // Shared by representative.ts and judge.ts, and exposed to the frontend via
 // case.ts, so there is exactly one place this number lives - the frontend
@@ -30,9 +30,9 @@ export const ALL_AGENT_ROLES = Object.keys(ROLE_ENV_VAR);
 // other.
 export const AGENT_MAX_TOKENS = 1400;
 
-export function getModelForRole(role: string): string {
-  const envVar = ROLE_ENV_VAR[role];
-  const override = envVar ? process.env[envVar] : undefined;
+export function getModelForRole( role: string ): string {
+  const envVar = ROLE_ENV_VAR[ role ];
+  const override = envVar ? process.env[ envVar ] : undefined;
   return override || DEFAULT_MODEL;
 }
 
@@ -88,8 +88,8 @@ export function getLastResortFallbackModel(): string {
 // via an isolated tier-4 sanity test on google/gemini-2.5-pro, which
 // failed every single call this way. openrouter.ts checks this before
 // deciding whether to include the reasoning field in a request at all.
-const MODELS_WITH_MANDATORY_REASONING = new Set<string>(['google/gemini-2.5-pro']);
+const MODELS_WITH_MANDATORY_REASONING = new Set<string>( [ 'google/gemini-2.5-pro' ] );
 
-export function modelRequiresReasoning(model: string): boolean {
-  return MODELS_WITH_MANDATORY_REASONING.has(model);
+export function modelRequiresReasoning( model: string ): boolean {
+  return MODELS_WITH_MANDATORY_REASONING.has( model );
 }

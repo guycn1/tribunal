@@ -7,7 +7,7 @@ import { REPRESENTATIVES } from './lib/representatives';
 import { buildRepresentativeMessages } from './lib/prompts';
 import { callOpenRouter } from './lib/openrouter';
 import { getModelForRole, AGENT_MAX_TOKENS } from './lib/models';
-import { getTrial, upsertRepresentativeArgument, logApiCall, isGlobalCallCapExceeded, GLOBAL_CALL_CAP } from './lib/db';
+import { getTrial, upsertRepresentativeArgument, logApiCall, upsertAgentProgress, isGlobalCallCapExceeded, GLOBAL_CALL_CAP } from './lib/db';
 import { isSiteGateOk } from './lib/siteGate';
 import type { RepresentativeRole } from './lib/types';
 
@@ -80,20 +80,40 @@ const rawHandler: Handler = async (event) => {
   // whole chain finishes) - this is what lets a client polling GET
   // /api/trials/:id see the escalation happening live, mid-call, instead
   // of only learning about it once this role's result is already final.
-  const result = await callOpenRouter(getModelForRole(repRole), messages, MAX_TOKENS, `representative:${repRole}`, (discarded) =>
-    logApiCall({
-      trialId: id,
-      agentRole: repRole,
-      callType: 'representative',
-      modelUsed: discarded.model,
-      promptTokens: discarded.promptTokens,
-      completionTokens: discarded.completionTokens,
-      totalTokens: discarded.totalTokens,
-      cost: discarded.cost,
-      status: 'failed',
-      errorMessage: discarded.errorMessage,
-      durationMs: discarded.durationMs,
-    })
+  const result = await callOpenRouter(
+    getModelForRole(repRole),
+    messages,
+    MAX_TOKENS,
+    `representative:${repRole}`,
+    (discarded) =>
+      logApiCall({
+        trialId: id,
+        agentRole: repRole,
+        callType: 'representative',
+        modelUsed: discarded.model,
+        promptTokens: discarded.promptTokens,
+        completionTokens: discarded.completionTokens,
+        totalTokens: discarded.totalTokens,
+        cost: discarded.cost,
+        status: 'failed',
+        errorMessage: discarded.errorMessage,
+        durationMs: discarded.durationMs,
+      }),
+    // Overwrites the one agent_progress row for this role the moment each
+    // attempt starts - see the "currently in flight" comment on
+    // upsertAgentProgress in db.ts. This is what a client polling mid-call
+    // actually reads to show the real current model/attempt, rather than
+    // only learning about escalation once an attempt is discarded (which
+    // is always one step behind the attempt that's actually running).
+    (info) =>
+      upsertAgentProgress({
+        trialId: id,
+        role: repRole,
+        model: info.model,
+        tierIndex: info.tierIndex,
+        attemptInTier: info.attemptInTier,
+        tierMaxAttempts: info.tierMaxAttempts,
+      })
   );
 
   await logApiCall({

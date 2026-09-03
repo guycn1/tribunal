@@ -126,6 +126,17 @@ function shortModelName(modelId) {
   return modelId.replace(/^[^/]+\//, '').replace(/:free$/, '');
 }
 
+// 1 -> "first", 2 -> "second", ... used for the "(first attempt)"/"(second
+// attempt)" suffix on a still-loading card's model line (see
+// buildAgentStatusBody) - only ever needs to cover however many attempts
+// buildRetryTiers() in openrouter.ts gives any one tier (currently max 2),
+// but written to degrade to a plain ordinal number rather than throw if
+// that ever changes.
+const ORDINAL_WORDS = ['zeroth', 'first', 'second', 'third', 'fourth', 'fifth'];
+function ordinalWord(n) {
+  return ORDINAL_WORDS[n] || `${n}th`;
+}
+
 // Single-letter Type column, with the full word kept available via <abbr>
 // (hover/long-press) rather than silently discarding it.
 function formatCallTypeHtml(callType) {
@@ -381,7 +392,23 @@ function isRetriedMarkerLog(log) {
   );
 }
 
-// Derives a {representatives, judges, currentModels} status map from one
+// Strips a leading DEGENERATE_*_MARKER (plus the space after it) from an
+// error message before it's shown on an agent card - those markers exist
+// so renderCallLog() can tell attempt outcomes apart in the call log
+// table, but they're internal bookkeeping, not something a reader of the
+// card should ever see verbatim. The call log table is unaffected: it
+// reads state.callLog (the raw apiCallLogs rows) directly, never through
+// this function, so its own marker-based badge/caption logic still sees
+// the real, unstripped text.
+function stripMarkerPrefix(message) {
+  if (typeof message !== 'string') return message;
+  for (const marker of [DEGENERATE_RETRIED_SAME_MODEL_MARKER, DEGENERATE_RETRIED_DIFF_MODEL_MARKER, DEGENERATE_FINAL_MARKER]) {
+    if (message.startsWith(marker)) return message.slice(marker.length).trimStart();
+  }
+  return message;
+}
+
+// Derives a {representatives, judges, agentProgress} status map from one
 // GET /api/trials/:id response - the single source of truth for "what has
 // actually happened so far in this trial," used identically whether
 // reopening a finished historical trial (loadTrial) or polling a live one
@@ -390,16 +417,20 @@ function isRetriedMarkerLog(log) {
 // ordered ascending by timestamp (see getFullTrial in db.ts), so the last
 // matching row for a role is its most recent attempt.
 //
-// currentModels is deliberately separate from representatives/judges: a
-// retried-marker row is real signal (the escalation chain has moved on to
-// a specific model) but not a terminal state, and pollForRoles treats any
-// entry present in representatives/judges as "this role is done" - folding
-// live-progress info into that map would make it stop waiting on a role
-// that's still genuinely running.
+// agentProgress (from db.ts's agent_progress table, via getFullTrial) is
+// deliberately separate from representatives/judges: it's live-in-flight
+// signal - the model/attempt actually running right now, overwritten in
+// place as the chain progresses - not a terminal state, and pollForRoles
+// treats any entry present in representatives/judges as "this role is
+// done." A discarded-attempt log row also isn't folded in here for the
+// same reason (a superseded, earlier design of this did fold it in,
+// which was one attempt behind reality - see the model-display fix this
+// replaces): agentProgress is written the moment an attempt *starts*, so
+// it's never behind the real current attempt the way inferring from a
+// *discarded* row necessarily is.
 function deriveRoleStates(data) {
   const representatives = {};
   const judges = {};
-  const currentModels = {};
 
   for (const arg of data.representativeArguments || []) {
     representatives[arg.role] = {
@@ -423,16 +454,16 @@ function deriveRoleStates(data) {
     if (log.status !== 'success') {
       if (store[log.agentRole] && store[log.agentRole].status === 'success') continue;
       if (isRetriedMarkerLog(log)) {
-        // Not a terminal outcome - record which model the chain is now
-        // trying next and keep waiting, rather than reporting a false
-        // "Call failed" for a role that's actually still in progress.
-        currentModels[log.agentRole] = log.modelUsed;
+        // Not a terminal outcome - the escalation chain is still running
+        // (see agentProgress above for what actually renders "currently
+        // trying X" while it does) - don't report a false "Call failed"
+        // for a role that's actually still in progress.
         continue;
       }
       store[log.agentRole] =
         log.errorMessage === ABORTED_BY_USER_MESSAGE
           ? { status: 'aborted', error: log.errorMessage }
-          : { status: 'failed', error: log.errorMessage || 'Unknown failure' };
+          : { status: 'failed', error: stripMarkerPrefix(log.errorMessage) || 'Unknown failure' };
     } else if (store[log.agentRole] && store[log.agentRole].status === 'success') {
       // representative_arguments/judge_rulings don't store token counts
       // (only api_call_logs does) - without this, isTruncated() would have
@@ -441,7 +472,7 @@ function deriveRoleStates(data) {
     }
   }
 
-  return { representatives, judges, currentModels };
+  return { representatives, judges, agentProgress: data.agentProgress || {} };
 }
 
 // How long to keep polling a phase for a role that hasn't resolved yet
@@ -501,13 +532,18 @@ async function pollForRoles(pendingRoles, bucket, render, signal) {
         changed = true;
         continue;
       }
-      // Still genuinely pending, but the escalation chain may have moved
-      // on to a later tier since the last tick - surface that live rather
+      // Still genuinely pending, but agent_progress may have moved on to a
+      // later attempt/tier since the last tick - surface that live rather
       // than leaving buildAgentStatusBody showing the static default model
       // for the whole call regardless of how far it's actually escalated.
-      const currentModel = derived.currentModels[role];
-      if (currentModel && bucket[role] && bucket[role].currentModel !== currentModel) {
-        bucket[role] = { ...bucket[role], currentModel };
+      const progress = derived.agentProgress[role];
+      const prev = bucket[role] && bucket[role].currentAttempt;
+      if (
+        progress &&
+        bucket[role] &&
+        (!prev || prev.model !== progress.model || prev.tierIndex !== progress.tierIndex || prev.attemptInTier !== progress.attemptInTier)
+      ) {
+        bucket[role] = { ...bucket[role], currentAttempt: progress };
         changed = true;
       }
     }
@@ -757,22 +793,26 @@ function buildAgentStatusBody(entry, role, verb) {
 
   if (entry.status === 'loading') {
     body.className = 'card-body dim';
-    // entry.currentModel (set by pollForRoles from a live discarded-attempt
-    // log row - see deriveRoleStates) is the model whose *last* attempt was
-    // just discarded, not the one now in flight (the call log row for a
-    // discarded attempt reports the model that produced it, per
-    // openrouter.ts) - the chain has since moved on to a later, stronger
-    // tier, but which exact model that is isn't known client-side until it
-    // either finishes or is itself discarded. Still a real, live
-    // improvement over showing state.modelInfo[role] (only ever the
-    // starting default) completely unchanged for a call that has already
-    // escalated past it.
-    const modelId = entry.currentModel || (state.modelInfo && state.modelInfo[role]);
-    const modelLine = modelId
-      ? `<div class="model-chain">Model: <span class="model-name">${shortModelName(modelId)}</span>${
-          entry.currentModel ? ' <span class="status-caption">(that attempt was discarded — escalating to a fallback model)</span>' : ''
-        }</div>`
-      : '';
+    // entry.currentAttempt (set by pollForRoles from agent_progress - see
+    // deriveRoleStates) is written the moment each attempt actually
+    // *starts*, server-side, so it reflects the model genuinely in flight
+    // right now - not the model of whatever was last discarded, which is
+    // always one step behind (that was the bug this replaces: the card
+    // kept showing the previous, already-abandoned model while the next
+    // one was the one actually generating).
+    const attempt = entry.currentAttempt;
+    let modelLine = '';
+    if (attempt) {
+      const suffix = attempt.tierMaxAttempts > 1 ? ` (${ordinalWord(attempt.attemptInTier)} attempt)` : '';
+      modelLine = `<div class="model-chain">Model: <span class="model-name">${shortModelName(attempt.model)}${suffix}</span></div>`;
+    } else {
+      // No agent_progress row has landed yet - a brief window right at the
+      // very start of the call, before the first attempt's write reaches
+      // the DB. Falls back to the starting default rather than showing
+      // nothing.
+      const modelId = state.modelInfo && state.modelInfo[role];
+      modelLine = modelId ? `<div class="model-chain">Model: <span class="model-name">${shortModelName(modelId)}</span></div>` : '';
+    }
     body.innerHTML = `${spinnerHtml()}${verb}…${modelLine}`;
     return body;
   }

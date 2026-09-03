@@ -119,3 +119,27 @@ create table if not exists api_call_logs (
 );
 alter table api_call_logs enable row level security;
 create index if not exists api_call_logs_trial_id_idx on api_call_logs (trial_id);
+-- ---------------------------------------------------------------------------
+-- agent_progress
+-- ---------------------------------------------------------------------------
+-- One row per (trial, role), overwritten in place (not appended, unlike
+-- api_call_logs) every time an attempt starts - this is "what's actually
+-- in flight right now," not a history of past attempts. Read by a live
+-- client polling GET /api/trials/:id so an in-progress card can show the
+-- real current model/attempt, not just the model of the most recently
+-- discarded attempt (which is one step behind reality once a discarded
+-- attempt is thrown away and the chain moves on to a still-in-flight
+-- next one). A stale leftover row from an earlier attempt (or an
+-- interrupted trial) is harmless - the frontend only ever reads this for
+-- a role it doesn't already have a terminal (success/failed) result for.
+create table if not exists agent_progress (
+  trial_id uuid not null references trials(id) on delete cascade,
+  role text not null,
+  model text not null,
+  tier_index integer not null,
+  attempt_in_tier integer not null,
+  tier_max_attempts integer not null,
+  updated_at timestamptz not null default now(),
+  primary key (trial_id, role)
+);
+alter table agent_progress enable row level security;

@@ -11,6 +11,7 @@ import {
   getFullTrial,
   upsertJudgeRuling,
   logApiCall,
+  upsertAgentProgress,
   markTrialCompletedIfJudgingDone,
   isGlobalCallCapExceeded,
   GLOBAL_CALL_CAP,
@@ -82,20 +83,35 @@ const rawHandler: Handler = async (event) => {
   // whole chain finishes) - this is what lets a client polling GET
   // /api/trials/:id see the escalation happening live, mid-call, instead
   // of only learning about it once this role's result is already final.
-  const result = await callOpenRouter(getModelForRole(judgeRole), messages, MAX_TOKENS, `judge:${judgeRole}`, (discarded) =>
-    logApiCall({
-      trialId: id,
-      agentRole: judgeRole,
-      callType: 'judge',
-      modelUsed: discarded.model,
-      promptTokens: discarded.promptTokens,
-      completionTokens: discarded.completionTokens,
-      totalTokens: discarded.totalTokens,
-      cost: discarded.cost,
-      status: 'failed',
-      errorMessage: discarded.errorMessage,
-      durationMs: discarded.durationMs,
-    })
+  const result = await callOpenRouter(
+    getModelForRole(judgeRole),
+    messages,
+    MAX_TOKENS,
+    `judge:${judgeRole}`,
+    (discarded) =>
+      logApiCall({
+        trialId: id,
+        agentRole: judgeRole,
+        callType: 'judge',
+        modelUsed: discarded.model,
+        promptTokens: discarded.promptTokens,
+        completionTokens: discarded.completionTokens,
+        totalTokens: discarded.totalTokens,
+        cost: discarded.cost,
+        status: 'failed',
+        errorMessage: discarded.errorMessage,
+        durationMs: discarded.durationMs,
+      }),
+    // See the matching comment in representative-background.ts.
+    (info) =>
+      upsertAgentProgress({
+        trialId: id,
+        role: judgeRole,
+        model: info.model,
+        tierIndex: info.tierIndex,
+        attemptInTier: info.attemptInTier,
+        tierMaxAttempts: info.tierMaxAttempts,
+      })
   );
 
   const parsed = result.status === 'success' && result.content ? parseJudgeOutput(result.content) : null;

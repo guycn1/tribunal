@@ -54,6 +54,17 @@ export interface ApiCallLogRecord {
   durationMs: number | null;
 }
 
+// The attempt currently in flight (or most recently started) for one role
+// in one trial - see agent_progress in schema.sql. tierMaxAttempts lets
+// the frontend know whether to show an ordinal suffix ("(first attempt)")
+// at all - a tier with only one allowed attempt never needs one.
+export interface AgentProgressRecord {
+  model: string;
+  tierIndex: number;
+  attemptInTier: number;
+  tierMaxAttempts: number;
+}
+
 export interface TrialRecord {
   id: string;
   caseCode: string;

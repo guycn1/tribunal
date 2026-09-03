@@ -1,5 +1,6 @@
 import { getSupabaseClient } from './supabase';
 import type {
+  AgentProgressRecord,
   ApiCallLogRecord,
   CallStatus,
   CallType,
@@ -141,14 +142,15 @@ export async function getTrial(trialId: string): Promise<TrialRecord | null> {
 export async function getFullTrial(trialId: string) {
   const supabase = getSupabaseClient();
 
-  const [trialRes, argsRes, rulingsRes, logsRes] = await Promise.all([
+  const [trialRes, argsRes, rulingsRes, logsRes, progressRes] = await Promise.all([
     supabase.from('trials').select('*').eq('id', trialId).maybeSingle(),
     supabase.from('representative_arguments').select('*').eq('trial_id', trialId),
     supabase.from('judge_rulings').select('*').eq('trial_id', trialId),
     supabase.from('api_call_logs').select('*').eq('trial_id', trialId).order('timestamp', { ascending: true }),
+    supabase.from('agent_progress').select('*').eq('trial_id', trialId),
   ]);
 
-  for (const res of [trialRes, argsRes, rulingsRes, logsRes]) {
+  for (const res of [trialRes, argsRes, rulingsRes, logsRes, progressRes]) {
     if (res.error) {
       throw new Error(`Failed to load trial data: ${res.error.message}`);
     }
@@ -158,8 +160,23 @@ export async function getFullTrial(trialId: string) {
     return null;
   }
 
+  // Keyed by role, not an array - deriveRoleStates() in app.js only ever
+  // wants "what's currently happening for role X," a direct lookup, not a
+  // list to search. One row per role at most (primary key (trial_id, role)
+  // in schema.sql), so no data is lost collapsing this into a map.
+  const agentProgress: Record<string, AgentProgressRecord> = {};
+  for (const row of progressRes.data ?? []) {
+    agentProgress[row.role as string] = {
+      model: row.model as string,
+      tierIndex: row.tier_index as number,
+      attemptInTier: row.attempt_in_tier as number,
+      tierMaxAttempts: row.tier_max_attempts as number,
+    };
+  }
+
   return {
     trial: mapTrial(trialRes.data),
+    agentProgress,
     representativeArguments: (argsRes.data ?? []).map((row) => ({
       role: row.role as RepresentativeRole,
       seat: row.seat as Seat,
@@ -238,6 +255,42 @@ export async function upsertJudgeRuling(params: {
 
   if (error) {
     throw new Error(`Failed to save judge ruling: ${error.message}`);
+  }
+}
+
+// Overwrites (not appends - see agent_progress in schema.sql) the one row
+// for this trial/role with whichever attempt is now actually in flight.
+// Called from openrouter.ts's onAttemptStart callback the moment each
+// attempt begins, so a client polling mid-call sees the real current
+// model/attempt rather than only learning about it once that attempt is
+// later discarded or kept. Errors are swallowed by the caller (see the
+// onAttemptStart wiring in representative-background.ts/judge-
+// background.ts), not here - this is a best-effort live-progress signal,
+// never allowed to interrupt the actual retry logic.
+export async function upsertAgentProgress(params: {
+  trialId: string;
+  role: string;
+  model: string;
+  tierIndex: number;
+  attemptInTier: number;
+  tierMaxAttempts: number;
+}): Promise<void> {
+  const supabase = getSupabaseClient();
+  const { error } = await supabase.from('agent_progress').upsert(
+    {
+      trial_id: params.trialId,
+      role: params.role,
+      model: params.model,
+      tier_index: params.tierIndex,
+      attempt_in_tier: params.attemptInTier,
+      tier_max_attempts: params.tierMaxAttempts,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: 'trial_id,role' }
+  );
+
+  if (error) {
+    throw new Error(`Failed to save agent progress: ${error.message}`);
   }
 }
 
