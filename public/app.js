@@ -211,7 +211,14 @@ async function beginTrial() {
     el.phaseRepresentatives.classList.remove('hidden');
     el.phaseJudges.classList.add('hidden');
     el.phaseLog.classList.add('hidden');
-    el.phaseRepresentatives.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    // Scrolling phaseRepresentatives into view (even with block: 'end') only
+    // showed the "Representatives" heading and left the actual cards below
+    // it barely visible - scrolling the whole page to the bottom instead
+    // actually lands on real content. loadTrial()'s history-entry scroll is
+    // deliberately untouched (see its own comment) - this is specific to
+    // "Begin new trial", where there's nothing below the Representatives
+    // phase yet for a plain scrollIntoView to usefully target.
+    window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
 
     // Hidden here, not only in the outer finally below - runRepresentativesPhase()
     // paints the "Arguing…" loading cards synchronously as its very first
