@@ -56,6 +56,7 @@ const state = {
   running: false,
   loadingTrial: false,
   abortController: null,
+  trialPromise: null, // the live beginTrial() call, so abortCurrentTrial() can await it
 };
 
 const el = {
@@ -83,7 +84,9 @@ const el = {
 };
 
 el.newTrialBtn.addEventListener('click', () => {
-  beginTrial();
+  // Stored so abortCurrentTrial() can await the same in-flight run - see
+  // its own comment for why.
+  state.trialPromise = beginTrial();
 });
 
 el.abortBtn.addEventListener('click', () => {
@@ -265,6 +268,21 @@ function updateHistoryLockState() {
 async function abortCurrentTrial() {
   if (!state.abortController || !state.trialId) return;
 
+  // Same loading cue as the other two flows (opening a trial from history,
+  // beginning a new one) - a real, observed 2-3s gap between clicking
+  // Abort and the page actually settling (the Abort button disappearing,
+  // "Begin new trial" re-enabling), even though the card state below
+  // updates synchronously and immediately. That gap comes from whatever
+  // beginTrial()'s own in-flight chain is doing when the abort signal
+  // fires - e.g. pollForRoles()'s GET isn't itself signal-aware, so an
+  // already-in-flight poll only notices the abort on its *next* loop
+  // check, not instantly - not something worth chasing down and fixing
+  // request-by-request when a loading overlay already covers exactly
+  // this kind of "a few real seconds, cause not worth pinning down
+  // precisely" gap elsewhere in this app.
+  el.mainLoadingOverlay.classList.remove('hidden');
+  el.sidebar.classList.add('loading-locked');
+
   const isPending = (status) => status === 'loading';
   const pendingRoles = [
     ...REPRESENTATIVE_ROLES.filter((r) => isPending(state.representatives[r] && state.representatives[r].status)),
@@ -293,6 +311,23 @@ async function abortCurrentTrial() {
     }
     refreshHistory();
   }
+
+  // Wait for beginTrial()'s own async chain to actually finish unwinding
+  // (its finally block is what clears state.running, re-enables "Begin
+  // new trial", and hides the Abort button) before dropping the overlay -
+  // otherwise it would disappear while those controls are still visibly
+  // mid-transition for a moment longer. beginTrial() shouldn't reject
+  // (every real failure path inside it is already caught internally),
+  // but this is wrapped defensively anyway so a surprise rejection there
+  // can never leave the overlay stuck.
+  try {
+    await state.trialPromise;
+  } catch {
+    // See above - not expected, but must never block clearing the overlay.
+  }
+
+  el.mainLoadingOverlay.classList.add('hidden');
+  el.sidebar.classList.remove('loading-locked');
 }
 
 // In one real run, all 4 representative calls fired at the exact same
