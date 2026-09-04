@@ -56,6 +56,7 @@ const state = {
   running: false,
   loadingTrial: false,
   abortController: null,
+  trialPromise: null, // the live beginTrial() call, so abortCurrentTrial() can await it
 };
 
 const el = {
@@ -83,7 +84,9 @@ const el = {
 };
 
 el.newTrialBtn.addEventListener('click', () => {
-  beginTrial();
+  // Stored so abortCurrentTrial() can await the same in-flight run - see
+  // its own comment for why.
+  state.trialPromise = beginTrial();
 });
 
 el.abortBtn.addEventListener('click', () => {
@@ -182,6 +185,13 @@ async function beginTrial() {
   el.abortBtn.classList.remove('hidden');
   const controller = new AbortController();
   state.abortController = controller;
+  // Same loading cue as opening a trial from history (el.mainLoadingOverlay/
+  // .sidebar.loading-locked) - creating the trial plus the Representatives
+  // phase's first render can take a couple of real seconds, during which
+  // the page previously just sat there static with no indication anything
+  // was happening.
+  el.mainLoadingOverlay.classList.remove('hidden');
+  el.sidebar.classList.add('loading-locked');
 
   try {
     const res = await fetch('/api/trials', { method: 'POST', headers: SITE_GATE_HEADERS });
@@ -201,7 +211,16 @@ async function beginTrial() {
     el.phaseRepresentatives.classList.remove('hidden');
     el.phaseJudges.classList.add('hidden');
     el.phaseLog.classList.add('hidden');
-    el.phaseRepresentatives.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    el.phaseRepresentatives.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+    // Hidden here, not only in the outer finally below - runRepresentativesPhase()
+    // paints the "Arguing…" loading cards synchronously as its very first
+    // action, before its own first await, so by the time the browser
+    // actually gets to paint anything, the overlay-hidden state and the
+    // loading cards land in the same frame together - no flash of "overlay
+    // gone, cards not there yet" in between.
+    el.mainLoadingOverlay.classList.add('hidden');
+    el.sidebar.classList.remove('loading-locked');
 
     await runRepresentativesPhase(controller.signal);
     if (!controller.signal.aborted) {
@@ -215,6 +234,11 @@ async function beginTrial() {
     state.abortController = null;
     el.newTrialBtn.disabled = false;
     el.abortBtn.classList.add('hidden');
+    // Safety net for the early-failure path above (trial creation itself
+    // failed, before the happy path's own earlier hide runs) - a no-op
+    // once that's already fired.
+    el.mainLoadingOverlay.classList.add('hidden');
+    el.sidebar.classList.remove('loading-locked');
   }
 }
 
@@ -244,6 +268,21 @@ function updateHistoryLockState() {
 async function abortCurrentTrial() {
   if (!state.abortController || !state.trialId) return;
 
+  // Same loading cue as the other two flows (opening a trial from history,
+  // beginning a new one) - a real, observed 2-3s gap between clicking
+  // Abort and the page actually settling (the Abort button disappearing,
+  // "Begin new trial" re-enabling), even though the card state below
+  // updates synchronously and immediately. That gap comes from whatever
+  // beginTrial()'s own in-flight chain is doing when the abort signal
+  // fires - e.g. pollForRoles()'s GET isn't itself signal-aware, so an
+  // already-in-flight poll only notices the abort on its *next* loop
+  // check, not instantly - not something worth chasing down and fixing
+  // request-by-request when a loading overlay already covers exactly
+  // this kind of "a few real seconds, cause not worth pinning down
+  // precisely" gap elsewhere in this app.
+  el.mainLoadingOverlay.classList.remove('hidden');
+  el.sidebar.classList.add('loading-locked');
+
   const isPending = (status) => status === 'loading';
   const pendingRoles = [
     ...REPRESENTATIVE_ROLES.filter((r) => isPending(state.representatives[r] && state.representatives[r].status)),
@@ -272,6 +311,23 @@ async function abortCurrentTrial() {
     }
     refreshHistory();
   }
+
+  // Wait for beginTrial()'s own async chain to actually finish unwinding
+  // (its finally block is what clears state.running, re-enables "Begin
+  // new trial", and hides the Abort button) before dropping the overlay -
+  // otherwise it would disappear while those controls are still visibly
+  // mid-transition for a moment longer. beginTrial() shouldn't reject
+  // (every real failure path inside it is already caught internally),
+  // but this is wrapped defensively anyway so a surprise rejection there
+  // can never leave the overlay stuck.
+  try {
+    await state.trialPromise;
+  } catch {
+    // See above - not expected, but must never block clearing the overlay.
+  }
+
+  el.mainLoadingOverlay.classList.add('hidden');
+  el.sidebar.classList.remove('loading-locked');
 }
 
 // In one real run, all 4 representative calls fired at the exact same
@@ -743,6 +799,18 @@ async function loadTrial(trialId) {
     renderJudges();
     renderCallLog();
     renderHistory();
+    // Only after everything above has actually rendered - scrolling to a
+    // section whose cards/content aren't painted yet would just land on
+    // an empty or half-built page. A trial with zero representative
+    // entries leaves .phaseRepresentatives hidden (display: none), where
+    // scrollIntoView is already a harmless no-op - no extra guard needed
+    // for that case. block: 'start' here, not 'center' like the
+    // "Begin new trial" scroll below - a historical trial's arguments are
+    // already fully populated by the time this fires, and 'start' reads
+    // better than 'center' once there's real content to read starting
+    // from the top of the section, per the user's explicit comparison of
+    // both.
+    el.phaseRepresentatives.scrollIntoView({ behavior: 'smooth', block: 'start' });
   } finally {
     state.loadingTrial = false;
     el.mainLoadingOverlay.classList.add('hidden');
