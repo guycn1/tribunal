@@ -225,14 +225,15 @@ async function beginTrial() {
     }
     renderRepresentatives();
 
-    // Scrolling phaseRepresentatives into view (even with block: 'end') only
-    // showed the "Representatives" heading and left the actual cards below
-    // it barely visible - scrolling the whole page to the bottom instead
-    // actually lands on real content. loadTrial()'s history-entry scroll is
-    // deliberately untouched (see its own comment) - this is specific to
-    // "Begin new trial", where there's nothing below the Representatives
-    // phase yet for a plain scrollIntoView to usefully target.
-    window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+    // Now that the loading cards are painted above, phaseRepresentatives'
+    // real height already includes them - block: 'start' (same as
+    // loadTrial()'s history-entry scroll) now lands on the section heading
+    // with the cards genuinely visible below it, rather than needing the
+    // window.scrollTo-the-bottom workaround this used before the cards
+    // were moved earlier. The earlier attempts at block: 'end'/scrolling to
+    // the page bottom were compensating for the cards not existing yet at
+    // scroll time, not for 'start' itself being the wrong target.
+    el.phaseRepresentatives.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
     // Hidden here, not only in the outer finally below - the loading cards
     // are already painted above, so by the time the browser actually gets
