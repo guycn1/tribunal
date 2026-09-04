@@ -386,6 +386,7 @@ body {
 }
 
 .case-background {
+  padding-top: 8px;
   color: var(--text-dim);
 }
 
@@ -398,6 +399,7 @@ body {
 }
 
 .case-facts {
+  margin-top: 8px;
   color: var(--text-dim);
   padding-left: 20px;
 }
