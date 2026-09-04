@@ -1302,7 +1302,7 @@ function renderCallLog() {
 
     let statusCellHtml;
     if (isDegenerateRetried) {
-      const caption = isRetriedSameModel ? 'retried with the same model' : 'fell back to a different model';
+      const caption = isRetriedSameModel ? 'retried with the same model' : 'escalated to a different model';
       statusCellHtml = `
         <div class="cell-stack">
           <span class="badge badge-warn">Degenerated</span>
