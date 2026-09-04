@@ -211,14 +211,35 @@ async function beginTrial() {
     el.phaseRepresentatives.classList.remove('hidden');
     el.phaseJudges.classList.add('hidden');
     el.phaseLog.classList.add('hidden');
-    el.phaseRepresentatives.scrollIntoView({ behavior: 'smooth', block: 'center' });
 
-    // Hidden here, not only in the outer finally below - runRepresentativesPhase()
-    // paints the "Arguing…" loading cards synchronously as its very first
-    // action, before its own first await, so by the time the browser
-    // actually gets to paint anything, the overlay-hidden state and the
-    // loading cards land in the same frame together - no flash of "overlay
-    // gone, cards not there yet" in between.
+    // Seed and paint the "Arguing…" loading cards here, before scrolling -
+    // this used to happen inside runRepresentativesPhase() as its first
+    // synchronous action, called only after the scroll below, which meant
+    // document.body.scrollHeight was measured while the cards didn't exist
+    // yet. The page grew right out from under the just-finished scroll the
+    // instant those cards painted, landing short of the real bottom (real
+    // user report). Doing it here first means the cards are already part
+    // of the page's height by the time scrollHeight is read.
+    for (const role of REPRESENTATIVE_ROLES) {
+      state.representatives[role] = { status: 'loading' };
+    }
+    renderRepresentatives();
+
+    // Now that the loading cards are painted above, phaseRepresentatives'
+    // real height already includes them - block: 'start' (same as
+    // loadTrial()'s history-entry scroll) now lands on the section heading
+    // with the cards genuinely visible below it, rather than needing the
+    // window.scrollTo-the-bottom workaround this used before the cards
+    // were moved earlier. The earlier attempts at block: 'end'/scrolling to
+    // the page bottom were compensating for the cards not existing yet at
+    // scroll time, not for 'start' itself being the wrong target.
+    el.phaseRepresentatives.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+    // Hidden here, not only in the outer finally below - the loading cards
+    // are already painted above, so by the time the browser actually gets
+    // to paint anything, the overlay-hidden state and the loading cards
+    // land in the same frame together - no flash of "overlay gone, cards
+    // not there yet" in between.
     el.mainLoadingOverlay.classList.add('hidden');
     el.sidebar.classList.remove('loading-locked');
 
@@ -635,11 +656,11 @@ async function pollForRoles(pendingRoles, bucket, render, signal) {
 }
 
 async function runRepresentativesPhase(signal) {
-  for (const role of REPRESENTATIVE_ROLES) {
-    state.representatives[role] = { status: 'loading' };
-  }
-  renderRepresentatives();
-
+  // The initial "Arguing…" loading-card seed + render used to happen right
+  // here, as this function's first synchronous action. It now happens in
+  // beginTrial() instead, before the scroll-to-bottom call - see the
+  // comment there for why. This is the only caller of this function, so
+  // nothing else depends on it seeding state.representatives itself.
   const triggered = [];
   await runWithConcurrencyLimit(REPRESENTATIVE_ROLES, MAX_CONCURRENT_CALLS, async (role, index) => {
     try {
