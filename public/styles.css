@@ -386,8 +386,15 @@ body {
 }
 
 .case-background {
-  white-space: pre-line;
   color: var(--text-dim);
+}
+
+.case-background p {
+  margin: 0 0 10px;
+}
+
+.case-background p:last-child {
+  margin-bottom: 0;
 }
 
 .case-facts {
