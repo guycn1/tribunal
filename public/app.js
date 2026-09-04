@@ -211,7 +211,7 @@ async function beginTrial() {
     el.phaseRepresentatives.classList.remove('hidden');
     el.phaseJudges.classList.add('hidden');
     el.phaseLog.classList.add('hidden');
-    el.phaseRepresentatives.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    el.phaseRepresentatives.scrollIntoView({ behavior: 'smooth', block: 'end' });
 
     // Hidden here, not only in the outer finally below - runRepresentativesPhase()
     // paints the "Arguing…" loading cards synchronously as its very first
