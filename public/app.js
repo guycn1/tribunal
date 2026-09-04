@@ -201,7 +201,7 @@ async function beginTrial() {
     el.phaseRepresentatives.classList.remove('hidden');
     el.phaseJudges.classList.add('hidden');
     el.phaseLog.classList.add('hidden');
-    el.phaseRepresentatives.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    el.phaseRepresentatives.scrollIntoView({ behavior: 'smooth', block: 'center' });
 
     await runRepresentativesPhase(controller.signal);
     if (!controller.signal.aborted) {
@@ -743,6 +743,13 @@ async function loadTrial(trialId) {
     renderJudges();
     renderCallLog();
     renderHistory();
+    // Only after everything above has actually rendered - scrolling to a
+    // section whose cards/content aren't painted yet would just land on
+    // an empty or half-built page. A trial with zero representative
+    // entries leaves .phaseRepresentatives hidden (display: none), where
+    // scrollIntoView is already a harmless no-op - no extra guard needed
+    // for that case.
+    el.phaseRepresentatives.scrollIntoView({ behavior: 'smooth', block: 'center' });
   } finally {
     state.loadingTrial = false;
     el.mainLoadingOverlay.classList.add('hidden');
