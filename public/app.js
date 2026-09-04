@@ -748,8 +748,13 @@ async function loadTrial(trialId) {
     // an empty or half-built page. A trial with zero representative
     // entries leaves .phaseRepresentatives hidden (display: none), where
     // scrollIntoView is already a harmless no-op - no extra guard needed
-    // for that case.
-    el.phaseRepresentatives.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    // for that case. block: 'start' here, not 'center' like the
+    // "Begin new trial" scroll below - a historical trial's arguments are
+    // already fully populated by the time this fires, and 'start' reads
+    // better than 'center' once there's real content to read starting
+    // from the top of the section, per the user's explicit comparison of
+    // both.
+    el.phaseRepresentatives.scrollIntoView({ behavior: 'smooth', block: 'start' });
   } finally {
     state.loadingTrial = false;
     el.mainLoadingOverlay.classList.add('hidden');
