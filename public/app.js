@@ -846,7 +846,20 @@ function renderCaseSheet() {
   el.caseAccused.textContent = c.accused;
   el.caseDeceased.textContent = c.deceased;
   el.caseActAlleged.textContent = c.actAlleged;
-  el.caseBackground.textContent = c.background;
+  // Real <p> elements with a controlled margin (see .case-background p in
+  // styles.css) instead of textContent + white-space: pre-line - the raw
+  // \n\n between paragraphs in the stored text rendered as a literal blank
+  // line under pre-line, a full line-height taller than intended and much
+  // more prominent than the neat 6px spacing the facts list below it uses
+  // (real user report, screenshot). Split on \n\n rather than \n so a
+  // future paragraph with a single internal line break (if ever added)
+  // wouldn't be split into two separate <p> elements.
+  el.caseBackground.innerHTML = '';
+  for (const paragraph of c.background.split('\n\n')) {
+    const p = document.createElement('p');
+    p.textContent = paragraph;
+    el.caseBackground.appendChild(p);
+  }
   el.caseFacts.innerHTML = '';
   for (const fact of c.agreedFacts) {
     const li = document.createElement('li');
@@ -1302,7 +1315,7 @@ function renderCallLog() {
 
     let statusCellHtml;
     if (isDegenerateRetried) {
-      const caption = isRetriedSameModel ? 'retried with the same model' : 'fell back to a different model';
+      const caption = isRetriedSameModel ? 'retried with the same model' : 'escalated to a different model';
       statusCellHtml = `
         <div class="cell-stack">
           <span class="badge badge-warn">Degenerated</span>

@@ -386,11 +386,20 @@ body {
 }
 
 .case-background {
-  white-space: pre-line;
+  padding-top: 8px;
   color: var(--text-dim);
 }
 
+.case-background p {
+  margin: 0 0 10px;
+}
+
+.case-background p:last-child {
+  margin-bottom: 0;
+}
+
 .case-facts {
+  margin-top: 8px;
   color: var(--text-dim);
   padding-left: 20px;
 }
@@ -400,7 +409,7 @@ body {
 }
 
 .case-question {
-  margin-top: 16px;
+  margin-top: 12px;
   border-top: 1px solid var(--border);
   padding-top: 16px;
 }
