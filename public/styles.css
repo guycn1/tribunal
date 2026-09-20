@@ -1153,7 +1153,17 @@ table.call-log .col-full {
     top: 50%;
     transform: translateY(-50%);
     color: var(--text-dim);
-    font-size: 0.66rem;
+    /* Just under the value it labels (0.74rem), so the label still reads as
+       subordinate - but that is carried by the dim colour, the uppercase and
+       the letter-spacing, not by being conspicuously tiny. It was 0.66rem
+       from the day this layout was written until now, which rendered at
+       10.56px then and 9.50px once :root dropped to 90%: the same
+       declaration, a pixel smaller, and at this size a pixel is ten per
+       cent. This restores roughly the original appearance without opting
+       the label out of that deliberate global scale-down. The 92px gutter
+       is nowhere near a constraint on this - the longest label, DURATION,
+       needs 53px of the 82px usable. */
+    font-size: 0.72rem;
     text-transform: uppercase;
     letter-spacing: 0.04em;
     text-align: left;
@@ -1257,6 +1267,15 @@ table.call-log .col-full {
   table.call-log td {
     padding: 5px 8px 5px 84px;
   }
+  /* The values shrink to 0.68rem here, so the label has to come back down
+     with them or it would end up larger than the field it labels. 0.66rem
+     against a 0.68rem value is the same proportion the wider tier now has
+     (0.72 against 0.74), so the label sits the same distance below its
+     value at both sizes rather than changing character between them. */
+  table.call-log td::before {
+    font-size: 0.66rem;
+  }
+
   table.call-log tbody td[data-label='Agent'],
   table.call-log tfoot tr.call-log-total-row td.total-row-title {
     font-size: 0.84rem;
