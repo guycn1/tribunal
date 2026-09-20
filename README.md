@@ -10,8 +10,8 @@ The Tribunal decides one question — **justified / not justified** — and give
 
 Three-tier: browser (static HTML/CSS/vanilla JS) → backend (Netlify Functions, TypeScript) → database (Supabase/Postgres). The backend holds the OpenRouter API key and orchestrates every model call; the database stores the case record, every representative argument, every judge ruling, and a full per-call log (model, tokens, cost, status, duration).
 
-- Four representatives run in parallel — they don't depend on each other.
-- Three judges run after, each independently receiving the case record plus all four representative arguments (or however many are actually available — a failed representative call is never backfilled with invented text).
+- Four representatives run concurrently — they don't depend on each other. Dispatch is capped at three calls in flight at once, so the fourth starts as soon as one of the first three finishes; that cap is about the OpenRouter account's own concurrency limit, not about ordering, and four calls firing at once was measured failing where three did not.
+- Three judges run after, each independently receiving the case record plus all four representative arguments (or however many are actually available — a failed representative call is never backfilled with invented text). The same cap applies, which is a no-op for three roles.
 - A failed model call is logged as a visible failure and never produces a fabricated argument or ruling.
 
 **Background Functions + polling.** Representative and judge calls run as Netlify Background Functions rather than standard synchronous invocations — a real generation can take well past the ~10s ceiling a synchronous function gets. The browser triggers a call, gets an immediate `202`, and polls `GET /api/trials/:id` until the result lands.

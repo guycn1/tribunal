@@ -228,8 +228,9 @@ function formatCallTypeHtml(callType) {
 // loadTrial(), which backfills tokens.completion from the matching
 // api_call_logs row for exactly this purpose).
 //
-// A response still truncated after the one conciseness retry is now
-// returned by the server as a real failure (openrouter.ts), not a
+// A response still truncated after every attempt the escalation chain
+// allows (four tiers, up to seven attempts - see buildRetryTiers in
+// openrouter.ts) is now returned by the server as a real failure, not a
 // "success" for this function to badge - so this can no longer fire for
 // any newly-generated result. It's kept, and checks a *multiple* of
 // state.maxTokens rather than an exact match, specifically for trials
@@ -1473,8 +1474,9 @@ function renderCallLog() {
       tr.classList.add('row-degenerated-retried');
     }
 
-    // A response still truncated after the conciseness retry is now a
-    // real failure (openrouter.ts), correctly shown via the status column
+    // A response still truncated after every attempt the escalation chain
+    // allows is now a real failure (openrouter.ts), correctly shown via
+    // the status column
     // below - this badge only still fires for historical rows recorded
     // before that change, where the log genuinely says 'success' with a
     // completion that's an exact multiple of the cap (1x from an older,

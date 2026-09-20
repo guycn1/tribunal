@@ -7,7 +7,11 @@
      of replacing it, and produces the identical result for everyone who
      has not changed it.
      Every font-size in this stylesheet is expressed in rem, so this is
-     the single control point for the app's whole type scale. Lengths that
+     the single control point for the app's whole type scale. One
+     deliberate exception: .model-name is 0.92em, so a model id shrinks
+     relative to whatever line it sits in rather than against the root -
+     it appears in contexts at different sizes and should stay
+     proportional to each. Lengths that
      should NOT track type size - hairline borders, radii, fixed
      structural spacing, breakpoints - stay in px on purpose. */
   font-size: 90%;
@@ -292,10 +296,16 @@ body {
   flex: 1;
   position: relative;
   padding: 28px 32px 60px;
-  /* Raised from 960px by roughly what the sidebar's width above just
-     gave up (its widest case shrank from 280px to 220px) - the sidebar
-     cut was specifically to hand this section, the call log table
-     included, real extra width, not to shrink the page overall. */
+  /* Raised from 960px by roughly what the sidebar's width gave up at the
+     time (its widest case had just been cut from 280px to 220px), to hand
+     this section - the call log table included - real extra width rather
+     than shrink the page overall.
+     That sidebar cut has since been reversed and then some: its ceiling is
+     clamp(135px, 20vw, 360px) today, for its own separate reason (see the
+     .sidebar comment above - beyond it, extra viewport width was just
+     becoming empty margin). So this 1040px no longer offsets a narrower
+     sidebar; it now simply is the width .main gets, and the two were
+     tuned independently rather than as a trade. */
   max-width: 1040px;
   margin: 0 auto;
   width: 100%;
@@ -964,9 +974,9 @@ table.call-log {
      instead.
      This size (and the padding below) used to be the >1000px-viewport
      default, with a smaller size only kicking in below that - but this
-     table's real rendered width is capped by .main's max-width:960px
-     regardless of viewport, so a 1408px-wide window still gives this
-     table only ~900px to work with. A viewport media query alone can't
+     table's real rendered width is capped by .main's max-width (1040px)
+     regardless of viewport, so even a very wide window gives this table
+     only ~974px to work with, measured. A viewport media query alone can't
      see that, so a "wide" viewport still looked cramped. Compact is now
      just the permanent default; see the narrow-phone breakpoint further
      down for the one case (real viewport under ~480px, sidebar already

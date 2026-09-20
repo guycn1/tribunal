@@ -765,12 +765,17 @@ export async function callOpenRouter(
         // Real credit exhaustion on a paid account - the balance is
         // genuinely at $0, which won't resolve by retrying, so this
         // returns immediately rather than looping like the 429/5xx
-        // branches above. The exact phrase "out of credits" is matched by
-        // isOutOfCredits() in app.js - the agent Background Functions wrap
-        // this failure as a 502 rather than passing the 402 status
-        // through directly, so the client can't rely on the status code
-        // alone here the way it does for a direct 4xx from this app's own
-        // endpoints.
+        // branches above. The wording matters because it is what a reader
+        // actually sees: this message is persisted to
+        // api_call_logs.error_message and rendered verbatim on the agent's
+        // card, so it has to explain itself without a status code beside
+        // it. (It used to be matched by an isOutOfCredits() helper in
+        // app.js, which existed because the agent endpoints wrap an
+        // OpenRouter-layer failure as a 502 and the client therefore could
+        // not read the 402 directly. That helper went away with the move to
+        // Background Functions - the client no longer sees the agent's
+        // response at all, only what polling reads back out of the log -
+        // so nothing parses this string today.)
         const message = `OpenRouter account is out of credits (HTTP 402): ${await describeErrorBody(response)}`;
         console.log(`[openrouter] ${label}: attempt ${attempt} - ${message}`);
         return failure(attemptModel, message, undefined, discardedAttempts, Date.now() - lastAttemptStartedAt, { tierIndex, tierCount: tiers.length });
