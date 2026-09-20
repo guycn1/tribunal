@@ -69,14 +69,27 @@ export function getModelForRole(role: string): string {
 // tier exists to fix (truncation, repetition-loop degeneration) are small/
 // weak-model behaviors that a model of this class is expected not to
 // exhibit at any meaningful rate for a single ~300-600 word structured
-// piece of writing. That expectation is the reason for the choice.
+// piece of writing. That was the reason for the choice, and it has since
+// been measured on this workload rather than left as an expectation.
 //
-// Early evidence on this project supports it, though the sample is small:
-// counted directly against api_call_logs, every call this model has served
-// here succeeded and was kept - 5 of 5, at 528-672 completion tokens
-// against its 2800 cap, with none truncated, degenerate or discarded. Too
-// few to call a rate, but nothing so far contradicts the premise. For
-// comparison the predecessor at this tier managed 7 clean out of 8 - this project's tiers 3/4 already cross
+// 21 calls to this model on this project, all clean: 5 served through the
+// app during real trials, and 16 in a targeted batch that drove the real
+// callOpenRouter() with the real Grey Worm and Daenerys prompts at this
+// tier's real 2800-token allowance. Every one finished naturally
+// (finish_reason=stop) and was kept. Completion lengths ran 502-789
+// tokens - the longest reaching 28% of the cap - and none truncated,
+// degenerated or was discarded. The targeted batch was slightly harsher
+// than production, since it omitted the CONCISENESS_REMINDER a real
+// escalation would carry.
+//
+// Read that for what it is. 21 clean calls is a real result on the exact
+// workload this tier serves, and it is not a basis for saying this model
+// will never truncate or degenerate - no sample size establishes that,
+// here or at any other tier. What it does establish is that the failure
+// modes this tier exists to catch have not appeared, at a cap the model
+// is nowhere near reaching. The predecessor at this tier, for contrast,
+// logged 11 discarded attempts across 89 calls, and managed 7 clean out
+// of 8 - this project's tiers 3/4 already cross
 // vendors from their own default without issue, verified across many real
 // trials. Real, verified pricing (per pricing.ts): $1.00/$5.00 per million
 // prompt/completion tokens vs. the dead Mistral Large's $0.50/$1.50 - a
@@ -98,10 +111,17 @@ export function getTruncationFallbackModel(): string {
 // deliberately two models from two different companies, neither an
 // incremental step within the same family: escalating vendor as well as
 // assumed capability removes any shared-family quirk as an explanation,
-// not just a shared-size one. Both were exercised directly against the
-// real API and confirmed to work with this app's request shape; their
-// capability ranking relative to each other and to tier 2 is an
-// assumption, not a measurement.
+// not just a shared-size one. Their capability ranking relative to each
+// other and to tier 2 is an assumption, not a measurement.
+//
+// What has been measured, from api_call_logs: openai/gpt-5.6-sol has
+// served 13 calls here, all kept, none discarded. google/gemini-2.5-pro
+// has served 9 - 6 kept and 3 failed, all three the same HTTP 400
+// "Reasoning is mandatory" rejection from before modelRequiresReasoning()
+// existed below, i.e. a configuration fault rather than anything about
+// the output. Neither has produced a truncated or degenerate result here.
+// Same caveat as tier 2: that records what has been seen at these sample
+// sizes, and is not a promise about what will be.
 // Reached rarely enough (only after every earlier tier has already
 // failed) that the real cost impact stays small despite a materially
 // higher per-token price than either the default model or tier 2 - see

@@ -381,6 +381,22 @@ Two **fast** burst 429s (2.3s and 2.9s) consumed both of tier 1's attempts in ab
 
 **Verified live afterward** on an isolated `netlify dev` instance on separate ports (8899/3997), deliberately so the user's own running dev server on 8888/3999 was never disturbed: a full 7-agent trial, **7/7 clean in 119s, zero escalations off a fast failure, every result served by the cheapest tier**. Both content failures in that run (Jon Snow at 28.6s, Shamgar at 33.7s - genuinely slow real generations) correctly retried on the cheap default model and succeeded there. Worth remembering for next time: `TaskStop` again failed to release the ports, and the orphan had to be killed by PID - matching the already-documented trap.
 
+## Fallback-tier reliability: what has actually been measured (2026-09-21)
+
+Prompted by a false claim in this file's own history. A sweep asserted that `anthropic/claude-haiku-4.5` had produced no kept or discarded result on this project, so its content reliability was untested. That was wrong, and the user caught it: the claim came from grepping this prose log with a keyword list containing "succeed", which does not match "success" - and the one line disproving it reads `jon_snow success 7713ms anthropic/claude-haiku-4.5`. The filter dropped the only relevant line and the silence was read as evidence. **A claim that something has never happened cannot rest on a search returning nothing - only on a count over the data that would contain it.** `api_call_logs` was one query away the whole time.
+
+**Tier 2 - `anthropic/claude-haiku-4.5`: 21 calls on this project, 21 clean.**
+- 5 served through the app during real trials (528-672 completion tokens), all kept.
+- 16 in a targeted batch run for this purpose: `grey_worm` and `daenerys_targaryen` (the two roles that actually escalate), 8 rounds each with cooldowns, driving the **real compiled `callOpenRouter()` and `buildRepresentativeMessages()`** against the real charge sheet at this tier's real **2800-token allowance**. Completion lengths 502-789 tokens, mean 666, longest reaching 28% of the cap; durations 7.2-11.6s. Every call `finish_reason=stop`, none truncated, degenerate or discarded.
+- The batch deliberately omitted the `CONCISENESS_REMINDER` that a real escalation carries, so it was slightly harder than production, not easier. It also bypassed the dev server and wrote nothing to `api_call_logs`, so these 16 are a separate sample from the 5 above rather than an addition to the app's own log.
+- For contrast, the predecessor at this tier (`mistralai/mistral-large-2512`) logged 89 calls with 74 kept, 15 failed and 11 discarded attempts.
+
+**Tier 3 - `openai/gpt-5.6-sol`: 13 calls logged, all kept, none discarded.**
+
+**Tier 4 - `google/gemini-2.5-pro`: 9 calls logged - 6 kept, 3 failed.** All three failures are the same HTTP 400 "Reasoning is mandatory" rejection from before `modelRequiresReasoning()` existed (`ec4e9de`), i.e. a configuration fault, not anything about the output. No content failure at this tier.
+
+**How this should be written about, per the user's explicit direction.** Record what was tested and at what sample size. Do not promise that any model will never truncate or degenerate - no sample establishes that, and it is as true of tiers 3 and 4 as of tier 2. Equally, do not hedge these results into meaninglessness or imply failures are likely when they have not occurred: 21 clean calls on the exact workload a tier serves is a real result, produced by real testing, and the write-up should say so plainly. The honest shape is "this is what happened, across this many calls, under these conditions" - confident about the observation, silent about the guarantee.
+
 ## Call log table sizing: the measured facts (2026-09-20)
 
 Two column-fit problems were solved by measuring the real rendered table in a headless browser rather than estimating, and the measurements themselves are worth keeping — they're the constraints any future column change has to work inside.
