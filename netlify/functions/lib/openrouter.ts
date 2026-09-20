@@ -51,11 +51,11 @@ const MIN_REMAINING_TO_ATTEMPT_MS = 10000;
 // Counting EVERY transient failure against a tier's attempt budget (the
 // first version of the escalation fix) turned out to over-correct badly:
 // two burst 429s, returned in 2.3s and 2.9s, consumed both of tier 1's
-// attempts and pushed a representative onto the paid tier roughly five
-// seconds after the user pressed Begin new trial - for a rate limit that
-// clears on its own in a moment. A burst limit is exactly the failure that
-// deserves a patient retry on the cheapest model, not an immediate
-// escalation to a pricier one.
+// attempts and pushed a representative onto a tier costing roughly 20x
+// more per prompt token, roughly five seconds after the user pressed
+// Begin new trial - for a rate limit that clears on its own in a moment.
+// A burst limit is exactly the failure that deserves a patient retry on
+// the cheapest model, not an immediate escalation to a pricier one.
 //
 // A genuine hang is the opposite case and is what the escalation budget
 // exists for: it consumes the whole per-attempt ceiling before failing.
@@ -168,10 +168,13 @@ interface RetryTier {
 // see getTruncationFallbackModel's comment in models.ts - was $0.50/$1.50
 // per million prompt/completion tokens; its replacement,
 // anthropic/claude-haiku-4.5, is $1.00/$5.00, a real 2-3x step up). A
-// second attempt at the free-tier-cheap default model catches more
-// recoverable truncations/degeneracies before ever paying for the pricier
-// tier, at zero extra cost when it works (the default model is priced in
-// cents per million tokens - see pricing.ts). This is also what surfaced
+// second attempt at the default model catches more recoverable
+// truncations/degeneracies before reaching for a costlier tier. Note that
+// every tier in this chain is a genuinely paid model - nothing here runs
+// on a free tier - so this is about relative cost, not about avoiding
+// spend altogether: the default model is simply the cheapest of the four
+// by a wide margin ($0.05/$0.08 per million prompt/completion tokens
+// against tier 2's $1.00/$5.00 - see pricing.ts). This is also what surfaced
 // the isFallbackAttempt fix below: with tier 1 now allowed more than one
 // attempt, "is this attempt a retry" could no longer be inferred from
 // tierIndex alone.

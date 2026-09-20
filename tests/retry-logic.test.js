@@ -10,7 +10,7 @@
 // chain that silently never escalated, a timeout ceiling that ignored
 // prompt size, a degeneration check blind to its most common signature, a
 // fractional millisecond that would have crashed half of all real calls,
-// and a fast-429 storm that escalated to a paid model within five seconds.
+// and a fast-429 storm that escalated to a costlier tier within five seconds.
 // Each one below is a test, so none of them can quietly come back.
 
 const { execFileSync } = require('node:child_process');
@@ -150,7 +150,8 @@ async function main() {
   // ------------------------------------------------------------------ 4
   await test('Fast 429 bounces do NOT burn tier attempts', async () => {
     // The over-correction: two burst 429s (2.3s and 2.9s in the real trial)
-    // consumed tier 1 entirely and escalated to a paid model in ~5 seconds.
+    // consumed tier 1 entirely and escalated to a costlier tier in ~5 seconds.
+    // (Every tier here is a paid model; tier 1 is simply the cheapest by far.)
     const calls = [];
     global.fetch = async (_u, o) => {
       const m = JSON.parse(o.body).model;
@@ -159,7 +160,7 @@ async function main() {
     };
     const r = await callOpenRouter(DEFAULT, [{ role: 'user', content: 'hi' }], 1400, 'rep:test');
     check('stayed on the cheap default model', r.model === DEFAULT, r.model);
-    check('never escalated to a paid tier', !calls.includes(TIER2), JSON.stringify(calls));
+    check('never escalated to a costlier tier', !calls.includes(TIER2), JSON.stringify(calls));
     check('succeeded once the burst cleared', r.status === 'success', r.status);
     check('the 429s are still logged', (r.discardedAttempts || []).length === 2, String((r.discardedAttempts || []).length));
     check('logged as not counted against the tier', (r.discardedAttempts || []).every((d) => /not counted against it/.test(d.errorMessage)), (r.discardedAttempts || [])[0]?.errorMessage);
@@ -221,7 +222,7 @@ async function main() {
     const r = await callOpenRouter(DEFAULT, [{ role: 'user', content: 'hi' }], 1400, 'judge:test', undefined, undefined, () => userAborted);
     check('made no further attempt after the abort', calls.length === 1, JSON.stringify(calls));
     check('reported as an abort, not a generic failure', r.status === 'failed' && r.errorMessage.startsWith('[aborted-mid-call]'), r.errorMessage);
-    check('never reached a paid tier', !calls.includes(TIER2), JSON.stringify(calls));
+    check('never reached a costlier tier', !calls.includes(TIER2), JSON.stringify(calls));
   });
 
   // ------------------------------------------------------------------ 9
