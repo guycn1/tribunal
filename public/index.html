@@ -26,7 +26,23 @@
                across the web wherever a lightweight GitHub link icon is
                needed. currentColor so it follows .github-link's own color/
                opacity styling in styles.css rather than needing a second
-               place to keep a color in sync. -->
+               place to keep a color in sync.
+
+               Size ceiling, if this is ever revisited: 30px. The icon
+               shares .sidebar-top-row with .app-title, whose line box
+               measures 30.23px at the current type scale (1.4rem against
+               the inherited 1.5 line-height), and that is what sets the
+               row's height. Anything up to that fits inside it and costs
+               nothing: 24, 28, 29 and 30px all leave the row at 30.23px
+               and "Begin new trial" at the same offset, measured. At 31px
+               the icon becomes the tallest thing in the row, so the row
+               grows (+0.77px) and everything below it in the sidebar
+               shifts down with it - a real layout change to make
+               deliberately, not a side effect to discover afterwards.
+               Note the two do not scale together: this width/height is in
+               px while .app-title is in rem, so a reader with a larger
+               browser default gets more headroom here, and lowering
+               :root's font-size would eat into it. -->
           <svg viewBox="0 0 16 16" width="28" height="28" fill="currentColor" aria-hidden="true" focusable="false">
             <path
               fill-rule="evenodd"

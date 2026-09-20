@@ -108,6 +108,10 @@ body {
   margin-bottom: 2px;
 }
 
+/* This rule's line box is what sets .sidebar-top-row's height, which makes
+   it load-bearing for how large the GitHub icon beside it can be before the
+   row (and everything below it in the sidebar) grows - see the size-ceiling
+   note on that icon's <svg> in index.html. */
 .app-title {
   margin: 0;
   font-size: 1.4rem;
