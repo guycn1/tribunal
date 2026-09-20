@@ -941,9 +941,16 @@ table.call-log tfoot tr.call-log-total-row td {
   font-weight: 600;
 }
 
-table.call-log tfoot tr.call-log-total-row td:first-child {
-  text-align: left;
-}
+/* Both of the totals row's own cells span several columns - the title covers
+   Agent/Type/Model, the footnote covers Status/Time - and both are centred
+   within that span by the shared table.call-log td rule above, like every
+   other cell in the table. The title carried a `text-align: left` override
+   here until it was removed: across three columns that read as though the
+   caption belonged to the Agent column alone rather than to the span it
+   actually covers. Nothing replaces it, since centred is already the
+   inherited behaviour. The card layout below 720px still left-aligns both
+   deliberately - there every cell is its own full-width block, so there is
+   no span to sit in the middle of, and a heading reads better flush left. */
 
 /* A discarded attempt that was recovered by a retry or escalation - either
    truncated/degenerate content (DEGENERATE_RETRIED_*_MARKER) or a plain
