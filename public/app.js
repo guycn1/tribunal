@@ -2,6 +2,7 @@ const REPRESENTATIVE_ROLES = ['jon_snow', 'tyrion_lannister', 'daenerys_targarye
 const JUDGE_ROLES = ['barak', 'elon', 'shamgar'];
 
 // Must match ABORTED_BY_USER_MESSAGE in netlify/functions/lib/db.ts exactly
+// (asserted by tests/shared-constants.test.js)
 // - used to recognize an aborted call's log row when rebuilding history
 // (see loadTrial) so it renders with the distinct "Aborted" badge instead
 // of the generic "Call failed" one.
@@ -12,8 +13,9 @@ const ABORTED_BY_USER_MESSAGE = 'Aborted by user before this call could complete
 // tell a discarded-but-recovered attempt (the role went on to succeed or is
 // still trying a further tier) from a discarded-and-fatal one (this was the
 // last available tier and it failed too), and to pick the right badge for
-// each. Nothing checks that the two files agree, so adding a marker there
-// means adding it here as well.
+// each. There is no import to keep them in step - this file is served as
+// plain static JS with no build step - so tests/shared-constants.test.js
+// asserts the two sets match instead. Add a marker there, add it here.
 //
 // "DEGENERATE" in these names is an umbrella for the whole content-quality
 // class - it covers a response cut off at the token cap as well as one

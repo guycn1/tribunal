@@ -373,7 +373,9 @@ const CONCISENESS_REMINDER: OpenRouterMessage = {
 // db.ts and copied there too) so the frontend can tell a
 // discarded-but-recovered attempt from a discarded-and-fatal one without
 // any shared module between the two. Adding a marker here means adding it
-// there as well; there is no build step that would catch a mismatch.
+// there as well. No build step catches a mismatch, but
+// tests/shared-constants.test.js does - it reads both files and asserts
+// the two sets are identical.
 //
 // NAMING, worth knowing before trusting the word: "DEGENERATE" in these
 // three constants is an umbrella for the whole content-quality class, NOT

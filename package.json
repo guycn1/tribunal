@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "netlify dev",
     "typecheck": "tsc --noEmit",
-    "test": "node tests/retry-logic.test.js && node tests/render-cards.test.js"
+    "test": "node tests/retry-logic.test.js && node tests/render-cards.test.js && node tests/shared-constants.test.js"
   },
   "dependencies": {
     "@netlify/functions": "^2.8.1",
