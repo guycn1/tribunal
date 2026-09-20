@@ -242,6 +242,17 @@ check('Type renders the full word for the card view', bodyRow.includes('<span cl
 check('Model renders the shortened id for the table', bodyRow.includes('>mistral-small-24b-instruct-2501</abbr>'), bodyRow.slice(0, 400));
 check('Model renders the full id, vendor prefix and all, for the card view', bodyRow.includes('<span class="col-full">mistralai/mistral-small-24b-instruct-2501</span>'), bodyRow.slice(0, 400));
 
+console.log('\n=== The token breakdown can only wrap in one place ===');
+// In the Tokens column's fixed width, ordinary spaces let this string wrap
+// wherever it runs out of room, stranding a lone "out" on its own line.
+// Binding each figure to its unit, and the slash to the first figure,
+// leaves exactly one legal break point - after the slash - so it either
+// fits on one line or splits evenly. The column widths are untouched.
+const tokenCell = (bodyRow.match(/<td data-label="Tokens">[\s\S]*?<\/td>/) || [''])[0];
+check('each figure is bound to its unit', /1,027&nbsp;in/.test(tokenCell) && /606&nbsp;out/.test(tokenCell), tokenCell.slice(0, 200));
+check('the slash is bound to the first figure', /in&nbsp;\//.test(tokenCell), tokenCell.slice(0, 200));
+check('exactly one breakable space remains', (tokenCell.match(/\/ \d/g) || []).length === 1, tokenCell.slice(0, 200));
+
 // The totals row is deliberately different: its first and last cells are a
 // heading and a footnote, not labelled fields, and are marked as such so
 // the card layout can style them that way.

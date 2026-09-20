@@ -151,6 +151,22 @@ function shortModelName(modelId) {
   return modelId.replace(/^[^/]+\//, '').replace(/:free$/, '');
 }
 
+// "1,072 in / 1,400 out" for the Tokens column's secondary line.
+//
+// The spaces inside each figure are non-breaking, and the slash is bound to
+// the first figure, so the only place this string can wrap is after the
+// slash. Left to ordinary spaces it wraps wherever it runs out of room,
+// which in the Tokens column's fixed width strands a lone "out" on a line
+// of its own ("1,072 in / 1,400" + "out"). Fixing it this way keeps the
+// column widths exactly as deterministic as they were - the colgroup
+// percentages and table-layout: fixed are untouched, since the problem was
+// never the column's width but where the text was permitted to break.
+// A run that still cannot fit is broken by the cell's overflow-wrap as a
+// last resort, so this can never overflow.
+function formatTokenBreakdown(promptTokens, completionTokens) {
+  return `${promptTokens.toLocaleString()}&nbsp;in&nbsp;/ ${completionTokens.toLocaleString()}&nbsp;out`;
+}
+
 // 1 -> "first", 2 -> "second", ... used for the "(first attempt)"/"(second
 // attempt)" suffix on a still-loading card's model line (see
 // buildAgentStatusBody) - only ever needs to cover however many attempts
@@ -1452,7 +1468,7 @@ function renderCallLog() {
     const tokens = `
       <div class="cell-stack">
         <strong>${entry.totalTokens.toLocaleString()}</strong>
-        <div class="status-caption">${entry.promptTokens.toLocaleString()} in / ${entry.completionTokens.toLocaleString()} out</div>
+        <div class="status-caption">${formatTokenBreakdown(entry.promptTokens, entry.completionTokens)}</div>
       </div>
     `;
 
@@ -1560,7 +1576,7 @@ function renderCallLogTotals() {
     <td data-label="Tokens">
       <div class="cell-stack">
         <strong>${totalTokens.toLocaleString()}</strong>
-        <div class="status-caption">${totalPromptTokens.toLocaleString()} in / ${totalCompletionTokens.toLocaleString()} out</div>
+        <div class="status-caption">${formatTokenBreakdown(totalPromptTokens, totalCompletionTokens)}</div>
       </div>
     </td>
     <td data-label="Cost">${formatCost(totalCost)}</td>
