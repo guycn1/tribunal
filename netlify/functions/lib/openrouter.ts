@@ -437,10 +437,17 @@ export async function callOpenRouter(
   // Fired the moment a discarded attempt is decided (see the `continue`
   // branch below), before the chain moves on to the next attempt/tier -
   // lets the caller persist it to the DB immediately, rather than only
-  // after this whole function returns. This is what makes the escalation
-  // chain's progress visible to a client polling GET /api/trials/:id
-  // mid-call - without it, every discarded attempt only became visible
-  // once the entire chain had already finished (see representative-
+  // after this whole function returns. That is what puts each discarded
+  // attempt in the call log as it happens, rather than the whole batch
+  // appearing at once after the chain finishes - without it, every
+  // discarded attempt only became visible once the entire chain had
+  // already finished.
+  //
+  // Note what this does NOT do, since it used to claim otherwise: it is
+  // not what shows a live card "currently trying X". A discarded attempt
+  // is by definition over, so this is always one step behind whatever is
+  // actually in flight. onAttemptStart below is what covers that, and the
+  // two exist separately for exactly this reason. (see representative-
   // background.ts/judge-background.ts, which used to log the whole
   // discardedAttempts array in one batch after awaiting this function).
   // Optional and fire-and-forget-tolerant (awaited if it returns a

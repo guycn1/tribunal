@@ -222,8 +222,11 @@ function formatCallTypeHtml(callType) {
 // True when a successful call's completion hit the shared token cap
 // (state.maxTokens, from /api/case) rather than finishing naturally - the
 // server already logs this distinctly via finish_reason (see openrouter.ts),
-// but that's only visible in the terminal; this is what makes it visible
-// here too. Works for both a live entry (tokens included directly in the
+// but that's only visible in the terminal. This used to be what surfaced
+// it in the UI; it no longer is, for anything newly generated - the server
+// now fails such a call outright, so it reaches the card as a real failure
+// rather than as a badge on a success. See the paragraph below: what
+// remains here is a reader for historical rows. Works for both a live entry (tokens included directly in the
 // success response) and a historical one loaded from a past trial (see
 // loadTrial(), which backfills tokens.completion from the matching
 // api_call_logs row for exactly this purpose).
@@ -350,14 +353,18 @@ function updateHistoryLockState() {
   el.historyList.classList.toggle('running-locked', state.running);
 }
 
-// Records which roles were still pending, tells the in-flight calls to stop,
-// gives immediate visual feedback (doesn't wait on the network round trip
-// below), then persists the abort as a real, visible fact so the sidebar
-// reflects it later too - not just for this page view. Persisting matters
-// because aborting a fetch() client-side does not reliably stop the Netlify
-// invocation it was talking to, so without a persisted record a stray
-// success/failure logged after the fact could make an aborted run look
-// like an ordinary one.
+// Records which roles were still pending, gives immediate visual feedback
+// (doesn't wait on the network round trip below), and persists the abort as
+// a real, visible fact.
+//
+// Persisting is not just bookkeeping - it does two jobs, and telling the
+// in-flight calls to stop is the more important one. Aborting a fetch()
+// client-side cannot stop the Netlify invocation it was talking to, so the
+// persisted row is the only channel there is: each running call polls for
+// it between attempts and stops itself (isTrialAborted in db.ts). Second,
+// it makes the abort durable, so the sidebar reflects it on a later visit
+// and a stray success or failure logged after the fact can't make an
+// aborted run look like an ordinary one.
 async function abortCurrentTrial() {
   if (!state.abortController || !state.trialId) return;
 
