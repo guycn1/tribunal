@@ -292,9 +292,19 @@ function detectDegenerateRun(content: string): { degenerate: boolean; runLength:
 // live cases - all on the day it shipped, all on the tier-1 default model,
 // tyrion_lannister twice and grey_worm three times, at 4 to 8 verbatim
 // repeats each. The older run-on check above has caught two, both
-// grey_worm, both on the tier-2 model of the time. Seven real catches
-// between them, and no false positive has been identified in any of the
-// live runs since.
+// grey_worm, both on the tier-2 model of the time, at 180 and 84 words -
+// far past the 40-word line, and the 84-word one was read in full and
+// confirmed degenerate.
+//
+// On false positives, the honest answer is that they are mostly not
+// auditable here, and this should not be reported as if it were a clean
+// precision record. A discarded attempt's content is never stored (see
+// the note further down on why the offending text is quoted into the
+// reason), so for the catches predating that quoting there is no way to
+// check either way. Where a sample does exist, it shows a full sentence
+// repeated verbatim, which deliberate anaphora cannot produce - it varies
+// the continuation, so the whole sentences differ. That is the reason to
+// think precision is good; it is not a measurement of it.
 const REPEATED_SENTENCE_THRESHOLD = 4;
 const MIN_WORDS_FOR_REPEAT_CHECK = 5;
 

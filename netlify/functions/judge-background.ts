@@ -28,11 +28,11 @@ import type { JudgeRole, RepresentativeRole } from './lib/types';
 // completion under it.
 //
 // Asked for, not observed: in practice representatives are the ones that
-// overrun. Measured across this project's real trials, judges have run to
-// the cap very rarely - one batch of 30 judge calls produced zero
-// truncations - while representatives hit it often enough to need the
-// escalation chain regularly. Whatever drives that, it is not the stated
-// word targets, so do not reason about the cap from the targets alone.
+// overrun. Counted across every row in api_call_logs, judges have hit the
+// cap 2 times in 363 calls (0.6%), representatives 67 times in 897 (7.5%)
+// - representatives run out of room about thirteen times as often as the
+// role with the longer word target. Whatever drives that, it is not the
+// stated targets, so do not reason about the cap from the targets alone.
 //
 // Shares AGENT_MAX_TOKENS with representative-background.ts - see the
 // comment on that constant in models.ts for why one shared value across
