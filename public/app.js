@@ -143,12 +143,33 @@ function formatDateTimeHtml(dateInput) {
   return `<span class="datetime-part">${datePart},</span><br /><span class="datetime-part">${timePart}</span>`;
 }
 
-// "mistralai/mistral-small-24b-instruct-2501" -> "mistral-small-24b-instruct-2501"
-// Strips any "provider/" prefix and a trailing ":free" suffix, if present -
-// display only, the full id is what's actually sent to the backend/OpenRouter.
+// "mistralai/mistral-small-24b-instruct-2501" -> "mistral-small-24b-2501"
+// Strips any "provider/" prefix, a trailing ":free" suffix, and a standalone
+// "-instruct" segment, if present - display only, the full id is what's
+// actually sent to the backend/OpenRouter, and is still reachable from the
+// table (the <abbr title> on hover) and shown in full in the card layout
+// below 720px.
+//
+// All three are dropped for the same reason: none of them tell a reader of
+// this log anything the rest of the id doesn't. "instruct" distinguishes an
+// instruction-tuned model from its base variant, and every model this app
+// can use is instruction-tuned - it is as content-free here as the vendor
+// prefix. The date stamp ("-2501") is deliberately kept: it is the only
+// thing separating two pinned snapshots of the same model, which is exactly
+// what this column exists to report.
+//
+// These are generic rules rather than a per-model lookup table on purpose.
+// Every tier's model id is env-var-configurable (see models.ts), so a table
+// could never be relied on to cover whatever is actually running - it would
+// silently miss the one case it was added for. If some future id still reads
+// badly after these rules, an exceptions table consulted ahead of them is
+// the escape hatch, but there is no point building one for a set of one.
 function shortModelName(modelId) {
   if (!modelId) return 'unknown model';
-  return modelId.replace(/^[^/]+\//, '').replace(/:free$/, '');
+  return modelId
+    .replace(/^[^/]+\//, '')
+    .replace(/:free$/, '')
+    .replace(/-instruct(?=-|$)/, '');
 }
 
 // "1,072 in / 1,400 out" for the Tokens column's secondary line.

@@ -113,7 +113,7 @@ console.log('\n=== app.js executes cleanly (catches a TDZ-class load crash) ==='
 let app;
 try {
   // Hand back exactly the pieces under test from app.js's own top-level scope.
-  app = new Function(`${SRC}\n;return { state, el, renderRepresentatives, renderJudges, renderCallLog, agentCardSignature, REPRESENTATIVE_ROLES, JUDGE_ROLES };`)();
+  app = new Function(`${SRC}\n;return { state, el, renderRepresentatives, renderJudges, renderCallLog, agentCardSignature, shortModelName, REPRESENTATIVE_ROLES, JUDGE_ROLES };`)();
   check('top-level code ran with no error', true);
 } catch (error) {
   check('top-level code ran with no error', false, error.message);
@@ -239,7 +239,7 @@ check('all eight columns are present', bodyCells.length === 8, String(bodyCells.
 // stopped being rendered, one of the two views would silently lose it.
 check('Type renders the abbreviated form for the table', bodyRow.includes('<abbr class="col-short" title="Representative">R</abbr>'), bodyRow.slice(0, 200));
 check('Type renders the full word for the card view', bodyRow.includes('<span class="col-full">Representative</span>'), bodyRow.slice(0, 200));
-check('Model renders the shortened id for the table', bodyRow.includes('>mistral-small-24b-instruct-2501</abbr>'), bodyRow.slice(0, 400));
+check('Model renders the shortened id for the table', bodyRow.includes('>mistral-small-24b-2501</abbr>'), bodyRow.slice(0, 400));
 check('Model renders the full id, vendor prefix and all, for the card view', bodyRow.includes('<span class="col-full">mistralai/mistral-small-24b-instruct-2501</span>'), bodyRow.slice(0, 400));
 
 console.log('\n=== The token breakdown can only wrap in one place ===');
@@ -261,6 +261,35 @@ check('totals row marks its title cell', footRow.includes('total-row-title'), fo
 check('totals row marks its footnote cell', footRow.includes('total-row-note'), footRow.slice(0, 120));
 const footLabelled = (footRow.match(/data-label=/g) || []).length;
 check('totals row labels its three real value cells', footLabelled === 3, String(footLabelled));
+
+console.log('\n=== Model ids shorten to something the table column can hold ===');
+// The Model column is 131px at the narrowest this table ever renders (655px
+// wide, at a 901px viewport - below that the sidebar stacks and the table
+// gets more room, not less). Measured there, the full id needed 161px and
+// wrapped; every id below now fits on one line. These assert the rules, not
+// the pixels: a vendor prefix goes, a ":free" suffix goes, a standalone
+// "-instruct" segment goes, and the date stamp stays - it is the only thing
+// telling two pinned snapshots of one model apart.
+const { shortModelName } = app;
+[
+  ['mistralai/mistral-small-24b-instruct-2501', 'mistral-small-24b-2501'],
+  ['anthropic/claude-haiku-4.5', 'claude-haiku-4.5'],
+  ['openai/gpt-5.6-sol', 'gpt-5.6-sol'],
+  ['google/gemini-2.5-pro', 'gemini-2.5-pro'],
+  // Still in real api_call_logs rows from before this tier was replaced.
+  ['mistralai/mistral-large-2512', 'mistral-large-2512'],
+  // "-instruct" at the very end, and alongside a ":free" suffix.
+  ['meta-llama/llama-3.3-70b-instruct', 'llama-3.3-70b'],
+  ['meta-llama/llama-3.3-70b-instruct:free', 'llama-3.3-70b'],
+  // No vendor prefix at all, and a missing id, both must survive.
+  ['some-model-2501', 'some-model-2501'],
+  [undefined, 'unknown model'],
+].forEach(([full, expected]) => {
+  const got = shortModelName(full);
+  check(`${full} -> ${expected}`, got === expected, got);
+});
+// A name that merely contains the letters is not a segment and must survive.
+check('"instructor" is not stripped', shortModelName('vendor/model-instructor-v2') === 'model-instructor-v2', shortModelName('vendor/model-instructor-v2'));
 
 console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} check(s) failed.`);
 process.exit(failures === 0 ? 0 : 1);
