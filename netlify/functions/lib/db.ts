@@ -354,6 +354,42 @@ export async function isGlobalCallCapExceeded(): Promise<{ exceeded: boolean; co
   return { exceeded: (count ?? 0) >= GLOBAL_CALL_CAP, count: count ?? 0 };
 }
 
+// Has the user aborted this trial? Checked by the agent Background
+// Functions between attempts (see the isAborted callback on
+// callOpenRouter) so an abandoned trial stops costing real money.
+//
+// abort.ts writes one row carrying exactly ABORTED_BY_USER_MESSAGE per
+// role that was still pending when the user clicked Abort, which makes
+// that row the only durable, server-visible record that the abort
+// happened - there is no other channel, since a Background Function
+// invocation cannot be cancelled by the client that started it.
+//
+// Deliberately trial-wide rather than per-role: Abort stops the whole
+// trial, and a role that has not yet written its own abort row (because
+// the client did not consider it pending at that instant) should still
+// stop rather than carry on alone against a trial the user has visibly
+// walked away from.
+//
+// Fails CLOSED-to-continuing on error - a Supabase hiccup returns false
+// ("not aborted"), so a transient lookup failure can never silently kill a
+// real, wanted call. Spending a little extra on a call the user abandoned
+// is the far cheaper mistake of the two.
+export async function isTrialAborted(trialId: string): Promise<boolean> {
+  const supabase = getSupabaseClient();
+  const { count, error } = await supabase
+    .from('api_call_logs')
+    .select('*', { count: 'exact', head: true })
+    .eq('trial_id', trialId)
+    .eq('error_message', ABORTED_BY_USER_MESSAGE);
+
+  if (error) {
+    console.error('isTrialAborted: lookup failed, treating as not aborted:', error.message);
+    return false;
+  }
+
+  return (count ?? 0) > 0;
+}
+
 export async function logApiCall(params: {
   trialId: string;
   agentRole: string;

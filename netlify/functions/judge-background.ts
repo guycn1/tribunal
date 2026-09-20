@@ -14,6 +14,7 @@ import {
   upsertAgentProgress,
   markTrialCompletedIfJudgingDone,
   isGlobalCallCapExceeded,
+  isTrialAborted,
   GLOBAL_CALL_CAP,
 } from './lib/db';
 import { isSiteGateOk } from './lib/siteGate';
@@ -111,8 +112,21 @@ const rawHandler: Handler = async (event) => {
         tierIndex: info.tierIndex,
         attemptInTier: info.attemptInTier,
         tierMaxAttempts: info.tierMaxAttempts,
-      })
+      }),
+    // See the matching comment in representative-background.ts - this is
+    // what stops an abandoned trial from continuing to spend real money
+    // through the escalation chain after the user has hit Abort.
+    () => isTrialAborted(id)
   );
+
+  // Same reasoning as representative-background.ts: never write a ruling
+  // for a trial the user already aborted. This was a real, observed
+  // problem (2026-09-20) - two judge calls finished 30s and 1m32s after
+  // the abort and wrote real rulings into an aborted trial.
+  if (await isTrialAborted(id)) {
+    console.warn(`judge:${judgeRole}: trial was aborted by the user - discarding this result instead of saving it.`);
+    return json(200, { role: judgeRole, status: 'aborted' });
+  }
 
   const parsed = result.status === 'success' && result.content ? parseJudgeOutput(result.content) : null;
   const callFailed = result.status === 'failed' || !result.content;

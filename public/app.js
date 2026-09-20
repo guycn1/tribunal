@@ -21,6 +21,15 @@ const DEGENERATE_FINAL_MARKER = '[degenerate-final]';
 // "not a terminal outcome" treatment as the two DEGENERATE_RETRIED_*
 // markers above.
 const HTTP_ERROR_ESCALATED_MARKER = '[http-error-escalated]';
+// A transient failure (timeout, 429, 5xx, empty-content 200) that was
+// retried or escalated. Before these were logged at all, a call that kept
+// timing out left the card frozen with nothing in the log to explain it.
+const TRANSIENT_RETRIED_MARKER = '[transient-retried]';
+// The chain stopped itself because the user aborted the trial while it was
+// still running server-side. Terminal, not a retry - but it means "stopped
+// on purpose", not "broke", so it renders as an abort rather than a
+// failure.
+const ABORTED_MID_CALL_MARKER = '[aborted-mid-call]';
 
 // Sent as the X-Site-Gate header on every call that creates a trial or
 // spends OpenRouter quota (see isSiteGateOk in
@@ -490,7 +499,8 @@ function isRetriedMarkerLog(log) {
     typeof log.errorMessage === 'string' &&
     (log.errorMessage.startsWith(DEGENERATE_RETRIED_SAME_MODEL_MARKER) ||
       log.errorMessage.startsWith(DEGENERATE_RETRIED_DIFF_MODEL_MARKER) ||
-      log.errorMessage.startsWith(HTTP_ERROR_ESCALATED_MARKER))
+      log.errorMessage.startsWith(HTTP_ERROR_ESCALATED_MARKER) ||
+      log.errorMessage.startsWith(TRANSIENT_RETRIED_MARKER))
   );
 }
 
@@ -504,7 +514,14 @@ function isRetriedMarkerLog(log) {
 // the real, unstripped text.
 function stripMarkerPrefix(message) {
   if (typeof message !== 'string') return message;
-  for (const marker of [DEGENERATE_RETRIED_SAME_MODEL_MARKER, DEGENERATE_RETRIED_DIFF_MODEL_MARKER, DEGENERATE_FINAL_MARKER, HTTP_ERROR_ESCALATED_MARKER]) {
+  for (const marker of [
+    DEGENERATE_RETRIED_SAME_MODEL_MARKER,
+    DEGENERATE_RETRIED_DIFF_MODEL_MARKER,
+    DEGENERATE_FINAL_MARKER,
+    HTTP_ERROR_ESCALATED_MARKER,
+    TRANSIENT_RETRIED_MARKER,
+    ABORTED_MID_CALL_MARKER,
+  ]) {
     if (message.startsWith(marker)) return message.slice(marker.length).trimStart();
   }
   return message;
@@ -562,9 +579,16 @@ function deriveRoleStates(data) {
         // for a role that's actually still in progress.
         continue;
       }
+      // Two different rows can mean "the user stopped this": the one
+      // abort.ts writes for every pending role at the moment Abort is
+      // clicked, and the one the call writes for itself when its own
+      // between-attempts abort check catches up (see ABORTED_MID_CALL_MARKER
+      // in openrouter.ts). Both are deliberate stops, not failures, so
+      // both get the "Aborted" treatment rather than a red "Call failed".
+      const abortedMidCall = typeof log.errorMessage === 'string' && log.errorMessage.startsWith(ABORTED_MID_CALL_MARKER);
       store[log.agentRole] =
-        log.errorMessage === ABORTED_BY_USER_MESSAGE
-          ? { status: 'aborted', error: log.errorMessage }
+        log.errorMessage === ABORTED_BY_USER_MESSAGE || abortedMidCall
+          ? { status: 'aborted', error: stripMarkerPrefix(log.errorMessage) }
           : { status: 'failed', error: stripMarkerPrefix(log.errorMessage) || 'Unknown failure' };
     } else if (store[log.agentRole] && store[log.agentRole].status === 'success') {
       // representative_arguments/judge_rulings don't store token counts
@@ -1298,8 +1322,14 @@ function renderCallLog() {
     // the degenerate/truncation case), since retrying the exact same
     // broken model id has no plausible upside.
     const isHttpErrorEscalated = err.startsWith(HTTP_ERROR_ESCALATED_MARKER);
+    // A transient failure (timeout/429/5xx/empty response) that was retried
+    // or escalated. These are the rows that did not exist at all before
+    // 2026-09-20 - the retry branches used to loop silently, which is
+    // exactly why a six-minute stall left nothing to read here afterward.
+    const isTransientRetried = err.startsWith(TRANSIENT_RETRIED_MARKER);
+    const isAbortedMidCall = err.startsWith(ABORTED_MID_CALL_MARKER);
 
-    if (isDegenerateRetried || isHttpErrorEscalated) {
+    if (isDegenerateRetried || isHttpErrorEscalated || isTransientRetried) {
       // Dims the whole row - a visual cue that this failure wasn't fatal
       // and the same call likely went on to succeed on a later row.
       tr.classList.add('row-degenerated-retried');
@@ -1342,6 +1372,20 @@ function renderCallLog() {
         <div class="cell-stack">
           <span class="badge badge-warn">Escalated</span>
           <div class="status-caption">(model error, escalated to a different model)</div>
+        </div>
+      `;
+    } else if (isTransientRetried) {
+      statusCellHtml = `
+        <div class="cell-stack">
+          <span class="badge badge-warn">No response</span>
+          <div class="status-caption">(timed out or refused, retried)</div>
+        </div>
+      `;
+    } else if (isAbortedMidCall) {
+      statusCellHtml = `
+        <div class="cell-stack">
+          <span class="badge badge-warn">Aborted</span>
+          <div class="status-caption">(stopped mid-call by the user)</div>
         </div>
       `;
     } else if (isDegenerateFinal) {

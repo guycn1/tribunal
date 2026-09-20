@@ -7,7 +7,7 @@ import { REPRESENTATIVES } from './lib/representatives';
 import { buildRepresentativeMessages } from './lib/prompts';
 import { callOpenRouter } from './lib/openrouter';
 import { getModelForRole, AGENT_MAX_TOKENS } from './lib/models';
-import { getTrial, upsertRepresentativeArgument, logApiCall, upsertAgentProgress, isGlobalCallCapExceeded, GLOBAL_CALL_CAP } from './lib/db';
+import { getTrial, upsertRepresentativeArgument, logApiCall, upsertAgentProgress, isGlobalCallCapExceeded, isTrialAborted, GLOBAL_CALL_CAP } from './lib/db';
 import { isSiteGateOk } from './lib/siteGate';
 import type { RepresentativeRole } from './lib/types';
 
@@ -113,8 +113,24 @@ const rawHandler: Handler = async (event) => {
         tierIndex: info.tierIndex,
         attemptInTier: info.attemptInTier,
         tierMaxAttempts: info.tierMaxAttempts,
-      })
+      }),
+    // Stops the escalation chain if the user abandoned this trial while it
+    // was still running - see the isAborted parameter's own comment in
+    // openrouter.ts for why a Background Function needs to poll for this
+    // rather than being cancelled directly.
+    () => isTrialAborted(id)
   );
+
+  // A trial the user aborted must not get a result written for it after
+  // the fact: the abort row is already in the log, the sidebar already
+  // reads the trial as "Aborted", and quietly resurrecting a role's
+  // argument minutes later would contradict both. The call may still have
+  // completed before the abort check caught it, so this is checked once
+  // more here rather than assumed from the result alone.
+  if (await isTrialAborted(id)) {
+    console.warn(`representative:${repRole}: trial was aborted by the user - discarding this result instead of saving it.`);
+    return json(200, { role: repRole, status: 'aborted' });
+  }
 
   await logApiCall({
     trialId: id,

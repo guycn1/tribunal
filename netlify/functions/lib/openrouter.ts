@@ -44,18 +44,49 @@ const TOTAL_BUDGET_MS = 650000;
 // jitter can't quietly cancel it out again.
 const MIN_REMAINING_TO_ATTEMPT_MS = 10000;
 
-// Per-attempt ceiling, scaled to how much text the call actually asked
-// for. A timeout signal passed to fetch() stays armed while the response
-// body is read, so this has to cover generation time, not just
-// time-to-headers. Real successful completions at the current
-// AGENT_MAX_TOKENS (1400) have measured 8.2s-18.5s across every real call
-// logged on this project so far - the values below give real multiples of
-// margin above that range, not just enough to scrape by, since the whole
-// point of moving to a background function was to stop cutting this close.
-function attemptTimeoutFor(maxTokens: number): number {
-  const estimateMs = 8000 + maxTokens * 25;
+// Per-attempt ceiling, scaled to how much text the call actually asked for
+// AND to how much it has to read first. A timeout signal passed to fetch()
+// stays armed while the response body is read, so this has to cover
+// generation time, not just time-to-headers.
+//
+// The prompt-size term is not cosmetic - it was added (2026-09-20) after a
+// real incident where judge calls timed out repeatedly against a ceiling
+// that only ever considered max_tokens. A judge's prompt carries the full
+// case record plus all four representative arguments (~4500 real prompt
+// tokens measured), roughly 4.5x a representative's (~1000), but the old
+// formula gave both the identical 43000ms. Real measured judge completions
+// on the default model in that incident: 26.9s, 33.9s, and 43.2s - the
+// last of those finishing with under 0ms to spare against that very
+// ceiling, with several sibling attempts timing out outright just past it.
+// A ceiling that half the real distribution overruns isn't a safety limit,
+// it's a coin flip, so prompt size now feeds it directly.
+//
+// Worst-case sum across the whole escalation chain stays inside
+// TOTAL_BUDGET_MS by construction: for a judge (~4550 prompt tokens) the
+// four tiers come to roughly 58s x2 + 93s x2 + 111s x2 + 123s = ~649s,
+// just inside the 650s budget; a representative (~1030 prompt tokens) sums
+// to ~587s. Anything that still overruns is handled gracefully rather than
+// silently - remainingMs() clamps the last attempt, and the loop reports
+// honestly that the budget ran out before a further tier could be tried.
+// Math.round is load-bearing, not tidiness: the prompt term uses a
+// fractional multiplier, so an odd token estimate yields a half
+// millisecond - and AbortSignal.timeout() throws outright on a
+// non-integer ("The value of 'delay' is out of range"), before fetch() is
+// even called. That would have failed roughly half of all real calls,
+// deterministically, on prompt length alone. Caught by the offline suite
+// before deploy; do not remove.
+function attemptTimeoutFor(promptTokens: number, maxTokens: number): number {
+  const estimateMs = 12000 + promptTokens * 2.5 + maxTokens * 25;
   const ceiling = TOTAL_BUDGET_MS - MIN_REMAINING_TO_ATTEMPT_MS;
-  return Math.min(Math.max(estimateMs, 30000), ceiling);
+  return Math.round(Math.min(Math.max(estimateMs, 30000), ceiling));
+}
+
+// Rough token estimate from raw characters (~4 chars/token) - only ever
+// used to size the timeout above, never to bill or cap anything, so an
+// approximation is fine and avoids shipping a tokenizer for it.
+function estimatePromptTokens(messages: OpenRouterMessage[]): number {
+  const chars = messages.reduce((total, m) => total + m.content.length, 0);
+  return Math.ceil(chars / 4);
 }
 
 export interface OpenRouterMessage {
@@ -167,6 +198,66 @@ function detectDegenerateRun(content: string): { degenerate: boolean; runLength:
   return { degenerate: max >= DEGENERATE_RUN_THRESHOLD, runLength: max, sample };
 }
 
+// A THIRD failure signal, and the one that had been missing entirely: the
+// same whole sentence emitted over and over, with ordinary punctuation
+// between each copy.
+//
+// detectDegenerateRun above only ever catches ONE degeneration signature -
+// a single unbroken run of 40+ words with no punctuation at all (the
+// "...nonetheless nonetheless nonetheless..." collapse it was built for in
+// 2026-09-01). It is structurally blind to a short, well-punctuated clause
+// repeated dozens of times, because every individual chunk between the
+// periods is short. That second signature is not hypothetical and not
+// rare: re-scanning the entire real corpus this project has generated (689
+// stored texts - 500 representative arguments, 189 judge rulings) found 30
+// texts (4.4%) with a whole sentence repeated 4+ times, topping out at one
+// argument that repeated "I had no other way" 195 times - and the existing
+// run detector scored every single one of them clean (their longest
+// punctuation-free runs were only 10-24 words, nowhere near the 40-word
+// threshold). This is the failure mode behind the original
+// frequency_penalty/presence_penalty work, and it had been shipping
+// undetected the whole time since.
+//
+// Threshold calibrated against that same real corpus rather than guessed,
+// the same way DEGENERATE_RUN_THRESHOLD was: at 4+ verbatim repeats,
+// inspection of every borderline case (4x through 8x, read in full with
+// surrounding context) found genuine degeneration in each - consecutive
+// identical sentences closing out a text, or the model looping the same
+// paragraph-sized block over and over. Deliberate rhetorical repetition
+// does NOT trip this: real anaphora repeats an opening phrase and then
+// continues differently ("I ask you to consider the scale..." / "I ask you
+// to consider the evidence..."), which produces different whole sentences
+// and is therefore invisible here - unlike the earlier, abandoned 5-word
+// phrase heuristic, which flagged exactly that pattern as a false
+// positive. Only genuinely verbatim whole-sentence repetition counts.
+// Sentences under 5 words are ignored outright, so a short refrain ("Thank
+// you.", "I agree.") can never trip it either.
+const REPEATED_SENTENCE_THRESHOLD = 4;
+const MIN_WORDS_FOR_REPEAT_CHECK = 5;
+
+function normalizeSentenceForRepeatCheck(sentence: string): string {
+  return sentence.trim().toLowerCase().replace(/\s+/g, ' ').replace(/[^\w\s]/g, '');
+}
+
+function detectRepeatedSentences(content: string): { degenerate: boolean; count: number; sample: string } {
+  const counts = new Map<string, number>();
+  for (const raw of content.split(/[.!?]+/)) {
+    const normalized = normalizeSentenceForRepeatCheck(raw);
+    if (normalized.split(' ').filter(Boolean).length < MIN_WORDS_FOR_REPEAT_CHECK) continue;
+    counts.set(normalized, (counts.get(normalized) ?? 0) + 1);
+  }
+
+  let count = 0;
+  let sample = '';
+  for (const [sentence, n] of counts) {
+    if (n > count) {
+      count = n;
+      sample = sentence;
+    }
+  }
+  return { degenerate: count >= REPEATED_SENTENCE_THRESHOLD, count, sample };
+}
+
 // Sent on every fallback-tier attempt, regardless of which of the two
 // failure modes above triggered escalation - kept deliberately general
 // rather than naming a specific cause, since a wrong guess (e.g. telling
@@ -199,6 +290,20 @@ export const DEGENERATE_FINAL_MARKER = '[degenerate-final]';
 // this always escalates straight to the next tier rather than spending
 // the current tier's remaining attempts first.
 export const HTTP_ERROR_ESCALATED_MARKER = '[http-error-escalated]';
+// A transient failure (timeout, 429, 5xx, or an empty-content 200) that was
+// retried or escalated. These used to leave no trace at all: the retry
+// branches simply `continue`d without logging anything, so a call that
+// timed out repeatedly showed the user a frozen card and left nothing in
+// the call log to explain it afterward - the exact situation that made a
+// real 6-minute stall (2026-09-20) impossible to diagnose from the UI. Now
+// every discarded attempt is a real row, whatever discarded it.
+export const TRANSIENT_RETRIED_MARKER = '[transient-retried]';
+// Written when the user aborted the trial while this call was still
+// running server-side. A Background Function cannot be cancelled by the
+// client, so the only way to stop spending real money on an abandoned
+// trial is for the call itself to notice and bail - see the isAborted
+// callback on callOpenRouter().
+export const ABORTED_MID_CALL_MARKER = '[aborted-mid-call]';
 
 // Passed to onAttemptStart the moment each attempt begins - see the
 // parameter's own comment on callOpenRouter() for why this exists
@@ -276,7 +381,31 @@ export async function callOpenRouter(
   // attempt that's actually in flight right now has nothing to report yet.
   // Same fire-and-forget-tolerant contract as onDiscardedAttempt: awaited,
   // but a rejection here must never block or fail the real call.
-  onAttemptStart?: (info: AttemptStartInfo) => Promise<void> | void
+  onAttemptStart?: (info: AttemptStartInfo) => Promise<void> | void,
+  // Checked before every attempt (including the first). Returning true
+  // means the user aborted this trial while this call was still running,
+  // and the chain stops immediately instead of spending more real money on
+  // a result nobody is waiting for any more.
+  //
+  // This exists because a Netlify Background Function genuinely cannot be
+  // cancelled from the browser: the client gets its 202 the instant the
+  // call is accepted, and abort.ts can only record that the user gave up -
+  // it has no channel to stop the invocation itself. A real incident
+  // (2026-09-20) showed exactly how expensive that gap is: two judge calls
+  // kept running for a further 30s and 1m32s after the user hit Abort,
+  // completed, and wrote real rulings to the database. With a full
+  // escalation chain now able to run for up to 650s across four
+  // increasingly expensive models, an abandoned trial could otherwise keep
+  // billing for ten more minutes against the priciest tiers in the chain.
+  // A cheap poll between attempts closes most of that: it cannot cancel an
+  // HTTP request already in flight, but it does stop the *next* one - and
+  // the next one is where all the escalation cost lives.
+  //
+  // Same fault-tolerance contract as the callbacks above: a rejection here
+  // must never take down the real call, so a failing abort check is
+  // treated as "not aborted" and logged, rather than aborting the work on
+  // the strength of a failed lookup.
+  isAborted?: () => Promise<boolean> | boolean
 ): Promise<OpenRouterResult> {
   const apiKey = process.env.OPENROUTER_API_KEY;
 
@@ -286,6 +415,17 @@ export async function callOpenRouter(
 
   const startedAt = Date.now();
   const remainingMs = () => TOTAL_BUDGET_MS - (Date.now() - startedAt);
+  const estimatedPromptTokens = estimatePromptTokens(messages);
+
+  async function checkAborted(): Promise<boolean> {
+    if (!isAborted) return false;
+    try {
+      return await isAborted();
+    } catch (err) {
+      console.warn(`[openrouter] ${label}: abort check failed, assuming not aborted: ${err instanceof Error ? err.message : String(err)}`);
+      return false;
+    }
+  }
   let lastError = 'Unknown error';
   let lastUsage: { promptTokens: number; completionTokens: number; totalTokens: number } | undefined;
   let attempt = 0;
@@ -311,7 +451,90 @@ export async function callOpenRouter(
   // cumulative time since callOpenRouter() itself was first called.
   let lastAttemptStartedAt = Date.now();
 
+  // Records one failed attempt and moves the chain forward, for EVERY kind
+  // of failure rather than only the content-quality ones.
+  //
+  // This unification is the fix for a real, load-bearing bug (2026-09-20):
+  // `attemptsAtTier++` used to live exclusively inside the
+  // truncation/degeneracy branch, so every other retry path - timeout, 429,
+  // 5xx, an empty-content 200 - looped with `continue` while leaving both
+  // `attemptsAtTier` and `tierIndex` untouched. A call whose attempts kept
+  // timing out therefore retried the SAME model at the SAME tier until the
+  // entire 650s budget drained, never once escalating, while
+  // `attemptInTier` (reported as `attemptsAtTier + 1`) stayed pinned at 1 -
+  // which is why two judge cards sat on "Model: mistral-small (first
+  // attempt)" for six unbroken minutes through roughly nine separate
+  // 43-second timeouts. The escalation chain existed but was unreachable
+  // for the most common failure modes it should have been covering.
+  //
+  // `skipRestOfTier` is for failures where retrying this exact model is
+  // pointless rather than merely unlucky - currently a plain HTTP error
+  // such as a removed model id, which will fail identically every time.
+  async function recordFailedAttemptAndAdvance(opts: {
+    marker: string;
+    // Used instead of `marker` when this failure actually moves the chain
+    // to a different model, so the call log can distinguish "re-tried the
+    // same model" from "escalated" - the two read very differently to
+    // someone reading the log afterward.
+    escalatedMarker?: string;
+    model: string;
+    reason: string;
+    usage?: { promptTokens: number; completionTokens: number; totalTokens: number };
+    cost?: number;
+    skipRestOfTier?: boolean;
+  }): Promise<{ canContinue: boolean; allTiersExhausted: boolean }> {
+    if (opts.skipRestOfTier) {
+      attemptsAtTier = tiers[tierIndex].maxAttempts;
+    } else {
+      attemptsAtTier++;
+    }
+    const nextTierIndex = attemptsAtTier >= tiers[tierIndex].maxAttempts ? tierIndex + 1 : tierIndex;
+    const canContinue = nextTierIndex < tiers.length && remainingMs() >= MIN_REMAINING_TO_ATTEMPT_MS;
+
+    if (canContinue) {
+      const sameModel = nextTierIndex === tierIndex;
+      const nextModel = tiers[nextTierIndex].getModel();
+      const marker = sameModel ? opts.marker : (opts.escalatedMarker ?? opts.marker);
+      const discarded: DiscardedAttempt = {
+        model: opts.model,
+        promptTokens: opts.usage?.promptTokens ?? 0,
+        completionTokens: opts.usage?.completionTokens ?? 0,
+        totalTokens: opts.usage?.totalTokens ?? 0,
+        cost: opts.cost ?? 0,
+        errorMessage: `${marker} ${opts.reason} - ${sameModel ? 're-tried with the same model' : `escalated to ${nextModel}`}.`,
+        durationMs: Date.now() - lastAttemptStartedAt,
+      };
+      discardedAttempts.push(discarded);
+      if (onDiscardedAttempt) {
+        try {
+          await onDiscardedAttempt(discarded);
+        } catch (err) {
+          // Never let a logging failure interrupt the actual escalation -
+          // this callback exists purely to make progress visible sooner,
+          // not to gate whether the chain can keep going. The final row
+          // logged by the caller still carries the complete
+          // discardedAttempts array as a fallback if a live write is lost.
+          console.warn(`[openrouter] ${label}: onDiscardedAttempt callback failed, continuing anyway: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+      if (nextTierIndex !== tierIndex) {
+        tierIndex = nextTierIndex;
+        attemptsAtTier = 0;
+      }
+      console.warn(
+        `[openrouter] ${label}: retrying at tier ${tierIndex + 1}/${tiers.length} (${tiers[tierIndex].getModel()}), ${remainingMs()}ms remaining.`
+      );
+    }
+
+    return { canContinue, allTiersExhausted: nextTierIndex >= tiers.length };
+  }
+
   while (remainingMs() >= MIN_REMAINING_TO_ATTEMPT_MS) {
+    if (await checkAborted()) {
+      const message = `${ABORTED_MID_CALL_MARKER} Stopped before attempt ${attempt + 1}: the user aborted this trial while the call was still running server-side. Nothing further was requested and nothing was saved.`;
+      console.warn(`[openrouter] ${label}: aborted by user mid-call - stopping the chain rather than spending further budget.`);
+      return failure(lastAttemptModel, message, lastUsage, discardedAttempts, Date.now() - lastAttemptStartedAt);
+    }
     attempt++;
     lastAttemptStartedAt = Date.now();
     const tier = tiers[tierIndex];
@@ -328,7 +551,7 @@ export async function callOpenRouter(
     const isFallbackAttempt = attempt > 1;
     const attemptModel = tier.getModel();
     const attemptMaxTokens = tier.maxTokens;
-    const attemptTimeout = Math.min(attemptTimeoutFor(attemptMaxTokens), remainingMs());
+    const attemptTimeout = Math.min(attemptTimeoutFor(estimatedPromptTokens, attemptMaxTokens), remainingMs());
     lastAttemptModel = attemptModel;
     console.log(
       `[openrouter] ${label}: attempt ${attempt} starting, tier=${tierIndex + 1}/${tiers.length}, model=${attemptModel}, maxTokens=${attemptMaxTokens}, timeout=${attemptTimeout}ms, remaining budget=${remainingMs()}ms`
@@ -412,7 +635,21 @@ export async function callOpenRouter(
         lastError = `OpenRouter returned HTTP 429 (rate limited)`;
         console.log(`[openrouter] ${label}: attempt ${attempt} - ${lastError}, retrying`);
         await backoff(attempt);
-        continue;
+        {
+          // Counted against this tier's attempt budget like any other
+          // failure, so a rate-limited tier escalates to the next model
+          // instead of hammering the same one until the budget drains.
+          // Escalating is a genuinely good response to a rate limit: the
+          // next tier is a different model, often on a different provider
+          // path entirely.
+          const next = await recordFailedAttemptAndAdvance({
+            marker: TRANSIENT_RETRIED_MARKER,
+            model: attemptModel,
+            reason: 'was rate limited (HTTP 429)',
+          });
+          if (next.canContinue) continue;
+          return failure(attemptModel, lastError, lastUsage, discardedAttempts, Date.now() - lastAttemptStartedAt, { tierIndex, tierCount: tiers.length });
+        }
       }
 
       if (response.status === 402) {
@@ -434,7 +671,15 @@ export async function callOpenRouter(
         lastError = `OpenRouter returned HTTP ${response.status}`;
         console.log(`[openrouter] ${label}: attempt ${attempt} - ${lastError}, retrying`);
         await backoff(attempt);
-        continue;
+        {
+          const next = await recordFailedAttemptAndAdvance({
+            marker: TRANSIENT_RETRIED_MARKER,
+            model: attemptModel,
+            reason: `failed upstream (HTTP ${response.status})`,
+          });
+          if (next.canContinue) continue;
+          return failure(attemptModel, lastError, lastUsage, discardedAttempts, Date.now() - lastAttemptStartedAt, { tierIndex, tierCount: tiers.length });
+        }
       }
 
       if (!response.ok) {
@@ -459,34 +704,17 @@ export async function callOpenRouter(
         // path) since retrying the exact same broken model id would just
         // fail identically again - see HTTP_ERROR_ESCALATED_MARKER's own
         // comment for why there's no same-model variant here.
-        const nextTierIndex = tierIndex + 1;
-        if (nextTierIndex < tiers.length && remainingMs() >= MIN_REMAINING_TO_ATTEMPT_MS) {
-          const nextModel = tiers[nextTierIndex].getModel();
-          const discarded: DiscardedAttempt = {
-            model: attemptModel,
-            promptTokens: 0,
-            completionTokens: 0,
-            totalTokens: 0,
-            cost: 0,
-            errorMessage: `${HTTP_ERROR_ESCALATED_MARKER} ${message} - escalated to ${nextModel}.`,
-            durationMs: Date.now() - lastAttemptStartedAt,
-          };
-          discardedAttempts.push(discarded);
-          if (onDiscardedAttempt) {
-            try {
-              await onDiscardedAttempt(discarded);
-            } catch (err) {
-              console.warn(`[openrouter] ${label}: onDiscardedAttempt callback failed, continuing anyway: ${err instanceof Error ? err.message : String(err)}`);
-            }
-          }
-          tierIndex = nextTierIndex;
-          attemptsAtTier = 0;
-          console.warn(
-            `[openrouter] ${label}: escalating to tier ${tierIndex + 1}/${tiers.length} (${tiers[tierIndex].getModel()}) after an HTTP failure at the previous tier.`
-          );
-          continue;
-        }
-
+        const next = await recordFailedAttemptAndAdvance({
+          marker: HTTP_ERROR_ESCALATED_MARKER,
+          model: attemptModel,
+          reason: message,
+          // Unlike a timeout or a 429, this one says something specific and
+          // permanent about this model, so the tier's remaining attempts
+          // are skipped rather than spent re-asking a model that just told
+          // us it does not exist.
+          skipRestOfTier: true,
+        });
+        if (next.canContinue) continue;
         return failure(attemptModel, message, undefined, discardedAttempts, Date.now() - lastAttemptStartedAt, { tierIndex, tierCount: tiers.length });
       }
 
@@ -511,7 +739,16 @@ export async function callOpenRouter(
         lastUsage = { promptTokens, completionTokens, totalTokens };
         console.log(`[openrouter] ${label}: attempt ${attempt} - ${lastError}, retrying`);
         await backoff(attempt);
-        continue;
+        {
+          const next = await recordFailedAttemptAndAdvance({
+            marker: TRANSIENT_RETRIED_MARKER,
+            model: attemptModel,
+            reason: upstreamError ? 'returned an upstream error instead of content' : 'returned no message content',
+            usage: lastUsage,
+          });
+          if (next.canContinue) continue;
+          return failure(attemptModel, lastError, lastUsage, discardedAttempts, Date.now() - lastAttemptStartedAt, { tierIndex, tierCount: tiers.length });
+        }
       }
 
       const servingModel: string = data?.model ?? attemptModel;
@@ -525,7 +762,13 @@ export async function callOpenRouter(
       // response is likely to contain an in-progress, comma-less clause
       // of its own that would otherwise trigger a false positive here.
       const degenerateCheck = !lengthTruncated ? detectDegenerateRun(content) : null;
-      if (lengthTruncated || degenerateCheck?.degenerate) {
+      // The second degeneration signature, and the one the run-length check
+      // above is structurally blind to - see detectRepeatedSentences. Also
+      // skipped for an already-truncated response, for the same reason: a
+      // response cut off mid-thought is being discarded anyway.
+      const repeatCheck = !lengthTruncated ? detectRepeatedSentences(content) : null;
+      if (lengthTruncated || degenerateCheck?.degenerate || repeatCheck?.degenerate) {
+        let reason: string;
         if (lengthTruncated) {
           // The model was still generating when it hit max_tokens - the
           // content returned is real, not an error, but it's cut off
@@ -534,64 +777,28 @@ export async function callOpenRouter(
           // in terminal output without having to notice that
           // completionTokens happens to equal the configured cap.
           console.warn(`[openrouter] ${label}: TRUNCATED - response hit the max_tokens limit (${attemptMaxTokens}) before finishing naturally.`);
+          reason = 'hit the max_tokens limit before finishing naturally';
+        } else if (degenerateCheck?.degenerate) {
+          console.warn(
+            `[openrouter] ${label}: DEGENERATE - response finished on its own (finish_reason=${finishReason}) but contains a ${degenerateCheck.runLength}-word run with no punctuation ("${degenerateCheck.sample}...") - treating as a failure rather than trusting a technically-complete but incoherent result.`
+          );
+          reason = `collapsed into a ${degenerateCheck.runLength}-word run with no punctuation`;
         } else {
           console.warn(
-            `[openrouter] ${label}: DEGENERATE - response finished on its own (finish_reason=${finishReason}) but contains a ${degenerateCheck!.runLength}-word run with no punctuation ("${degenerateCheck!.sample}...") - treating as a failure rather than trusting a technically-complete but incoherent result.`
+            `[openrouter] ${label}: DEGENERATE - response finished on its own (finish_reason=${finishReason}) but repeats the same sentence ${repeatCheck!.count} times ("${repeatCheck!.sample.slice(0, 80)}...") - treating as a failure rather than trusting a technically-complete but looping result.`
           );
+          reason = `repeated the same sentence ${repeatCheck!.count} times`;
         }
 
-        attemptsAtTier++;
-        let nextTierIndex = tierIndex;
-        if (attemptsAtTier >= tier.maxAttempts) {
-          nextTierIndex = tierIndex + 1;
-        }
-
-        if (nextTierIndex < tiers.length && remainingMs() >= MIN_REMAINING_TO_ATTEMPT_MS) {
-          // Record this discarded attempt as its own row - only once we
-          // know it's being discarded in favor of another attempt, so the
-          // final return below (for whichever attempt is actually kept,
-          // success or fatal failure) never double-reports it.
-          const sameModel = nextTierIndex === tierIndex;
-          const nextModel = tiers[nextTierIndex].getModel();
-          const reason = lengthTruncated
-            ? 'hit the max_tokens limit before finishing naturally'
-            : `collapsed into a ${degenerateCheck!.runLength}-word run with no punctuation`;
-          const discarded: DiscardedAttempt = {
-            model: servingModel,
-            promptTokens,
-            completionTokens,
-            totalTokens,
-            cost: calculateCost(servingModel, promptTokens, completionTokens),
-            errorMessage: `${sameModel ? DEGENERATE_RETRIED_SAME_MODEL_MARKER : DEGENERATE_RETRIED_DIFF_MODEL_MARKER} This attempt ${reason} - ${sameModel ? 're-tried with the same model' : `escalated to ${nextModel}`}.`,
-            durationMs: Date.now() - lastAttemptStartedAt,
-          };
-          discardedAttempts.push(discarded);
-          if (onDiscardedAttempt) {
-            try {
-              await onDiscardedAttempt(discarded);
-            } catch (err) {
-              // Never let a logging failure interrupt the actual escalation
-              // - this callback exists purely to make progress visible
-              // sooner, not to gate whether the chain can keep going. The
-              // final row logged by the caller after this function returns
-              // still carries the complete discardedAttempts array as a
-              // fallback if a live write like this one is ever lost.
-              console.warn(`[openrouter] ${label}: onDiscardedAttempt callback failed, continuing anyway: ${err instanceof Error ? err.message : String(err)}`);
-            }
-          }
-          if (nextTierIndex !== tierIndex) {
-            tierIndex = nextTierIndex;
-            attemptsAtTier = 0;
-          }
-          console.warn(
-            `[openrouter] ${label}: retrying at tier ${tierIndex + 1}/${tiers.length} (${tiers[tierIndex].getModel()}), ${remainingMs()}ms remaining.`
-          );
-          // No backoff() here, same reasoning as the timeout branch below -
-          // nothing about a token-cap hit suggests waiting helps, and this
-          // retry is already spending real tokens/cost on top of the
-          // discarded attempt, so it shouldn't also spend budget waiting.
-          continue;
-        }
+        const next = await recordFailedAttemptAndAdvance({
+          marker: DEGENERATE_RETRIED_SAME_MODEL_MARKER,
+          escalatedMarker: DEGENERATE_RETRIED_DIFF_MODEL_MARKER,
+          model: servingModel,
+          reason: `This attempt ${reason}`,
+          usage: { promptTokens, completionTokens, totalTokens },
+          cost: calculateCost(servingModel, promptTokens, completionTokens),
+        });
+        if (next.canContinue) continue;
         // Still bad (truncated or degenerate) after using every attempt at
         // every tier (or there was no budget left for another) - neither
         // failure mode is a degraded-but-usable result, and an argument or
@@ -607,19 +814,15 @@ export async function callOpenRouter(
         // are reported on its own row here - every earlier discarded
         // attempt already has its own row via discardedAttempts, so
         // nothing is folded in here to avoid double-reporting spend.
-        console.warn(`[openrouter] ${label}: still ${lengthTruncated ? 'truncated' : 'degenerate'} after every tier - returning failed rather than an unusable result.`);
+        console.warn(`[openrouter] ${label}: still unusable after every tier - returning failed rather than an unusable result.`);
         // Two genuinely different situations were previously conflated into
-        // one message here: nextTierIndex >= tiers.length means every tier
-        // this chain offers really was tried; nextTierIndex < tiers.length
-        // (but the `if` above didn't take it) means the time budget ran out
-        // before a real further tier could even be attempted - a tier still
+        // one message here: allTiersExhausted means every tier this chain
+        // offers really was tried; otherwise the time budget ran out before
+        // a real further tier could even be attempted - a tier still
         // existed, it just was never reached. Claiming "no further fallback
         // exists" in the second case would be false, so each gets its own
         // accurate wording.
-        const allTiersExhausted = nextTierIndex >= tiers.length;
-        const reason = lengthTruncated
-          ? 'hit the max_tokens limit before finishing naturally'
-          : 'collapsed into a long run-on with no punctuation';
+        const allTiersExhausted = next.allTiersExhausted;
         const errorMessage = allTiersExhausted
           ? `${DEGENERATE_FINAL_MARKER} Every model tier was tried (${tiers.length} in total, ending with ${servingModel}) and none produced a usable response - the final attempt ${reason}. Nothing was saved.`
           : `${DEGENERATE_FINAL_MARKER} This attempt (tier ${tierIndex + 1} of ${tiers.length}, ${servingModel}) ${reason}, and the remaining time budget ran out before a further escalation tier could be tried. Nothing was saved.`;
@@ -663,6 +866,21 @@ export async function callOpenRouter(
       // pause. A genuine timeout skips straight to the retry check instead.
       if (!isTimeout) {
         await backoff(attempt);
+      }
+      // This branch is the one that produced the real 6-minute stall: it
+      // used to fall straight through to the next loop iteration without
+      // touching attemptsAtTier or tierIndex, so a model that kept timing
+      // out was simply re-asked, at the same tier, until the entire budget
+      // was gone. A timeout is exactly the signal that this model is not
+      // working right now and a different one should get a turn.
+      {
+        const next = await recordFailedAttemptAndAdvance({
+          marker: TRANSIENT_RETRIED_MARKER,
+          model: attemptModel,
+          reason: isTimeout ? `did not respond within ${attemptTimeout}ms` : `failed to complete (${lastError})`,
+        });
+        if (next.canContinue) continue;
+        return failure(attemptModel, lastError, lastUsage, discardedAttempts, Date.now() - lastAttemptStartedAt, { tierIndex, tierCount: tiers.length });
       }
     }
   }
