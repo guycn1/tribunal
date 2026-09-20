@@ -215,5 +215,33 @@ check('a final run-on failure is labelled "Degenerated"', /Degenerated/.test(run
 const finalCapHtml = statusTextFor('[degenerate-final] Every model tier was tried (4 in total, ending with google/gemini-2.5-pro) and none produced a usable response - the final attempt hit the max_tokens limit before finishing naturally. Nothing was saved.');
 check('a final capped failure is labelled "Truncated"', /Truncated/.test(finalCapHtml) && !/Degenerated/.test(finalCapHtml), finalCapHtml.slice(0, 160));
 
+console.log('\n=== Every call-log cell carries the label its card layout needs ===');
+// Below 720px the table becomes one card per call, and each cell prints its
+// own column name from data-label because the <thead> is hidden. A new
+// column added without one would render as a value with no label at all,
+// and only on narrow screens - exactly the kind of thing that ships unseen.
+state.callLog = [{
+  agentRole: 'jon_snow', callType: 'representative',
+  modelUsed: 'mistralai/mistral-small-24b-instruct-2501',
+  promptTokens: 1027, completionTokens: 606, totalTokens: 1633,
+  cost: 0.0000936, status: 'success', errorMessage: null, durationMs: 10000,
+  timestamp: new Date().toISOString(),
+}];
+renderCallLog();
+const bodyRow = el.callLogBody.children[0].innerHTML;
+const bodyCells = bodyRow.match(/<td[^>]*>/g) || [];
+const unlabelled = bodyCells.filter((td) => !td.includes('data-label='));
+check('every <td> in a call row has a data-label', unlabelled.length === 0, unlabelled.join(' '));
+check('all eight columns are present', bodyCells.length === 8, String(bodyCells.length));
+
+// The totals row is deliberately different: its first and last cells are a
+// heading and a footnote, not labelled fields, and are marked as such so
+// the card layout can style them that way.
+const footRow = el.callLogFoot.children[0].innerHTML;
+check('totals row marks its title cell', footRow.includes('total-row-title'), footRow.slice(0, 120));
+check('totals row marks its footnote cell', footRow.includes('total-row-note'), footRow.slice(0, 120));
+const footLabelled = (footRow.match(/data-label=/g) || []).length;
+check('totals row labels its three real value cells', footLabelled === 3, String(footLabelled));
+
 console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} check(s) failed.`);
 process.exit(failures === 0 ? 0 : 1);

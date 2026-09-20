@@ -1002,26 +1002,182 @@ table.call-log abbr {
   }
 }
 
-/* A real narrow-phone viewport (below this, .layout's own 900px
-   breakpoint has already stacked the sidebar above the content, so the
-   table gets the full viewport width minus .main's 20px padding either
-   side - down to the 350px floor this app targets, that's still not much
-   room).
-   Smaller text and tighter padding buy back real room for the table's
-   fixed-percentage columns here - the actual fix for less wrapping,
-   rather than a horizontal scrollbar (deliberately not used anywhere on
-   this table) or forcing any column to nowrap (which, without a
-   scrollbar to fall back on, would just overflow its cell). */
+/* Below 720px the call log stops being a table and becomes one card per
+   call.
+   Eight columns cannot be made to work at these widths. Shrinking type
+   and padding (which is all the old sub-480px rule here did) only
+   postpones the problem: at a 413px viewport every cell was wrapping
+   mid-word into a ragged column two or three characters wide, with
+   "Truncated (retried with the same model)" running down the screen one
+   word per line. That is a layout that has genuinely run out of room,
+   not one that needs tuning, so below this breakpoint each row is laid
+   out as a small card instead - the label on the left, the value on the
+   right, one field per line.
+   Done purely in CSS against the same markup rather than by rendering a
+   second DOM: the cells carry their column name in data-label (see
+   renderCallLog() in app.js), so there is one render path, no resize
+   listener, and no chance of a card view drifting out of sync with the
+   table it mirrors. The <thead> is hidden rather than removed, so the
+   table stays a real table for assistive tech and for the totals row. */
+@media (max-width: 720px) {
+  .table-scroll {
+    /* The cards carry their own borders; an outer frame around them
+       reads as a stray box once the table grid is gone. */
+    border: none;
+    border-radius: 0;
+  }
+
+  table.call-log,
+  table.call-log tbody,
+  table.call-log tfoot,
+  table.call-log tr,
+  table.call-log td {
+    display: block;
+    width: auto;
+  }
+
+  /* Visually hidden rather than display: none - the header cells are what
+     give the data cells their accessible names. */
+  table.call-log thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  table.call-log tr {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg-raised);
+    margin-bottom: 10px;
+    padding: 4px 2px;
+  }
+
+  /* The label lives in a fixed left gutter as an absolutely positioned
+     pseudo-element, and the value stays in ordinary flow.
+     Flex and grid were both tried first and both are wrong here, for the
+     same underlying reason: they turn every child element of the cell into
+     a separate item. A cell whose value is a single text node survives
+     that, but two of these are not - the Status cell holds a badge (which
+     then stretched to the full column width) and the Time cell holds two
+     spans (the second of which wrapped onto its own row, left-aligned,
+     nowhere near its label). Flex additionally refused to shrink an
+     unbroken model id below its min-content width, pushing it off-screen.
+     Normal flow has none of those problems: multiple children stay
+     inline, wrap naturally, and honour text-align. */
+  table.call-log td {
+    display: block;
+    position: relative;
+    text-align: right;
+    border-right: none;
+    border-bottom: 1px solid color-mix(in srgb, var(--border) 45%, transparent);
+    /* Left padding is the label gutter. "Duration" is the longest label and
+       needs ~60px at this size; 92px leaves real margin plus a gap. */
+    padding: 6px 10px 6px 92px;
+    min-height: 1.2em;
+  }
+
+  /* The base table rules strip the final ROW's bottom borders, which is
+     right for a table and wrong for cards, where every row is its own
+     box. Restore the divider first, then remove it only on each card's
+     own last field. Both of these tie the base rule on specificity and
+     win on source order, so the order here matters. */
+  table.call-log tbody tr:last-child td {
+    border-bottom: 1px solid color-mix(in srgb, var(--border) 45%, transparent);
+  }
+
+  table.call-log tbody tr td:last-child,
+  table.call-log tfoot tr td:last-child {
+    border-bottom: none;
+  }
+
+  table.call-log td::before {
+    content: attr(data-label);
+    position: absolute;
+    left: 10px;
+    top: 7px;
+    color: var(--text-dim);
+    font-size: 0.66rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    text-align: left;
+    /* Labels are single words and must never wrap inside the gutter. */
+    white-space: nowrap;
+  }
+
+  /* The agent's name is the card's heading, not another labelled field. */
+  table.call-log tbody td[data-label='Agent'] {
+    text-align: left;
+    font-weight: 700;
+    font-size: 0.9rem;
+    padding: 8px 10px 6px;
+  }
+
+  table.call-log tbody td[data-label='Agent']::before {
+    content: none;
+  }
+
+  /* Both of these stack a value over a dim caption; against a right-hand
+     edge they read better right-aligned as a unit. */
+  table.call-log td .cell-stack {
+    align-items: flex-end;
+    text-align: right;
+  }
+
+  /* formatDateTimeHtml splits the timestamp across two lines for the
+     narrow Time column. A card row is wide enough for one line, and in
+     normal flow the two spans simply sit next to each other. */
+  table.call-log td[data-label='Time'] br {
+    display: none;
+  }
+
+  table.call-log td[data-label='Time'] .datetime-part + .datetime-part::before {
+    content: ' ';
+    white-space: pre;
+  }
+
+  /* The totals row is a card too. Its per-cell top border and raised
+     background are what set it apart inside a table; as a card those
+     would draw a 2px line above every one of its fields, so they move to
+     the card itself. */
+  table.call-log tfoot tr.call-log-total-row td {
+    border-top: none;
+    background: transparent;
+  }
+
+  table.call-log tfoot tr.call-log-total-row {
+    border-width: 2px;
+  }
+
+  /* Its first and last cells are a heading and a footnote rather than
+     labelled fields. */
+  table.call-log tfoot tr.call-log-total-row td.total-row-title,
+  table.call-log tfoot tr.call-log-total-row td.total-row-note {
+    text-align: left;
+    padding-left: 10px;
+  }
+
+  table.call-log tfoot tr.call-log-total-row td.total-row-title {
+    font-size: 0.9rem;
+  }
+}
+
+/* A real narrow-phone viewport. The call log is already a card layout by
+   here (see the 720px block above), so this only trims the type a little
+   further for the smallest screens this app targets, down to ~350px. */
 @media (max-width: 480px) {
   table.call-log {
-    font-size: 0.7rem;
+    font-size: 0.68rem;
   }
-  table.call-log th,
   table.call-log td {
-    padding: 5px 5px;
+    padding: 5px 8px;
   }
-  table.call-log th {
-    font-size: 0.6rem;
+  table.call-log tbody td[data-label='Agent'],
+  table.call-log tfoot tr.call-log-total-row td.total-row-title {
+    font-size: 0.84rem;
   }
 }
 

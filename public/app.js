@@ -1488,15 +1488,20 @@ function renderCallLog() {
       `;
     }
 
+    // data-label carries each column's header down to the narrow card
+    // layout, where the real <thead> is hidden and every cell prints its
+    // own label instead (see the max-width: 720px block in styles.css).
+    // Keeping it in the markup rather than duplicating the header list in
+    // CSS means the two can't drift apart.
     tr.innerHTML = `
-      <td>${formatAgentName(entry.agentRole)}</td>
-      <td>${formatCallTypeHtml(entry.callType)}</td>
-      <td><abbr title="${entry.modelUsed}">${shortModelName(entry.modelUsed)}</abbr></td>
-      <td>${tokens}</td>
-      <td>${formatCost(entry.cost)}</td>
-      <td>${formatDuration(entry.durationMs)}</td>
-      <td>${statusCellHtml}</td>
-      <td>${formatDateTimeHtml(entry.timestamp)}</td>
+      <td data-label="Agent">${formatAgentName(entry.agentRole)}</td>
+      <td data-label="Type">${formatCallTypeHtml(entry.callType)}</td>
+      <td data-label="Model"><abbr title="${entry.modelUsed}">${shortModelName(entry.modelUsed)}</abbr></td>
+      <td data-label="Tokens">${tokens}</td>
+      <td data-label="Cost">${formatCost(entry.cost)}</td>
+      <td data-label="Duration">${formatDuration(entry.durationMs)}</td>
+      <td data-label="Status">${statusCellHtml}</td>
+      <td data-label="Time">${formatDateTimeHtml(entry.timestamp)}</td>
     `;
     el.callLogBody.appendChild(tr);
   }
@@ -1536,17 +1541,21 @@ function renderCallLogTotals() {
 
   const tr = document.createElement('tr');
   tr.className = 'call-log-total-row';
+  // The first and last cells are the totals row's own title and footnote
+  // rather than real columns, so they get no data-label - in the narrow
+  // card layout they read as a heading and a caption instead of as
+  // labelled fields. See renderCallLog() above for what data-label does.
   tr.innerHTML = `
-    <td colspan="3">Total (${state.callLog.length} call${state.callLog.length === 1 ? '' : 's'})</td>
-    <td>
+    <td colspan="3" class="total-row-title">Total (${state.callLog.length} call${state.callLog.length === 1 ? '' : 's'})</td>
+    <td data-label="Tokens">
       <div class="cell-stack">
         <strong>${totalTokens.toLocaleString()}</strong>
         <div class="status-caption">${totalPromptTokens.toLocaleString()} in / ${totalCompletionTokens.toLocaleString()} out</div>
       </div>
     </td>
-    <td>${formatCost(totalCost)}</td>
-    <td>${hasDuration ? formatDuration(totalDurationMs) : '—'}</td>
-    <td colspan="2" class="status-caption">(compute time, not wall clock)</td>
+    <td data-label="Cost">${formatCost(totalCost)}</td>
+    <td data-label="Duration">${hasDuration ? formatDuration(totalDurationMs) : '—'}</td>
+    <td colspan="2" class="status-caption total-row-note">(compute time, not wall clock)</td>
   `;
   el.callLogFoot.innerHTML = '';
   el.callLogFoot.appendChild(tr);
