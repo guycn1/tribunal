@@ -932,9 +932,10 @@ table.call-log tfoot tr.call-log-total-row td:first-child {
   text-align: left;
 }
 
-/* A discarded attempt that was truncated/degenerate but recovered by a
-   retry or escalation (see DEGENERATE_RETRIED_*_MARKER in app.js) -
-   dimmed to signal the failure wasn't fatal, distinct from a
+/* A discarded attempt that was recovered by a retry or escalation - either
+   truncated/degenerate content (DEGENERATE_RETRIED_*_MARKER) or a plain
+   HTTP failure at a fallback tier (HTTP_ERROR_ESCALATED_MARKER), both in
+   app.js - dimmed to signal the failure wasn't fatal, distinct from a
    [degenerate-final] row (the last available tier failing too), which
    deliberately stays at full opacity since that outcome genuinely is
    fatal. */

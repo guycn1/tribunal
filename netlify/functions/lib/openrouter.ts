@@ -174,6 +174,15 @@ const CONCISENESS_REMINDER: OpenRouterMessage = {
 export const DEGENERATE_RETRIED_SAME_MODEL_MARKER = '[degenerate-retried-same-model]';
 export const DEGENERATE_RETRIED_DIFF_MODEL_MARKER = '[degenerate-retried-diff-model]';
 export const DEGENERATE_FINAL_MARKER = '[degenerate-final]';
+// A plain HTTP-level failure (bad/removed model id, permissions, etc.) at a
+// fallback tier, discarded in favor of escalating to the next tier - see
+// the `!response.ok` branch below for why this needed its own marker
+// rather than falling straight to a terminal failure() the way it used to.
+// No same-model variant: unlike truncation/degeneracy, retrying the exact
+// same model that just returned e.g. a 404 has no plausible upside, so
+// this always escalates straight to the next tier rather than spending
+// the current tier's remaining attempts first.
+export const HTTP_ERROR_ESCALATED_MARKER = '[http-error-escalated]';
 
 // Passed to onAttemptStart the moment each attempt begins - see the
 // parameter's own comment on callOpenRouter() for why this exists
@@ -405,6 +414,53 @@ export async function callOpenRouter(
       if (!response.ok) {
         const message = `OpenRouter returned HTTP ${response.status}: ${await describeErrorBody(response)}`;
         console.log(`[openrouter] ${label}: attempt ${attempt} - ${message}`);
+
+        // Real incident (2026-09-20): mistralai/mistral-large-2512 (tier
+        // 2's default model) was deprecated/removed from OpenRouter's
+        // catalog sometime after this chain was built, so every call that
+        // needed to escalate past tier 1 failed outright here with HTTP
+        // 404 "No endpoints found for mistralai/mistral-large-2512" - even
+        // though tier 3 (openai/gpt-5.6-sol) and tier 4
+        // (google/gemini-2.5-pro) were both still real, live models the
+        // entire time. This branch used to return a terminal failure()
+        // unconditionally, which is what let one dead model id at one
+        // tier kill the whole call regardless of how many working tiers
+        // stood after it - the tier-escalation mechanism below only ever
+        // covered the two content-quality failure modes
+        // (truncation/degeneracy), never a plain HTTP failure at a
+        // fallback tier. Escalates straight to the next tier (skipping any
+        // remaining attempts at this one, unlike the degenerate/truncation
+        // path) since retrying the exact same broken model id would just
+        // fail identically again - see HTTP_ERROR_ESCALATED_MARKER's own
+        // comment for why there's no same-model variant here.
+        const nextTierIndex = tierIndex + 1;
+        if (nextTierIndex < tiers.length && remainingMs() >= MIN_REMAINING_TO_ATTEMPT_MS) {
+          const nextModel = tiers[nextTierIndex].getModel();
+          const discarded: DiscardedAttempt = {
+            model: attemptModel,
+            promptTokens: 0,
+            completionTokens: 0,
+            totalTokens: 0,
+            cost: 0,
+            errorMessage: `${HTTP_ERROR_ESCALATED_MARKER} ${message} - escalated to ${nextModel}.`,
+            durationMs: Date.now() - lastAttemptStartedAt,
+          };
+          discardedAttempts.push(discarded);
+          if (onDiscardedAttempt) {
+            try {
+              await onDiscardedAttempt(discarded);
+            } catch (err) {
+              console.warn(`[openrouter] ${label}: onDiscardedAttempt callback failed, continuing anyway: ${err instanceof Error ? err.message : String(err)}`);
+            }
+          }
+          tierIndex = nextTierIndex;
+          attemptsAtTier = 0;
+          console.warn(
+            `[openrouter] ${label}: escalating to tier ${tierIndex + 1}/${tiers.length} (${tiers[tierIndex].getModel()}) after an HTTP failure at the previous tier.`
+          );
+          continue;
+        }
+
         return failure(attemptModel, message, undefined, discardedAttempts, Date.now() - lastAttemptStartedAt, { tierIndex, tierCount: tiers.length });
       }
 

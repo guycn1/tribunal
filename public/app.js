@@ -7,7 +7,7 @@ const JUDGE_ROLES = ['barak', 'elon', 'shamgar'];
 // of the generic "Call failed" one.
 const ABORTED_BY_USER_MESSAGE = 'Aborted by user before this call could complete.';
 
-// Must match the three DEGENERATE_*_MARKER exports in
+// Must match the four DEGENERATE_*_MARKER/HTTP_ERROR_*_MARKER exports in
 // netlify/functions/lib/openrouter.ts exactly - used by renderCallLog()
 // to tell a discarded-but-recovered attempt (the role went on to succeed
 // or is still trying a further tier) from a discarded-and-fatal one (this
@@ -15,6 +15,12 @@ const ABORTED_BY_USER_MESSAGE = 'Aborted by user before this call could complete
 const DEGENERATE_RETRIED_SAME_MODEL_MARKER = '[degenerate-retried-same-model]';
 const DEGENERATE_RETRIED_DIFF_MODEL_MARKER = '[degenerate-retried-diff-model]';
 const DEGENERATE_FINAL_MARKER = '[degenerate-final]';
+// A fallback tier's model rejected the request outright (e.g. a removed
+// model id - see the `!response.ok` branch this marker comes from in
+// openrouter.ts) and the chain escalated straight to the next tier. Same
+// "not a terminal outcome" treatment as the two DEGENERATE_RETRIED_*
+// markers above.
+const HTTP_ERROR_ESCALATED_MARKER = '[http-error-escalated]';
 
 // Sent as the X-Site-Gate header on every call that creates a trial or
 // spends OpenRouter quota (see isSiteGateOk in
@@ -482,7 +488,9 @@ async function triggerAgent(url, signal) {
 function isRetriedMarkerLog(log) {
   return (
     typeof log.errorMessage === 'string' &&
-    (log.errorMessage.startsWith(DEGENERATE_RETRIED_SAME_MODEL_MARKER) || log.errorMessage.startsWith(DEGENERATE_RETRIED_DIFF_MODEL_MARKER))
+    (log.errorMessage.startsWith(DEGENERATE_RETRIED_SAME_MODEL_MARKER) ||
+      log.errorMessage.startsWith(DEGENERATE_RETRIED_DIFF_MODEL_MARKER) ||
+      log.errorMessage.startsWith(HTTP_ERROR_ESCALATED_MARKER))
   );
 }
 
@@ -496,7 +504,7 @@ function isRetriedMarkerLog(log) {
 // the real, unstripped text.
 function stripMarkerPrefix(message) {
   if (typeof message !== 'string') return message;
-  for (const marker of [DEGENERATE_RETRIED_SAME_MODEL_MARKER, DEGENERATE_RETRIED_DIFF_MODEL_MARKER, DEGENERATE_FINAL_MARKER]) {
+  for (const marker of [DEGENERATE_RETRIED_SAME_MODEL_MARKER, DEGENERATE_RETRIED_DIFF_MODEL_MARKER, DEGENERATE_FINAL_MARKER, HTTP_ERROR_ESCALATED_MARKER]) {
     if (message.startsWith(marker)) return message.slice(marker.length).trimStart();
   }
   return message;
@@ -1283,8 +1291,15 @@ function renderCallLog() {
     const isRetriedDiffModel = err.startsWith(DEGENERATE_RETRIED_DIFF_MODEL_MARKER);
     const isDegenerateRetried = isRetriedSameModel || isRetriedDiffModel;
     const isDegenerateFinal = err.startsWith(DEGENERATE_FINAL_MARKER);
+    // A fallback tier's model rejected the request outright (e.g. a
+    // removed model id) and the chain escalated to the next tier - see
+    // HTTP_ERROR_ESCALATED_MARKER's own comment above. Always an
+    // escalation to a different model, never a same-model retry (unlike
+    // the degenerate/truncation case), since retrying the exact same
+    // broken model id has no plausible upside.
+    const isHttpErrorEscalated = err.startsWith(HTTP_ERROR_ESCALATED_MARKER);
 
-    if (isDegenerateRetried) {
+    if (isDegenerateRetried || isHttpErrorEscalated) {
       // Dims the whole row - a visual cue that this failure wasn't fatal
       // and the same call likely went on to succeed on a later row.
       tr.classList.add('row-degenerated-retried');
@@ -1320,6 +1335,13 @@ function renderCallLog() {
         <div class="cell-stack">
           <span class="badge badge-warn">Degenerated</span>
           <div class="status-caption">(${caption})</div>
+        </div>
+      `;
+    } else if (isHttpErrorEscalated) {
+      statusCellHtml = `
+        <div class="cell-stack">
+          <span class="badge badge-warn">Escalated</span>
+          <div class="status-caption">(model error, escalated to a different model)</div>
         </div>
       `;
     } else if (isDegenerateFinal) {
