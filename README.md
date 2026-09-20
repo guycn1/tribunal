@@ -72,17 +72,19 @@ One badge per trial, summarising the whole run.
 
 ## Local development
 
-Prerequisites: Node.js, a Supabase project (schema in `supabase/schema.sql`), an OpenRouter API key.
+Prerequisites: Node.js, a Supabase project, an OpenRouter API key.
+
+Apply `supabase/schema.sql` to the Supabase project first — pasting it into the SQL Editor is enough. It creates the six tables, seeds the fixed case record, enables row-level security, and issues the grants the backend needs. All of that is required: without the grants at the bottom of that file, every backend call fails with `permission denied for table X` even though the key is correct.
 
 ```bash
 npm install
 cp .env.example .env   # fill in OPENROUTER_API_KEY, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
 npm run dev             # netlify dev — serves the static frontend and functions locally
 npm run typecheck       # tsc --noEmit
-npm test                # retry/escalation and card-render regression tests
+npm test                # three regression suites (see below)
 ```
 
-`npm test` needs no network and spends no quota: it compiles the real shipped TypeScript with the project's own `tsc` and drives it against a mocked `fetch`, and executes `app.js`'s real top-level code against a stub DOM.
+`npm test` needs no network and spends no quota. It runs three suites over the real source rather than copies of it: the retry/escalation logic, compiled from the shipped TypeScript with the project's own `tsc` and driven against a mocked `fetch`; the card-render path, by executing `app.js`'s real top-level code against a stub DOM; and the cross-file constants, by reading the files that duplicate a value and asserting they still agree.
 
 `netlify dev` costs no Netlify credits — it never touches the cloud build/deploy pipeline. It does reach the real OpenRouter API for any representative/judge call, so local testing still spends real quota.
 

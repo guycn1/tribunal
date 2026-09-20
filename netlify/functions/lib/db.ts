@@ -337,6 +337,14 @@ const GLOBAL_CALL_WINDOW_MS = 24 * 60 * 60 * 1000;
 // - or a client request - could ever set; a genuine hang chasing this
 // exact cap during local testing is what prompted checking for a way to
 // exempt local calls instead of only ever raising the number.
+//
+// Never set NETLIFY_DEV by hand - not in .env, and above all not in
+// Netlify's own environment variables. It is deliberately absent from
+// .env.example for this reason. Setting it would silently switch off the
+// only hard ceiling on what the public site can spend, and nothing would
+// look wrong: calls would keep succeeding, the cap would simply never
+// trip. The CLI sets it for you locally; there is no case where you need
+// to.
 export async function isGlobalCallCapExceeded(): Promise<{ exceeded: boolean; count: number }> {
   if (process.env.NETLIFY_DEV === 'true') {
     return { exceeded: false, count: 0 };

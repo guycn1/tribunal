@@ -288,7 +288,9 @@ This cannot be fixed mid-conversation (no available tool to prune older images f
 
 Cross-session memory relevant to this project also lives outside this file, in Claude's persistent memory system (separate from the repo and from this file) — see `tribunal-git-workflow`, `keep-claude-md-status-current`, and `economical-openrouter-testing` there. A fresh session should have these recalled automatically; if not, they're worth asking about explicitly.
 
-**OpenRouter quota:** gets exhausted fast during any round of testing/debugging (real 429s, not a bug — see [[economical-openrouter-testing]] in memory and Part 5 above). Resets daily, account-wide. Don't trust a specific remembered reset time — check current status live via `GET https://openrouter.ai/api/v1/key` (API key as Bearer token) or the `X-RateLimit-Reset` header on any 429 response.
+**OpenRouter spend and rate limits.** This paragraph used to describe a free-tier daily request cap that reset overnight, and told you to check what was left via `GET https://openrouter.ai/api/v1/key`. Both halves were wrong to keep: the account has been paid since 2026-08-28, so there is no daily allowance to run out of - only a prepaid balance that real calls draw down (see `pricing.ts` for what each tier costs) - and that endpoint does not report a remaining-requests figure anyway. A real call to it returned `limit`, `limit_reset` and `limit_remaining` all `null`; its `usage` fields are dollar amounts, not request counts. So calling it to answer "how much do I have left today?" spends a request and tells you nothing, which is exactly what the bug log further down records.
+
+What is still true: **429s happen during dense testing and are not a bug.** They are burst rate limiting, the app handles them (a fast one does not even cost a tier attempt - see `FAST_FAILURE_THRESHOLD_MS`), and the only place a real limit/reset figure appears is the `X-RateLimit-*` headers on an actual chat-completion response. Space tests out rather than trying to query a budget that is not exposed.
 
 ## Frontend polish backlog (flagged 2026-09-02, all 7 items done as of 2026-09-03)
 
