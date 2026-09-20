@@ -1,4 +1,17 @@
 :root {
+  /* 90% of the browser's own default, which is 14.4px on a default setup.
+     Deliberately a percentage rather than a px value: a px value here
+     would override the reader's browser font-size preference outright,
+     so someone who raised their default for readability would be silently
+     pushed back down to this size. A percentage scales that preference instead
+     of replacing it, and produces the identical result for everyone who
+     has not changed it.
+     Every font-size in this stylesheet is expressed in rem, so this is
+     the single control point for the app's whole type scale. Lengths that
+     should NOT track type size - hairline borders, radii, fixed
+     structural spacing, breakpoints - stay in px on purpose. */
+  font-size: 90%;
+
   --bg: #14171c;
   --bg-raised: #1c2129;
   --bg-card: #20262f;
