@@ -740,7 +740,25 @@ body {
 .badge {
   display: inline-block;
   border-radius: 999px;
-  padding: 3px 10px;
+  /* Vertical padding is deliberately uneven, and the total is still 6px so
+     the pill's height is unchanged. Symmetric padding centres the LINE BOX,
+     which is not the same as centring the text you can see: this font
+     reserves 12px above the baseline and 3px below it at this size, so the
+     baseline sits 4.5px lower in the box than the visible ink implies, and
+     every badge rendered ~1.5px low inside its own pill. Shifting 1px of
+     padding from the top to the bottom lifts the line box by half that
+     difference.
+     It cannot be exact for every badge at once, because how far the ink
+     sits from the baseline depends on the letters: a word with no ascender
+     and no descender ("success") sat 1.51px low, one with an ascender but
+     no descender ("Truncated", "failed") 0.51px. Both families occur about
+     equally often here, so this splits the difference and leaves either at
+     ~0.5px - about 2% of the pill's height, against 7% before.
+     The badge's own font-size is a rem value and is never overridden per
+     breakpoint, so this one rule is the whole fix: measured identical at
+     1100px, 700px and 400px, in the table, in the card layout, on the
+     agent cards and in the sidebar. */
+  padding: 2px 10px 4px;
   font-size: 0.75rem;
   /* white-space: normal lets a multi-word badge (e.g. "No response yet")
      wrap between words when its column is narrow. Deliberately no
