@@ -298,13 +298,18 @@ function detectDegenerateRun(content: string): { degenerate: boolean; runLength:
 // you.", "I agree.") can never trip it either.
 //
 // It works on real output, not just on the corpus it was calibrated
-// against: counted from api_call_logs, this check has caught five natural
-// live cases - all on the day it shipped, all on the tier-1 default model,
-// tyrion_lannister twice and grey_worm three times, at 4 to 8 verbatim
-// repeats each. The older run-on check above has caught two, both
-// grey_worm, both on the tier-2 model of the time, at 180 and 84 words -
-// far past the 40-word line, and the 84-word one was read in full and
-// confirmed degenerate.
+// against: counted from api_call_logs, this check has caught six natural
+// live cases, all on the tier-1 default model, at 4 to 8 verbatim repeats
+// each - five on the day it shipped (tyrion_lannister twice, grey_worm
+// three times) and one on the deployed site the next day, grey_worm again,
+// at exactly the 4-repeat threshold. That last one is the only catch so
+// far that happened in production rather than in local testing, and it is
+// worth knowing what it cost to miss: the response had finish_reason=stop
+// at 604 tokens, so without this check it would have been saved and shown
+// as a perfectly ordinary successful argument. The older run-on check
+// above has caught two, both grey_worm, both on the tier-2 model of the
+// time, at 180 and 84 words - far past the 40-word line, and the 84-word
+// one was read in full and confirmed degenerate.
 //
 // On false positives, the honest answer is that they are mostly not
 // auditable here, and this should not be reported as if it were a clean

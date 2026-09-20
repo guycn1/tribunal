@@ -246,12 +246,17 @@ export const handler = safeHandler(rawHandler);
 // SINCE CONFIRMED IN PRODUCTION (this used to read "unverified"): the
 // deployed site has run real trials on this exact shape - config.background
 // plus the -background filename plus the matching netlify.toml redirect -
-// and the calls genuinely ran as Background Functions there. The proof is
-// incidental but conclusive: a real production trial (2026-09-20) had two
-// judge calls run for roughly six unbroken minutes server-side before
-// anyone noticed they were stuck. A standard synchronous invocation cannot
-// do that; it would have been killed at the 10-second ceiling. So whatever
-// the platform keys off, this combination works deployed.
+// and the calls genuinely ran as Background Functions there. The direct
+// proof came on 2026-09-21: across four full 7-agent trials against the
+// live site, all 28 trigger POSTs returned Netlify's own automatic HTTP
+// 202 in roughly 0.3-0.5s, rather than blocking for the real 9-21s
+// generation. No handler in this repository ever returns 202, so that
+// status can only have come from the platform treating these as Background
+// Functions. (An earlier, incidental proof pointed the same way: a
+// production trial on 2026-09-20 had two judge calls run for roughly six
+// unbroken minutes server-side - impossible for a synchronous invocation,
+// which dies at the 10-second ceiling.) So whatever the platform keys off,
+// this combination works deployed.
 //
 // What is still genuinely unknown, and no longer matters much: whether the
 // platform needs the filename suffix or merely tolerates it alongside

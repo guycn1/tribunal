@@ -72,7 +72,7 @@ export function getModelForRole(role: string): string {
 // piece of writing. That was the reason for the choice, and it has since
 // been measured on this workload rather than left as an expectation.
 //
-// 21 calls to this model on this project, all clean: 5 served through the
+// 22 calls to this model on this project, all clean: 6 served through the
 // app during real trials, and 16 in a targeted batch that drove the real
 // callOpenRouter() with the real Grey Worm and Daenerys prompts at this
 // tier's real 2800-token allowance. Every one finished naturally
@@ -82,20 +82,30 @@ export function getModelForRole(role: string): string {
 // than production, since it omitted the CONCISENESS_REMINDER a real
 // escalation would carry.
 //
-// Read that for what it is. 21 clean calls is a real result on the exact
+// All 6 of the app-served calls were escalations the chain reached on its
+// own, each with 2-3 attempts already discarded for that role - none
+// forced or staged. Five of those happened locally; the sixth was on the
+// deployed site (2026-09-21) and is so far the only time this tier has
+// been reached in production: grey_worm, after a repeated-sentence
+// degeneration and then a truncation at tier 1, answered here cleanly at
+// 605 tokens in 9.3s.
+//
+// Read that for what it is. 22 clean calls is a real result on the exact
 // workload this tier serves, and it is not a basis for saying this model
 // will never truncate or degenerate - no sample size establishes that,
 // here or at any other tier. What it does establish is that the failure
 // modes this tier exists to catch have not appeared, at a cap the model
 // is nowhere near reaching. The predecessor at this tier, for contrast,
-// logged 11 discarded attempts across 89 calls, and managed 7 clean out
-// of 8 - this project's tiers 3/4 already cross
-// vendors from their own default without issue, verified across many real
-// trials. Real, verified pricing (per pricing.ts): $1.00/$5.00 per million
-// prompt/completion tokens vs. the dead Mistral Large's $0.50/$1.50 - a
-// real 2-3x step up, which is why tier 1 was given a second attempt of its
-// own (see buildRetryTiers) to catch more recoverable failures at the
-// cheap default model before ever reaching this pricier tier.
+// logged 88 calls: 74 kept, 11 attempts discarded and retried, and 3
+// terminal failures.
+//
+// Crossing vendors here is not a new risk either - tiers 3/4 already do
+// it from the default, across many real trials. Real, verified pricing
+// (per pricing.ts): $1.00/$5.00 per million prompt/completion tokens vs.
+// the dead Mistral Large's $0.50/$1.50 - a real 2-3x step up, which is why
+// tier 1 was given a second attempt of its own (see buildRetryTiers) to
+// catch more recoverable failures at the cheap default model before ever
+// reaching this pricier tier.
 const TRUNCATION_FALLBACK_MODEL = process.env.TRUNCATION_FALLBACK_MODEL || 'anthropic/claude-haiku-4.5';
 
 export function getTruncationFallbackModel(): string {
