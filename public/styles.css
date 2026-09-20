@@ -1176,8 +1176,15 @@ table.call-log .col-full {
     background: transparent;
   }
 
+  /* The totals card is a computed summary, not another call, so it carries
+     both a thicker and a brighter border than the ordinary cards - in the
+     table view that separation comes from a heavy top rule and a raised
+     background, neither of which reads as a divider once every row is its
+     own box. Mixed toward --text-dim rather than set to a flat lighter
+     grey so it still belongs to the same palette as --border. */
   table.call-log tfoot tr.call-log-total-row {
     border-width: 2px;
+    border-color: color-mix(in srgb, var(--border) 60%, var(--text-dim));
   }
 
   /* Its first and last cells are a heading and a footnote rather than
