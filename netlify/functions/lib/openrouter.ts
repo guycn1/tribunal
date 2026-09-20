@@ -128,8 +128,10 @@ export interface OpenRouterMessage {
 }
 
 // Appended (as an extra user turn, not a continuation of the cut-off
-// content) for exactly one retry when a response hits max_tokens before
-// reaching a natural conclusion. A truncated response was previously
+// content) to every attempt after the first - see isFallbackAttempt
+// below. It began life as a single retry for a response that hit
+// max_tokens before reaching a natural conclusion, which is where the
+// wording comes from. A truncated response was previously
 // accepted as a plain success with no corrective action - real testing
 // found this happens to a real, non-trivial share of calls (roughly 1 in
 // 4 in one batch) even with frequency_penalty/presence_penalty already
@@ -294,20 +296,31 @@ function detectRepeatedSentences(content: string): { degenerate: boolean; count:
   return { degenerate: count >= REPEATED_SENTENCE_THRESHOLD, count, sample };
 }
 
-// Sent on every fallback-tier attempt, regardless of which of the two
-// failure modes above triggered escalation - kept deliberately general
-// rather than naming a specific cause, since a wrong guess (e.g. telling
-// a degenerate-but-not-truncated response it was "cut off") would be
-// actively misleading to the model on the retry.
+// Sent on every attempt after the first, whatever caused the retry - a
+// same-tier retry as much as an escalation to the next tier. Kept
+// deliberately general rather than naming a specific cause, since a wrong
+// guess (e.g. telling a degenerate-but-not-truncated response it was "cut
+// off") would be actively misleading to the model on the retry.
+//
+// Worth knowing, since the wording does not fit every case it now
+// reaches: `attempt > 1` is the gate, so this is also appended after a
+// transient failure - a timeout, a 429, an empty-content 200 - where the
+// previous attempt produced no content at all and there was nothing to be
+// too long or too repetitive. The text is wrong for that case, though
+// harmlessly so: it asks for a concise, well-punctuated answer, which is
+// what was wanted anyway. Narrowing the gate to content-quality failures
+// specifically would be a behaviour change, not a comment fix, and has
+// not been made.
 const CONCISENESS_REMINDER: OpenRouterMessage = {
   role: 'user',
   content:
     'Your previous attempt did not produce a usable response - it either ran past the length target and was cut off, or trailed into repetitive, run-on text without normal punctuation before finishing. Write your response again from scratch: stay well within the word count you were given, use clear sentences with normal punctuation throughout, and make sure to reach a clear, complete ending.',
 };
 
-// Every discarded attempt (one that truncated or degenerated and was
-// abandoned in favor of a retry/escalation) gets logged as its own real
-// row via logApiCall(), not folded silently into whichever attempt was
+// Every discarded attempt - whatever discarded it: truncation or
+// degeneration, a plain HTTP failure at that tier, a transient failure, or
+// an abort caught between attempts - gets logged as its own real row via
+// logApiCall(), not folded silently into whichever attempt was
 // eventually kept - the whole point being that a reader of the call log
 // can see that a role needed a fallback at all, not just its final
 // outcome. All six marker prefixes below are duplicated as literal strings

@@ -20,7 +20,9 @@ export const ALL_AGENT_ROLES = Object.keys(ROLE_ENV_VAR);
 
 // Shared by representative-background.ts and judge-background.ts, and
 // exposed to the frontend via
-// case.ts, so there is exactly one place this number lives - the frontend
+// case.ts, so there is exactly one place this number is defined (test
+// fixtures restate the current value, but nothing reads it from them) -
+// the frontend
 // derives "was this response truncated?" by comparing a completed call's
 // completion_tokens against this same constant (see isTruncated() in
 // app.js), which would silently go wrong if the two ever drifted apart.

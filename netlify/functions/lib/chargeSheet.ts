@@ -4,9 +4,17 @@ import type { CaseDefinition } from './types';
 const CASE_CODE = 'T-001';
 
 // The case record lives in the database (case_definitions), not as a code
-// constant, so there is exactly one copy of it — the seed row written by
-// supabase/schema.sql. Every prompt-builder and every API response reads
-// through this function rather than duplicating the text.
+// constant, so there is exactly one copy of it at runtime — the seed row
+// written by supabase/schema.sql. Every prompt-builder and every API
+// response reads through this function rather than duplicating the text,
+// and no code constant anywhere restates it.
+//
+// The repository does hold the same text twice more, deliberately and in a
+// different role: CLAUDE.md Part 1 and SPEC.md section 1 are the brief the
+// seed was written from, not runtime copies. Nothing reads them, but they
+// are worth knowing about before editing the case - changing it properly
+// means changing the seed and both of those, and only the seed has any
+// effect on what the app actually serves.
 export async function getChargeSheet(): Promise<CaseDefinition> {
   const supabase = getSupabaseClient();
   const { data, error } = await supabase
