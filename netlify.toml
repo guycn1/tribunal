@@ -5,6 +5,18 @@
 [functions]
   node_bundler = "esbuild"
 
+# Local dev only - ignored by the deploy pipeline.
+# Stops `netlify dev` from launching a browser tab at localhost:8888 on every
+# start; opening the app is left to whoever is running it. Set here rather
+# than as a --no-open flag on the npm script so it applies however the server
+# is started, including a direct `netlify dev` invocation. Verified against
+# the installed CLI's own source rather than assumed: dev.js builds its
+# devConfig as {autoLaunch: <default>, ...config.dev, ...options} and then
+# guards the launch with `if (devConfig.autoLaunch !== false)`, so this key
+# genuinely takes precedence over the default.
+[dev]
+  autoLaunch = false
+
 # Path segments are forwarded as extra path parts (not query string) — Netlify's
 # deployed redirect engine does not reliably rewrite named placeholders into a
 # target's query string, only into the target path.

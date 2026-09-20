@@ -26,8 +26,24 @@
                across the web wherever a lightweight GitHub link icon is
                needed. currentColor so it follows .github-link's own color/
                opacity styling in styles.css rather than needing a second
-               place to keep a color in sync. -->
-          <svg viewBox="0 0 16 16" width="24" height="24" fill="currentColor" aria-hidden="true" focusable="false">
+               place to keep a color in sync.
+
+               Size ceiling, if this is ever revisited: 30px. The icon
+               shares .sidebar-top-row with .app-title, whose line box
+               measures 30.23px at the current type scale (1.4rem against
+               the inherited 1.5 line-height), and that is what sets the
+               row's height. Anything up to that fits inside it and costs
+               nothing: 24, 28, 29 and 30px all leave the row at 30.23px
+               and "Begin new trial" at the same offset, measured. At 31px
+               the icon becomes the tallest thing in the row, so the row
+               grows (+0.77px) and everything below it in the sidebar
+               shifts down with it - a real layout change to make
+               deliberately, not a side effect to discover afterwards.
+               Note the two do not scale together: this width/height is in
+               px while .app-title is in rem, so a reader with a larger
+               browser default gets more headroom here, and lowering
+               :root's font-size would eat into it. -->
+          <svg viewBox="0 0 16 16" width="28" height="28" fill="currentColor" aria-hidden="true" focusable="false">
             <path
               fill-rule="evenodd"
               d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"
@@ -90,7 +106,8 @@
             <colgroup>
               <!-- Percentages tuned against the real rendered width, which
                    is capped well under any reasonable viewport by .main's
-                   max-width:960px - a viewport-width media query alone
+                   max-width (1040px, giving this table ~974px at its
+                   widest, measured) - a viewport-width media query alone
                    can't tell when this table is actually cramped, so
                    these are sized for the narrow case by default. Model
                    is the biggest share deliberately: even with the
@@ -107,15 +124,27 @@
                    above what its own uppercase, letter-spaced header
                    text needs, not just its data, funded by trimming
                    Model and Status, both of which had more room than
-                   their content actually needed. Time took a further
-                   2% from Tokens - the bold-total-plus-dim-breakdown
-                   layout (see the Tokens cell in renderCallLog()) needs
-                   less horizontal room than a single "prompt / completion
-                   / total" line did, so it had margin to spare. -->
+                   their content actually needed.
+                   Tokens then took 2% back from Model, measured rather
+                   than estimated. The narrowest this table ever renders
+                   is 655px (at a 901px viewport - just wide enough for
+                   the sidebar, which stacks below that and gives the
+                   table more room, not less). At 655px, Tokens' old 15%
+                   was 98px, while the breakdown line needs 100px for an
+                   ordinary judge row and 106px for a five-digit prompt
+                   count - so it wrapped to two lines routinely, not just
+                   in the extreme case. Model gave up the 2% for free:
+                   the longest real model id wraps to exactly two lines
+                   anywhere between 118px and 144px, so its old 144px
+                   share was idle at this width, and at wider viewports
+                   20% still fits the same id on one line everywhere 22%
+                   did. Going further (19%/18%) does start splitting the
+                   model name at ~1100px/~1280px, which is why this
+                   stops at 20/17. -->
               <col style="width: 13%" />
               <col style="width: 6%" />
-              <col style="width: 22%" />
-              <col style="width: 15%" />
+              <col style="width: 20%" />
+              <col style="width: 17%" />
               <col style="width: 7%" />
               <col style="width: 11%" />
               <col style="width: 14%" />

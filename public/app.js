@@ -2,19 +2,45 @@ const REPRESENTATIVE_ROLES = ['jon_snow', 'tyrion_lannister', 'daenerys_targarye
 const JUDGE_ROLES = ['barak', 'elon', 'shamgar'];
 
 // Must match ABORTED_BY_USER_MESSAGE in netlify/functions/lib/db.ts exactly
+// (asserted by tests/shared-constants.test.js)
 // - used to recognize an aborted call's log row when rebuilding history
 // (see loadTrial) so it renders with the distinct "Aborted" badge instead
 // of the generic "Call failed" one.
 const ABORTED_BY_USER_MESSAGE = 'Aborted by user before this call could complete.';
 
-// Must match the three DEGENERATE_*_MARKER exports in
-// netlify/functions/lib/openrouter.ts exactly - used by renderCallLog()
-// to tell a discarded-but-recovered attempt (the role went on to succeed
-// or is still trying a further tier) from a discarded-and-fatal one (this
-// was the last available tier, and it was also truncated/degenerate).
+// The six marker constants below must match their exports in
+// netlify/functions/lib/openrouter.ts exactly - used by renderCallLog() to
+// tell a discarded-but-recovered attempt (the role went on to succeed or is
+// still trying a further tier) from a discarded-and-fatal one (this was the
+// last available tier and it failed too), and to pick the right badge for
+// each. There is no import to keep them in step - this file is served as
+// plain static JS with no build step - so tests/shared-constants.test.js
+// asserts the two sets match instead. Add a marker there, add it here.
+//
+// "DEGENERATE" in these names is an umbrella for the whole content-quality
+// class - it covers a response cut off at the token cap as well as one
+// that genuinely degenerated - which is why the badge these produce is
+// chosen from the reason text below rather than from the marker alone.
+// See the fuller note at the marker definitions in openrouter.ts for why
+// the names are kept as they are rather than corrected.
 const DEGENERATE_RETRIED_SAME_MODEL_MARKER = '[degenerate-retried-same-model]';
 const DEGENERATE_RETRIED_DIFF_MODEL_MARKER = '[degenerate-retried-diff-model]';
 const DEGENERATE_FINAL_MARKER = '[degenerate-final]';
+// A fallback tier's model rejected the request outright (e.g. a removed
+// model id - see the `!response.ok` branch this marker comes from in
+// openrouter.ts) and the chain escalated straight to the next tier. Same
+// "not a terminal outcome" treatment as the two DEGENERATE_RETRIED_*
+// markers above.
+const HTTP_ERROR_ESCALATED_MARKER = '[http-error-escalated]';
+// A transient failure (timeout, 429, 5xx, empty-content 200) that was
+// retried or escalated. Before these were logged at all, a call that kept
+// timing out left the card frozen with nothing in the log to explain it.
+const TRANSIENT_RETRIED_MARKER = '[transient-retried]';
+// The chain stopped itself because the user aborted the trial while it was
+// still running server-side. Terminal, not a retry - but it means "stopped
+// on purpose", not "broke", so it renders as an abort rather than a
+// failure.
+const ABORTED_MID_CALL_MARKER = '[aborted-mid-call]';
 
 // Sent as the X-Site-Gate header on every call that creates a trial or
 // spends OpenRouter quota (see isSiteGateOk in
@@ -121,12 +147,49 @@ function formatDateTimeHtml(dateInput) {
   return `<span class="datetime-part">${datePart},</span><br /><span class="datetime-part">${timePart}</span>`;
 }
 
-// "mistralai/mistral-small-24b-instruct-2501" -> "mistral-small-24b-instruct-2501"
-// Strips any "provider/" prefix and a trailing ":free" suffix, if present -
-// display only, the full id is what's actually sent to the backend/OpenRouter.
+// "mistralai/mistral-small-24b-instruct-2501" -> "mistral-small-24b-2501"
+// Strips any "provider/" prefix, a trailing ":free" suffix, and a standalone
+// "-instruct" segment, if present - display only, the full id is what's
+// actually sent to the backend/OpenRouter, and is still reachable from the
+// table (the <abbr title> on hover) and shown in full in the card layout
+// below 720px.
+//
+// All three are dropped for the same reason: none of them tell a reader of
+// this log anything the rest of the id doesn't. "instruct" distinguishes an
+// instruction-tuned model from its base variant, and every model this app
+// can use is instruction-tuned - it is as content-free here as the vendor
+// prefix. The date stamp ("-2501") is deliberately kept: it is the only
+// thing separating two pinned snapshots of the same model, which is exactly
+// what this column exists to report.
+//
+// These are generic rules rather than a per-model lookup table on purpose.
+// Every tier's model id is env-var-configurable (see models.ts), so a table
+// could never be relied on to cover whatever is actually running - it would
+// silently miss the one case it was added for. If some future id still reads
+// badly after these rules, an exceptions table consulted ahead of them is
+// the escape hatch, but there is no point building one for a set of one.
 function shortModelName(modelId) {
   if (!modelId) return 'unknown model';
-  return modelId.replace(/^[^/]+\//, '').replace(/:free$/, '');
+  return modelId
+    .replace(/^[^/]+\//, '')
+    .replace(/:free$/, '')
+    .replace(/-instruct(?=-|$)/, '');
+}
+
+// "1,072 in / 1,400 out" for the Tokens column's secondary line.
+//
+// The spaces inside each figure are non-breaking, and the slash is bound to
+// the first figure, so the only place this string can wrap is after the
+// slash. Left to ordinary spaces it wraps wherever it runs out of room,
+// which in the Tokens column's fixed width strands a lone "out" on a line
+// of its own ("1,072 in / 1,400" + "out"). Fixing it this way keeps the
+// column widths exactly as deterministic as they were - the colgroup
+// percentages and table-layout: fixed are untouched, since the problem was
+// never the column's width but where the text was permitted to break.
+// A run that still cannot fit is broken by the cell's overflow-wrap as a
+// last resort, so this can never overflow.
+function formatTokenBreakdown(promptTokens, completionTokens) {
+  return `${promptTokens.toLocaleString()}&nbsp;in&nbsp;/ ${completionTokens.toLocaleString()}&nbsp;out`;
 }
 
 // 1 -> "first", 2 -> "second", ... used for the "(first attempt)"/"(second
@@ -140,25 +203,39 @@ function ordinalWord(n) {
   return ORDINAL_WORDS[n] || `${n}th`;
 }
 
-// Single-letter Type column, with the full word kept available via <abbr>
-// (hover/long-press) rather than silently discarding it.
+// Both spellings of the Type value are emitted, and the stylesheet shows
+// exactly one of them - see the .col-short/.col-full pair in styles.css.
+//
+// The single letter plus an <abbr> exists only because the table view has
+// to fit eight columns across; it is a concession to width, not a better
+// way to say "Representative". The card view below 720px has a whole row
+// per field and no such constraint, so it shows the real word with no
+// tooltip to hunt for - which also matters because a tooltip is close to
+// useless on the touch devices that get the card layout in the first
+// place. Rendering both and letting CSS choose keeps this a single render
+// path with no width checks in JS.
 function formatCallTypeHtml(callType) {
-  if (callType === 'representative') return '<abbr title="Representative">R</abbr>';
-  if (callType === 'judge') return '<abbr title="Judge">J</abbr>';
-  return callType;
+  const full = callType === 'representative' ? 'Representative' : callType === 'judge' ? 'Judge' : null;
+  if (!full) return callType;
+  const short = callType === 'representative' ? 'R' : 'J';
+  return `<abbr class="col-short" title="${full}">${short}</abbr><span class="col-full">${full}</span>`;
 }
 
 // True when a successful call's completion hit the shared token cap
 // (state.maxTokens, from /api/case) rather than finishing naturally - the
 // server already logs this distinctly via finish_reason (see openrouter.ts),
-// but that's only visible in the terminal; this is what makes it visible
-// here too. Works for both a live entry (tokens included directly in the
+// but that's only visible in the terminal. This used to be what surfaced
+// it in the UI; it no longer is, for anything newly generated - the server
+// now fails such a call outright, so it reaches the card as a real failure
+// rather than as a badge on a success. See the paragraph below: what
+// remains here is a reader for historical rows. Works for both a live entry (tokens included directly in the
 // success response) and a historical one loaded from a past trial (see
 // loadTrial(), which backfills tokens.completion from the matching
 // api_call_logs row for exactly this purpose).
 //
-// A response still truncated after the one conciseness retry is now
-// returned by the server as a real failure (openrouter.ts), not a
+// A response still truncated after every attempt the escalation chain
+// allows (four tiers, up to seven attempts - see buildRetryTiers in
+// openrouter.ts) is now returned by the server as a real failure, not a
 // "success" for this function to badge - so this can no longer fire for
 // any newly-generated result. It's kept, and checks a *multiple* of
 // state.maxTokens rather than an exact match, specifically for trials
@@ -278,14 +355,18 @@ function updateHistoryLockState() {
   el.historyList.classList.toggle('running-locked', state.running);
 }
 
-// Records which roles were still pending, tells the in-flight calls to stop,
-// gives immediate visual feedback (doesn't wait on the network round trip
-// below), then persists the abort as a real, visible fact so the sidebar
-// reflects it later too - not just for this page view. Persisting matters
-// because aborting a fetch() client-side does not reliably stop the Netlify
-// invocation it was talking to, so without a persisted record a stray
-// success/failure logged after the fact could make an aborted run look
-// like an ordinary one.
+// Records which roles were still pending, gives immediate visual feedback
+// (doesn't wait on the network round trip below), and persists the abort as
+// a real, visible fact.
+//
+// Persisting is not just bookkeeping - it does two jobs, and telling the
+// in-flight calls to stop is the more important one. Aborting a fetch()
+// client-side cannot stop the Netlify invocation it was talking to, so the
+// persisted row is the only channel there is: each running call polls for
+// it between attempts and stops itself (isTrialAborted in db.ts). Second,
+// it makes the abort durable, so the sidebar reflects it on a later visit
+// and a stray success or failure logged after the fact can't make an
+// aborted run look like an ordinary one.
 async function abortCurrentTrial() {
   if (!state.abortController || !state.trialId) return;
 
@@ -371,7 +452,7 @@ async function abortCurrentTrial() {
 // the same instant, but it is not what does the real work here. This is
 // about OpenRouter's own account-level concurrency limit specifically, and
 // still applies regardless of the trigger/poll rewrite below - moving
-// representative.ts/judge.ts to Background Functions changes how this app
+// the agent endpoints to Background Functions changes how this app
 // waits for a result, not how many calls the OpenRouter account can take
 // at once.
 const CONCURRENT_CALL_STAGGER_MS = 400;
@@ -420,7 +501,7 @@ function sleep(ms, signal) {
   });
 }
 
-// representative.ts/judge.ts now run as Netlify Background Functions (see
+// the agent endpoints now run as Netlify Background Functions (see
 // config.background in each) - the fix for a verified, load-bearing
 // problem: Netlify's real free-tier synchronous function limit is 10
 // seconds, while every real OpenRouter call measured on this project has
@@ -455,11 +536,16 @@ async function triggerAgent(url, signal) {
     return { accepted: true };
   }
 
-  // A non-2xx this early can only be a platform-level rejection (Netlify's
-  // per-IP rate limiter, most likely - see the rateLimit config on
-  // representative.ts/judge.ts) rather than anything from this app's own
-  // handler code, since a Background Function's own application-level
-  // outcome never reaches this response at all.
+  // A non-2xx this early can only be a platform-level rejection rather
+  // than anything from this app's own handler code, since a Background
+  // Function's own application-level outcome never reaches this response
+  // at all. Two real causes, both seen on this project: Netlify's per-IP
+  // rate limiter (see the rateLimit config on the agent Background
+  // Functions), and a routing failure - an immediate 404 on every call,
+  // which happened when the function files were renamed and netlify.toml's
+  // redirect targets still pointed at the old names. The second looks
+  // nothing like the first, so don't read every non-2xx here as rate
+  // limiting.
   let message;
   try {
     const data = await res.json();
@@ -482,12 +568,16 @@ async function triggerAgent(url, signal) {
 function isRetriedMarkerLog(log) {
   return (
     typeof log.errorMessage === 'string' &&
-    (log.errorMessage.startsWith(DEGENERATE_RETRIED_SAME_MODEL_MARKER) || log.errorMessage.startsWith(DEGENERATE_RETRIED_DIFF_MODEL_MARKER))
+    (log.errorMessage.startsWith(DEGENERATE_RETRIED_SAME_MODEL_MARKER) ||
+      log.errorMessage.startsWith(DEGENERATE_RETRIED_DIFF_MODEL_MARKER) ||
+      log.errorMessage.startsWith(HTTP_ERROR_ESCALATED_MARKER) ||
+      log.errorMessage.startsWith(TRANSIENT_RETRIED_MARKER))
   );
 }
 
-// Strips a leading DEGENERATE_*_MARKER (plus the space after it) from an
-// error message before it's shown on an agent card - those markers exist
+// Strips a leading marker (plus the space after it) from an error message
+// before it's shown on an agent card - any of the six, not just the
+// DEGENERATE_* ones; the list below is the authority. Those markers exist
 // so renderCallLog() can tell attempt outcomes apart in the call log
 // table, but they're internal bookkeeping, not something a reader of the
 // card should ever see verbatim. The call log table is unaffected: it
@@ -496,7 +586,14 @@ function isRetriedMarkerLog(log) {
 // the real, unstripped text.
 function stripMarkerPrefix(message) {
   if (typeof message !== 'string') return message;
-  for (const marker of [DEGENERATE_RETRIED_SAME_MODEL_MARKER, DEGENERATE_RETRIED_DIFF_MODEL_MARKER, DEGENERATE_FINAL_MARKER]) {
+  for (const marker of [
+    DEGENERATE_RETRIED_SAME_MODEL_MARKER,
+    DEGENERATE_RETRIED_DIFF_MODEL_MARKER,
+    DEGENERATE_FINAL_MARKER,
+    HTTP_ERROR_ESCALATED_MARKER,
+    TRANSIENT_RETRIED_MARKER,
+    ABORTED_MID_CALL_MARKER,
+  ]) {
     if (message.startsWith(marker)) return message.slice(marker.length).trimStart();
   }
   return message;
@@ -554,9 +651,16 @@ function deriveRoleStates(data) {
         // for a role that's actually still in progress.
         continue;
       }
+      // Two different rows can mean "the user stopped this": the one
+      // abort.ts writes for every pending role at the moment Abort is
+      // clicked, and the one the call writes for itself when its own
+      // between-attempts abort check catches up (see ABORTED_MID_CALL_MARKER
+      // in openrouter.ts). Both are deliberate stops, not failures, so
+      // both get the "Aborted" treatment rather than a red "Call failed".
+      const abortedMidCall = typeof log.errorMessage === 'string' && log.errorMessage.startsWith(ABORTED_MID_CALL_MARKER);
       store[log.agentRole] =
-        log.errorMessage === ABORTED_BY_USER_MESSAGE
-          ? { status: 'aborted', error: log.errorMessage }
+        log.errorMessage === ABORTED_BY_USER_MESSAGE || abortedMidCall
+          ? { status: 'aborted', error: stripMarkerPrefix(log.errorMessage) }
           : { status: 'failed', error: stripMarkerPrefix(log.errorMessage) || 'Unknown failure' };
     } else if (store[log.agentRole] && store[log.agentRole].status === 'success') {
       // representative_arguments/judge_rulings don't store token counts
@@ -580,9 +684,10 @@ function deriveRoleStates(data) {
 // directly in the DB) still showing as unresolved on the client because
 // polling gave up first. A role that still hasn't resolved by the new
 // timeout either genuinely failed in a way this page can't see (the
-// disclosed site-gate/call-cap gap documented in representative.ts/
-// judge.ts - a rejection there is no longer visible to the poller, only
-// in Netlify's function logs) or is a real anomaly worth surfacing
+// disclosed site-gate/call-cap gap documented in
+// representative-background.ts/judge-background.ts - a rejection there is
+// no longer visible to the poller, only in Netlify's function logs) or is
+// a real anomaly worth surfacing
 // honestly rather than silently waiting past.
 const POLL_TIMEOUT_MS = 700000;
 const POLL_INTERVAL_MS = 2500;
@@ -1103,51 +1208,126 @@ function attachScrollbarFade(el) {
 // load at all, not just a visual glitch.
 attachScrollbarFade(el.historyList);
 
-function renderRepresentatives() {
-  el.representativeCards.innerHTML = '';
-  for (const role of REPRESENTATIVE_ROLES) {
-    const meta = REPRESENTATIVE_META[role];
-    const entry = state.representatives[role];
-    const card = document.createElement('div');
-    card.className = 'card';
-    // Cards (unlike #history-list) are torn down and recreated on every
-    // render, so this attaches fresh each time rather than once.
-    attachScrollbarFade(card);
+// A compact description of exactly the state a card was rendered from.
+// Two cards with the same signature would render byte-identically, so a
+// card whose signature hasn't changed can be left on screen untouched.
+//
+// Deliberately built from state rather than from the generated HTML: the
+// loading card's spinner embeds a wall-clock-derived animation-delay (see
+// spinnerHtml) that differs on every single render, so comparing markup
+// would never match and would defeat the whole point.
+//
+// state.trialId is included so that starting or opening a different trial
+// always rebuilds every card, rather than relying on the new trial's
+// per-role state happening to differ from the old one's.
+function agentCardSignature(entry, role) {
+  const trial = state.trialId || '';
+  if (!entry) return `${trial}|none`;
+  if (entry.status === 'success') {
+    return [
+      trial,
+      'success',
+      entry.verdict || '',
+      entry.modelUsed || '',
+      isTruncated(entry) ? 'truncated' : '',
+      // The full text, not a length or a prefix: it is fixed once a result
+      // lands, and comparing it outright removes any chance of a changed
+      // body being mistaken for an unchanged one.
+      entry.argumentText || entry.reasoningText || '',
+    ].join('|');
+  }
+  if (entry.status === 'loading') {
+    const attempt = entry.currentAttempt;
+    const progress = attempt
+      ? `${attempt.model}#${attempt.tierIndex}#${attempt.attemptInTier}#${attempt.tierMaxAttempts}`
+      : `default#${(state.modelInfo && state.modelInfo[role]) || ''}`;
+    return [trial, 'loading', progress].join('|');
+  }
+  return [trial, entry.status, entry.error || ''].join('|');
+}
 
-    const header = document.createElement('div');
-    header.className = 'card-header';
-    header.innerHTML = `
+// Replaces only the cards whose rendered state actually changed, leaving
+// every other card's DOM node exactly where it is.
+//
+// This fixes a real, long-standing annoyance: the render functions used to
+// start with `container.innerHTML = ''` and rebuild every card in the
+// phase, so a poll tick that advanced ONE agent's model/attempt line tore
+// down and recreated all of its siblings too - including cards already
+// showing a finished argument, which visibly flashed. Nothing about one
+// agent escalating requires touching another agent's card.
+//
+// Keeping untouched nodes alive also fixes two quieter side effects of the
+// old approach: a card's scroll position inside a long argument no longer
+// resets mid-read, and its already-attached fade/scrollbar listeners are
+// not repeatedly torn off and re-added.
+function reconcileAgentCards(container, roles, entryFor, buildCard) {
+  roles.forEach((role, index) => {
+    const entry = entryFor(role);
+    const signature = agentCardSignature(entry, role);
+    const existing = container.children[index];
+    if (existing && existing.dataset.cardRole === role && existing.dataset.cardSignature === signature) {
+      return;
+    }
+
+    const { card, scrollBody } = buildCard(role, entry);
+    card.dataset.cardRole = role;
+    card.dataset.cardSignature = signature;
+    if (existing) container.replaceChild(card, existing);
+    else container.appendChild(card);
+
+    // Needs real layout to measure scrollHeight/clientHeight against, so
+    // this can only run once the card is actually attached to the
+    // document - a detached element (mid-build, before the insertion
+    // above) has no box model at all, and both would just read 0.
+    if (scrollBody) attachScrollFade(scrollBody);
+  });
+
+  // Defensive only - the role lists are fixed, so this should never fire.
+  while (container.children.length > roles.length) {
+    container.removeChild(container.lastElementChild);
+  }
+}
+
+function buildRepresentativeCard(role, entry) {
+  const meta = REPRESENTATIVE_META[role];
+  const card = document.createElement('div');
+  card.className = 'card';
+  // Attached per built card, which is now only when that card's own state
+  // actually changed - not on every render of the phase.
+  attachScrollbarFade(card);
+
+  const header = document.createElement('div');
+  header.className = 'card-header';
+  header.innerHTML = `
       <span class="card-name">${meta.name}</span>
       <span class="card-seat ${meta.seat}">${meta.seat}</span>
     `;
-    card.appendChild(header);
+  card.appendChild(header);
 
-    let scrollBody = null;
-    if (entry && entry.status === 'success') {
-      const bodyWrap = document.createElement('div');
-      bodyWrap.className = 'card-body-scroll-wrap';
-      const body = document.createElement('div');
-      body.className = 'card-body card-body-scroll';
-      body.textContent = entry.argumentText;
-      bodyWrap.appendChild(body);
-      card.appendChild(bodyWrap);
-      scrollBody = body;
-      const answeredBy = document.createElement('p');
-      answeredBy.className = 'model-chain';
-      answeredBy.innerHTML = `Answered by: <span class="model-name">${shortModelName(entry.modelUsed)}</span>`;
-      card.appendChild(answeredBy);
-      appendTruncationNotice(card, entry);
-    } else {
-      const statusBody = buildAgentStatusBody(entry, role, 'Arguing');
-      if (statusBody) card.appendChild(statusBody);
-    }
-    el.representativeCards.appendChild(card);
-    // Needs real layout to measure scrollHeight/clientHeight against, so
-    // this can only run once the card is actually attached to the
-    // document - a detached element (mid-build, before the appendChild
-    // above) has no box model at all, and both would just read 0.
-    if (scrollBody) attachScrollFade(scrollBody);
+  let scrollBody = null;
+  if (entry && entry.status === 'success') {
+    const bodyWrap = document.createElement('div');
+    bodyWrap.className = 'card-body-scroll-wrap';
+    const body = document.createElement('div');
+    body.className = 'card-body card-body-scroll';
+    body.textContent = entry.argumentText;
+    bodyWrap.appendChild(body);
+    card.appendChild(bodyWrap);
+    scrollBody = body;
+    const answeredBy = document.createElement('p');
+    answeredBy.className = 'model-chain';
+    answeredBy.innerHTML = `Answered by: <span class="model-name">${shortModelName(entry.modelUsed)}</span>`;
+    card.appendChild(answeredBy);
+    appendTruncationNotice(card, entry);
+  } else {
+    const statusBody = buildAgentStatusBody(entry, role, 'Arguing');
+    if (statusBody) card.appendChild(statusBody);
   }
+  return { card, scrollBody };
+}
+
+function renderRepresentatives() {
+  reconcileAgentCards(el.representativeCards, REPRESENTATIVE_ROLES, (role) => state.representatives[role], buildRepresentativeCard);
 }
 
 // All three judges in a given trial always see the exact same set of
@@ -1179,50 +1359,48 @@ function updateJudgesCaveat() {
   el.judgesCaveat.classList.remove('hidden');
 }
 
-function renderJudges() {
-  el.judgeCards.innerHTML = '';
-  for (const role of JUDGE_ROLES) {
-    const meta = JUDGE_META[role];
-    const entry = state.judges[role];
-    const card = document.createElement('div');
-    card.className = 'card';
-    // Cards (unlike #history-list) are torn down and recreated on every
-    // render, so this attaches fresh each time rather than once.
-    attachScrollbarFade(card);
+function buildJudgeCard(role, entry) {
+  const meta = JUDGE_META[role];
+  const card = document.createElement('div');
+  card.className = 'card';
+  // See the matching note in buildRepresentativeCard.
+  attachScrollbarFade(card);
 
-    const header = document.createElement('div');
-    header.className = 'card-header';
-    header.innerHTML = `<span class="card-name">${meta.name}</span>`;
-    card.appendChild(header);
+  const header = document.createElement('div');
+  header.className = 'card-header';
+  header.innerHTML = `<span class="card-name">${meta.name}</span>`;
+  card.appendChild(header);
 
-    let scrollBody = null;
-    if (entry && entry.status === 'success') {
-      const verdict = document.createElement('p');
-      verdict.className = entry.verdict === 'justified' ? 'verdict-justified' : 'verdict-not-justified';
-      verdict.textContent = entry.verdict === 'justified' ? 'Justified' : 'Not justified';
-      card.appendChild(verdict);
+  let scrollBody = null;
+  if (entry && entry.status === 'success') {
+    const verdict = document.createElement('p');
+    verdict.className = entry.verdict === 'justified' ? 'verdict-justified' : 'verdict-not-justified';
+    verdict.textContent = entry.verdict === 'justified' ? 'Justified' : 'Not justified';
+    card.appendChild(verdict);
 
-      const bodyWrap = document.createElement('div');
-      bodyWrap.className = 'card-body-scroll-wrap';
-      const body = document.createElement('div');
-      body.className = 'card-body card-body-scroll';
-      body.textContent = entry.reasoningText;
-      bodyWrap.appendChild(body);
-      card.appendChild(bodyWrap);
-      scrollBody = body;
+    const bodyWrap = document.createElement('div');
+    bodyWrap.className = 'card-body-scroll-wrap';
+    const body = document.createElement('div');
+    body.className = 'card-body card-body-scroll';
+    body.textContent = entry.reasoningText;
+    bodyWrap.appendChild(body);
+    card.appendChild(bodyWrap);
+    scrollBody = body;
 
-      const answeredBy = document.createElement('p');
-      answeredBy.className = 'model-chain';
-      answeredBy.innerHTML = `Answered by: <span class="model-name">${shortModelName(entry.modelUsed)}</span>`;
-      card.appendChild(answeredBy);
-      appendTruncationNotice(card, entry);
-    } else {
-      const statusBody = buildAgentStatusBody(entry, role, 'Deliberating');
-      if (statusBody) card.appendChild(statusBody);
-    }
-    el.judgeCards.appendChild(card);
-    if (scrollBody) attachScrollFade(scrollBody);
+    const answeredBy = document.createElement('p');
+    answeredBy.className = 'model-chain';
+    answeredBy.innerHTML = `Answered by: <span class="model-name">${shortModelName(entry.modelUsed)}</span>`;
+    card.appendChild(answeredBy);
+    appendTruncationNotice(card, entry);
+  } else {
+    const statusBody = buildAgentStatusBody(entry, role, 'Deliberating');
+    if (statusBody) card.appendChild(statusBody);
   }
+  return { card, scrollBody };
+}
+
+function renderJudges() {
+  reconcileAgentCards(el.judgeCards, JUDGE_ROLES, (role) => state.judges[role], buildJudgeCard);
   updateJudgesCaveat();
 }
 
@@ -1283,15 +1461,37 @@ function renderCallLog() {
     const isRetriedDiffModel = err.startsWith(DEGENERATE_RETRIED_DIFF_MODEL_MARKER);
     const isDegenerateRetried = isRetriedSameModel || isRetriedDiffModel;
     const isDegenerateFinal = err.startsWith(DEGENERATE_FINAL_MARKER);
+    // A fallback tier's model rejected the request outright (e.g. a
+    // removed model id) and the chain escalated to the next tier - see
+    // HTTP_ERROR_ESCALATED_MARKER's own comment above. Always an
+    // escalation to a different model, never a same-model retry (unlike
+    // the degenerate/truncation case), since retrying the exact same
+    // broken model id has no plausible upside.
+    const isHttpErrorEscalated = err.startsWith(HTTP_ERROR_ESCALATED_MARKER);
+    // A transient failure (timeout/429/5xx/empty response) that was retried
+    // or escalated. These are the rows that did not exist at all before
+    // 2026-09-20 - the retry branches used to loop silently, which is
+    // exactly why a six-minute stall left nothing to read here afterward.
+    const isTransientRetried = err.startsWith(TRANSIENT_RETRIED_MARKER);
+    const isAbortedMidCall = err.startsWith(ABORTED_MID_CALL_MARKER);
+    // The content-quality markers cover two genuinely different failures,
+    // and calling both of them "Degenerated" was simply inaccurate: a
+    // response that ran into the token cap was cut off, not incoherent.
+    // openrouter.ts writes this exact phrase for the cap case (and quotes
+    // the offending text instead for the two degeneration detectors), so
+    // it is the honest discriminator between them. Same literal-string
+    // coupling as the markers themselves.
+    const hitTokenCap = err.includes('max_tokens limit');
 
-    if (isDegenerateRetried) {
+    if (isDegenerateRetried || isHttpErrorEscalated || isTransientRetried) {
       // Dims the whole row - a visual cue that this failure wasn't fatal
       // and the same call likely went on to succeed on a later row.
       tr.classList.add('row-degenerated-retried');
     }
 
-    // A response still truncated after the conciseness retry is now a
-    // real failure (openrouter.ts), correctly shown via the status column
+    // A response still truncated after every attempt the escalation chain
+    // allows is now a real failure (openrouter.ts), correctly shown via
+    // the status column
     // below - this badge only still fires for historical rows recorded
     // before that change, where the log genuinely says 'success' with a
     // completion that's an exact multiple of the cap (1x from an older,
@@ -1309,7 +1509,7 @@ function renderCallLog() {
     const tokens = `
       <div class="cell-stack">
         <strong>${entry.totalTokens.toLocaleString()}</strong>
-        <div class="status-caption">${entry.promptTokens.toLocaleString()} in / ${entry.completionTokens.toLocaleString()} out</div>
+        <div class="status-caption">${formatTokenBreakdown(entry.promptTokens, entry.completionTokens)}</div>
       </div>
     `;
 
@@ -1318,14 +1518,38 @@ function renderCallLog() {
       const caption = isRetriedSameModel ? 'retried with the same model' : 'escalated to a different model';
       statusCellHtml = `
         <div class="cell-stack">
-          <span class="badge badge-warn">Degenerated</span>
+          <span class="badge badge-warn">${hitTokenCap ? 'Truncated' : 'Degenerated'}</span>
           <div class="status-caption">(${caption})</div>
         </div>
       `;
+    } else if (isHttpErrorEscalated) {
+      statusCellHtml = `
+        <div class="cell-stack">
+          <span class="badge badge-warn">Escalated</span>
+          <div class="status-caption">(model error, escalated to a different model)</div>
+        </div>
+      `;
+    } else if (isTransientRetried) {
+      statusCellHtml = `
+        <div class="cell-stack">
+          <span class="badge badge-warn">No response</span>
+          <div class="status-caption">(timed out or refused, retried)</div>
+        </div>
+      `;
+    } else if (isAbortedMidCall) {
+      statusCellHtml = `
+        <div class="cell-stack">
+          <span class="badge badge-warn">Aborted</span>
+          <div class="status-caption">(stopped mid-call by the user)</div>
+        </div>
+      `;
     } else if (isDegenerateFinal) {
-      // Red, not yellow - this is the priciest fallback tier failing too,
-      // with nothing left to fall back to. As fatal as a 404/429/500.
-      statusCellHtml = `<span class="badge badge-fail">Degenerated</span>`;
+      // Red, not yellow - this is the LAST fallback tier failing too, with
+      // nothing left to fall back to. As fatal as a 404/429/500. (Last,
+      // not priciest: tier 4 is actually cheaper per call than tier 3 -
+      // see the pricing note in openrouter.ts. What makes this red is that
+      // the chain is out of options, not what the attempt cost.)
+      statusCellHtml = `<span class="badge badge-fail">${hitTokenCap ? 'Truncated' : 'Degenerated'}</span>`;
     } else {
       const statusBadge = entry.status === 'success' ? 'badge-ok' : 'badge-fail';
       statusCellHtml = `
@@ -1334,15 +1558,20 @@ function renderCallLog() {
       `;
     }
 
+    // data-label carries each column's header down to the narrow card
+    // layout, where the real <thead> is hidden and every cell prints its
+    // own label instead (see the max-width: 720px block in styles.css).
+    // Keeping it in the markup rather than duplicating the header list in
+    // CSS means the two can't drift apart.
     tr.innerHTML = `
-      <td>${formatAgentName(entry.agentRole)}</td>
-      <td>${formatCallTypeHtml(entry.callType)}</td>
-      <td><abbr title="${entry.modelUsed}">${shortModelName(entry.modelUsed)}</abbr></td>
-      <td>${tokens}</td>
-      <td>${formatCost(entry.cost)}</td>
-      <td>${formatDuration(entry.durationMs)}</td>
-      <td>${statusCellHtml}</td>
-      <td>${formatDateTimeHtml(entry.timestamp)}</td>
+      <td data-label="Agent">${formatAgentName(entry.agentRole)}</td>
+      <td data-label="Type">${formatCallTypeHtml(entry.callType)}</td>
+      <td data-label="Model"><abbr class="col-short" title="${entry.modelUsed}">${shortModelName(entry.modelUsed)}</abbr><span class="col-full">${entry.modelUsed}</span></td>
+      <td data-label="Tokens">${tokens}</td>
+      <td data-label="Cost">${formatCost(entry.cost)}</td>
+      <td data-label="Duration">${formatDuration(entry.durationMs)}</td>
+      <td data-label="Status">${statusCellHtml}</td>
+      <td data-label="Time">${formatDateTimeHtml(entry.timestamp)}</td>
     `;
     el.callLogBody.appendChild(tr);
   }
@@ -1382,17 +1611,21 @@ function renderCallLogTotals() {
 
   const tr = document.createElement('tr');
   tr.className = 'call-log-total-row';
+  // The first and last cells are the totals row's own title and footnote
+  // rather than real columns, so they get no data-label - in the narrow
+  // card layout they read as a heading and a caption instead of as
+  // labelled fields. See renderCallLog() above for what data-label does.
   tr.innerHTML = `
-    <td colspan="3">Total (${state.callLog.length} call${state.callLog.length === 1 ? '' : 's'})</td>
-    <td>
+    <td colspan="3" class="total-row-title">Total (${state.callLog.length} call${state.callLog.length === 1 ? '' : 's'})</td>
+    <td data-label="Tokens">
       <div class="cell-stack">
         <strong>${totalTokens.toLocaleString()}</strong>
-        <div class="status-caption">${totalPromptTokens.toLocaleString()} in / ${totalCompletionTokens.toLocaleString()} out</div>
+        <div class="status-caption">${formatTokenBreakdown(totalPromptTokens, totalCompletionTokens)}</div>
       </div>
     </td>
-    <td>${formatCost(totalCost)}</td>
-    <td>${hasDuration ? formatDuration(totalDurationMs) : '—'}</td>
-    <td colspan="2" class="status-caption">(compute time, not wall clock)</td>
+    <td data-label="Cost">${formatCost(totalCost)}</td>
+    <td data-label="Duration">${hasDuration ? formatDuration(totalDurationMs) : '—'}</td>
+    <td colspan="2" class="status-caption total-row-note">(compute time, not wall clock)</td>
   `;
   el.callLogFoot.innerHTML = '';
   el.callLogFoot.appendChild(tr);
@@ -1415,7 +1648,7 @@ function renderCallLogTotals() {
 // sidebar before it's had a real chance to finish.
 const INTERRUPTED_THRESHOLD_MS = 40 * 60 * 1000;
 
-// What "Completed - with failures" is based on: whether the trial's final,
+// What the sidebar's status label is based on: whether the trial's final,
 // persisted results are actually incomplete - NOT whether any individual
 // call ever logged a failure along the way. A transient failure that the
 // server-side retry recovers from within its own budget is a real, logged

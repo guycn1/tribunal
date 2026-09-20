@@ -14,18 +14,29 @@ import {
   upsertAgentProgress,
   markTrialCompletedIfJudgingDone,
   isGlobalCallCapExceeded,
+  isTrialAborted,
   GLOBAL_CALL_CAP,
 } from './lib/db';
 import { isSiteGateOk } from './lib/siteGate';
 import type { JudgeRole, RepresentativeRole } from './lib/types';
 
-// Judges write the longest output of any agent in this system — a fuller
-// opinion plus the leading VERDICT line. Sized against the ~450-600 word
-// target their prompt sets (roughly 600-800 tokens), with headroom above
-// that target rather than a tight fit against it, since a cap hit exactly
-// mid-sentence reads far worse than a shorter completion under it. Shares
-// AGENT_MAX_TOKENS with representative.ts - see the comment on that
-// constant in models.ts for why one shared value across both role types.
+// Judges are asked for the longest output in this system - a fuller opinion
+// plus the leading VERDICT line, against a ~450-600 word target where a
+// representative gets 300-500 (roughly 600-800 tokens either way). Sized
+// with headroom above that target rather than a tight fit against it,
+// since a cap hit exactly mid-sentence reads far worse than a shorter
+// completion under it.
+//
+// Asked for, not observed: in practice representatives are the ones that
+// overrun. Counted across every row in api_call_logs, judges have hit the
+// cap 2 times in 363 calls (0.6%), representatives 67 times in 897 (7.5%)
+// - representatives run out of room about thirteen times as often as the
+// role with the longer word target. Whatever drives that, it is not the
+// stated targets, so do not reason about the cap from the targets alone.
+//
+// Shares AGENT_MAX_TOKENS with representative-background.ts - see the
+// comment on that constant in models.ts for why one shared value across
+// both role types.
 const MAX_TOKENS = AGENT_MAX_TOKENS;
 
 const rawHandler: Handler = async (event) => {
@@ -43,11 +54,13 @@ const rawHandler: Handler = async (event) => {
   }
   const judgeRole = role as JudgeRole;
 
-  // See the matching comment in representative.ts - both checks run before
+  // See the matching comment in representative-background.ts - both checks
+  // run before
   // any Supabase trial lookup or OpenRouter call, and (now that this runs
   // as a Background Function - see config.background below) neither
   // rejection reaches the polling frontend directly, only Netlify's
-  // function logs, for the same disclosed reasons as representative.ts.
+  // function logs, for the same disclosed reasons as
+  // representative-background.ts.
   if (!isSiteGateOk(event.headers)) {
     console.warn(`judge:${judgeRole}: rejected - missing or invalid site gate header.`);
     return json(401, { role: judgeRole, status: 'failed', error: 'Missing or invalid site gate header.' });
@@ -77,8 +90,10 @@ const rawHandler: Handler = async (event) => {
 
   const messages = buildJudgeMessages(judgeRole, caseDef, availableArguments);
 
-  // Every attempt that truncated/degenerated and was discarded in favor of
-  // a retry or escalation gets its own real call-log row too, written the
+  // Every discarded attempt gets its own real call-log row too - whatever
+  // discarded it (truncation/degeneration, a plain HTTP failure at that
+  // tier, a transient failure, or an abort caught between attempts) -
+  // written the
   // moment callOpenRouter() decides to discard it (not batched after the
   // whole chain finishes) - this is what lets a client polling GET
   // /api/trials/:id see the escalation happening live, mid-call, instead
@@ -111,9 +126,17 @@ const rawHandler: Handler = async (event) => {
         tierIndex: info.tierIndex,
         attemptInTier: info.attemptInTier,
         tierMaxAttempts: info.tierMaxAttempts,
-      })
+      }),
+    // See the matching comment in representative-background.ts - this is
+    // what stops an abandoned trial from continuing to spend real money
+    // through the escalation chain after the user has hit Abort.
+    () => isTrialAborted(id)
   );
 
+  // Same reasoning as representative-background.ts: never write a ruling
+  // for a trial the user already aborted. This was a real, observed
+  // problem (2026-09-20) - two judge calls finished 30s and 1m32s after
+  // the abort and wrote real rulings into an aborted trial.
   const parsed = result.status === 'success' && result.content ? parseJudgeOutput(result.content) : null;
   const callFailed = result.status === 'failed' || !result.content;
   const unparseable = !callFailed && !parsed;
@@ -135,6 +158,18 @@ const rawHandler: Handler = async (event) => {
         : null,
     durationMs: result.durationMs,
   });
+
+  // Checked after logApiCall, before anything is persisted or the trial is
+  // marked completed - see the matching comment in
+  // representative-background.ts. An aborted trial must not be quietly
+  // completed out from under the user, and must never gain a ruling it was
+  // stopped before finishing: this was a real, observed problem
+  // (2026-09-20), where two judge calls finished 30s and 1m32s after the
+  // abort and wrote real rulings into a trial the user had left.
+  if (await isTrialAborted(id)) {
+    console.warn(`judge:${judgeRole}: trial was aborted by the user - discarding this result instead of saving it.`);
+    return json(200, { role: judgeRole, status: 'aborted' });
+  }
 
   // A judge call that fails outright or comes back unparseable still ends
   // this judge's slot for the run rather than leaving the trial stuck — the
@@ -181,8 +216,8 @@ export const handler = safeHandler(rawHandler);
 // reasoning behind every choice here (the numbers, background:true and
 // why it's now required rather than optional, the -background filename
 // suffix and why local dev specifically needs it, the path glob, the
-// missing `: Config` annotation, and the "unverified in production"
-// caveat) - the only difference is the function name in the path,
+// missing `: Config` annotation, and what is and is not confirmed in
+// production) - the only difference is the function name in the path,
 // matching how netlify.toml routes here.
 export const config = {
   path: '/.netlify/functions/judge-background/*',

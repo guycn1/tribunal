@@ -6,21 +6,33 @@
 // a MODEL_<ROLE> override; an unlisted paid model logs a cost of 0 rather
 // than throwing, since an unknown price should never block a real call from
 // being logged.
-// Source: https://openrouter.ai/mistralai/mistral-small-24b-instruct-2501
-// (checked directly against the listed price, not assumed) - re-verify if
-// this model's pricing page ever shows a different number, since OpenRouter
+// Each entry carries its own source below. All were checked directly
+// against the listed price rather than assumed - re-verify any of them if
+// a model's pricing page ever shows a different number, since OpenRouter
 // can reprice a model without notice.
 const PRICING_PER_MILLION_TOKENS: Record<string, { prompt: number; completion: number }> = {
   'mistralai/mistral-small-24b-instruct-2501': { prompt: 0.05, completion: 0.08 },
-  // The truncation-retry fallback model (see getTruncationFallbackModel in
-  // models.ts) - only ever billed on the minority of calls that truncate
-  // once on the default model.
-  // Source: https://openrouter.ai/mistralai/mistral-large-2512
+  // No longer used (see getTruncationFallbackModel in models.ts) -
+  // mistralai/mistral-large-2512 was deprecated/removed from OpenRouter's
+  // catalog (confirmed 2026-09-20, its model page now 404s). Entry kept,
+  // not deleted, since real historical api_call_logs rows already
+  // reference this model id and this table's only consumer
+  // (calculateCost) is never called retroactively against stored rows.
+  // Source (as it was): https://openrouter.ai/mistralai/mistral-large-2512
   'mistralai/mistral-large-2512': { prompt: 0.5, completion: 1.5 },
+  // Tier 2 of the escalation chain (see getTruncationFallbackModel in
+  // models.ts) - only ever billed on the minority of calls where the
+  // default model used both of its own attempts without producing a
+  // usable result.
+  // Source: https://openrouter.ai/api/v1/models/anthropic/claude-haiku-4.5/endpoints
+  // (checked directly against the live per-token price, not assumed -
+  // consistent across all 8 routed providers/regions at the time of
+  // checking).
+  'anthropic/claude-haiku-4.5': { prompt: 1.0, completion: 5.0 },
   // Third and fourth escalation tiers (see getTopTierFallbackModel /
   // getLastResortFallbackModel in models.ts) - reached only after every
-  // earlier tier has already truncated, so real usage stays rare despite
-  // the materially higher per-token price.
+  // earlier tier has already exhausted its own attempts, so real usage
+  // stays rare despite the materially higher per-token price.
   // Source: https://openrouter.ai/openai
   'openai/gpt-5.6-sol': { prompt: 2, completion: 10 },
   // Source: https://openrouter.ai/google

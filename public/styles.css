@@ -1,4 +1,21 @@
 :root {
+  /* 90% of the browser's own default, which is 14.4px on a default setup.
+     Deliberately a percentage rather than a px value: a px value here
+     would override the reader's browser font-size preference outright,
+     so someone who raised their default for readability would be silently
+     pushed back down to this size. A percentage scales that preference instead
+     of replacing it, and produces the identical result for everyone who
+     has not changed it.
+     Every font-size in this stylesheet is expressed in rem, so this is
+     the single control point for the app's whole type scale. One
+     deliberate exception: .model-name is 0.92em, so a model id shrinks
+     relative to whatever line it sits in rather than against the root -
+     it appears in contexts at different sizes and should stay
+     proportional to each. Lengths that
+     should NOT track type size - hairline borders, radii, fixed
+     structural spacing, breakpoints - stay in px on purpose. */
+  font-size: 90%;
+
   --bg: #14171c;
   --bg-raised: #1c2129;
   --bg-card: #20262f;
@@ -92,8 +109,13 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  margin-bottom: 2px;
 }
 
+/* This rule's line box is what sets .sidebar-top-row's height, which makes
+   it load-bearing for how large the GitHub icon beside it can be before the
+   row (and everything below it in the sidebar) grows - see the size-ceiling
+   note on that icon's <svg> in index.html. */
 .app-title {
   margin: 0;
   font-size: 1.4rem;
@@ -101,17 +123,52 @@ body {
   color: var(--accent);
 }
 
-/* GitHub link icon, top-right of the sidebar. Semi-transparent at rest,
-   nearly opaque on hover/active (not fully 1 - keeping a hair of restraint
-   reads a little more deliberate than a flat, stark 100%), with a soft
-   shape-aware shadow on hover - drop-shadow (not box-shadow) so the
-   shadow follows the actual octocat silhouette instead of the icon's
-   rectangular bounding box. */
+/* GitHub link icon, top-right of the sidebar. Semi-transparent at rest and
+   brighter on hover/active, but deliberately well short of a flat, stark
+   100%: at full strength the octocat reads as near-white against this dark
+   sidebar and shouts louder than a secondary link in a corner should. The
+   hover value is kept clearly above the resting one so the feedback is
+   still unmistakable - the two are tuned as a pair, and dimming this one
+   without checking it against the rest value would flatten the hover.
+   Also a soft shape-aware halo on hover - drop-shadow (not box-shadow) so
+   it follows the actual octocat silhouette rather than the icon's
+   rectangular bounding box. That is a separate control from this opacity:
+   the halo is the light around the mark, this is the mark itself. */
 .github-link {
   display: inline-flex;
   flex-shrink: 0;
   color: var(--text);
   opacity: 0.65;
+  /* Invisible at rest (alpha 0), and present only so the hover transition
+     has something of the same shape to interpolate from. Both halves of
+     this matter, and neither is obvious:
+
+     1. The function list must match the hover state's exactly - same two
+        drop-shadows, same blur radii - so only the colour changes.
+     2. The colour must come from color-mix() here too, not the plainer
+        `transparent`. color-mix() resolves to a modern color(srgb ...)
+        value, and this engine interpolates a modern colour against a
+        legacy one (`transparent`, or the implied colour of `none`) by
+        producing rgba(1, 0, 0, ...) - a near-black - for the entire
+        transition, snapping to the real colour only at the very end.
+        Measured, not theorised: at the midpoint, from `none` and from
+        `transparent` both give rgba(1, 0, 0, ...) - a near-black - while
+        this gives oklab(0.9389 ...), the correct near-white, and holds
+        that lightness at every step while only the alpha climbs.
+        Worth knowing before "simplifying" this: `var(--text) 0%` does
+        not keep the colour - this resolves to color(srgb 0 0 0 / 0),
+        transparent black, same as `transparent` would look. What it
+        keeps is the colour TYPE, and that alone is what makes the
+        interpolation work. Being transparent black costs nothing,
+        because interpolation is premultiplied, so an endpoint at alpha
+        0 contributes no hue to the steps between.
+
+     The visible symptom of getting either wrong is a glow that appears to
+     do nothing for the length of the transition and then snap in at the
+     end, while the opacity beside it fades smoothly - which is what
+     happened when this rule had no filter at all. */
+  filter: drop-shadow(0 0 10px color-mix(in srgb, var(--text) 0%, transparent))
+    drop-shadow(0 0 20px color-mix(in srgb, var(--text) 0%, transparent));
   transition:
     opacity 0.2s ease,
     filter 0.2s ease;
@@ -120,13 +177,30 @@ body {
 .github-link:hover,
 .github-link:active,
 .github-link:focus {
-  opacity: 0.95;
-  /* A dark shadow reads as much fainter against this page's already-dark
-     sidebar background than it would on a light page - pushed well past
-     what would look reasonable there to actually register here. Two
-     layered shadows (a tighter, darker one plus a softer, wider one) for
-     real depth rather than a single flat blur. */
-  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.9)) drop-shadow(0 4px 10px rgba(0, 0, 0, 0.6));
+  opacity: 0.86;
+  /* A halo of light, not a cast shadow. The sidebar is #1c2129, so a dark
+     shadow here is close to invisible no matter how far its opacity is
+     pushed - darkening an already-dark surface barely changes its
+     luminance, which is why the previous black version read as nothing.
+     Light on dark is the inversion that actually registers. Zero offset on
+     both layers, since a halo should sit around the mark rather than fall
+     below it the way the old 2px/4px offsets implied. Two layers again -
+     a tight bright one that hugs the octocat's silhouette and a wider,
+     fainter one that fades out - rather than one flat blur. drop-shadow,
+     not box-shadow, so both follow the real silhouette instead of the
+     icon's rectangular bounding box. */
+  /* Two layers with genuinely different jobs, which is why they are tuned
+     separately rather than as one number:
+       5px  - hugs the octocat's silhouette. This is the one that edge-lights
+              the mark and makes the ICON itself look brighter, even though
+              it is drawn outside the glyph rather than on it.
+       13px - the diffuse surround. Reads as the glow around the mark and
+              barely touches how bright the mark itself appears.
+     The 5px layer is therefore cut harder than the 13px one here (60 -> 38
+     against 35 -> 22): the complaint this addresses was the mark reading
+     too hot, not the surround being too wide. */
+  filter: drop-shadow(0 0 10px color-mix(in srgb, var(--text) 38%, transparent))
+    drop-shadow(0 0 20px color-mix(in srgb, var(--text) 22%, transparent));
 }
 
 .sidebar-heading {
@@ -222,10 +296,16 @@ body {
   flex: 1;
   position: relative;
   padding: 28px 32px 60px;
-  /* Raised from 960px by roughly what the sidebar's width above just
-     gave up (its widest case shrank from 280px to 220px) - the sidebar
-     cut was specifically to hand this section, the call log table
-     included, real extra width, not to shrink the page overall. */
+  /* Raised from 960px by roughly what the sidebar's width gave up at the
+     time (its widest case had just been cut from 280px to 220px), to hand
+     this section - the call log table included - real extra width rather
+     than shrink the page overall.
+     That sidebar cut has since been reversed and then some: its ceiling is
+     clamp(135px, 20vw, 360px) today, for its own separate reason (see the
+     .sidebar comment above - beyond it, extra viewport width was just
+     becoming empty margin). So this 1040px no longer offsets a narrower
+     sidebar; it now simply is the width .main gets, and the two were
+     tuned independently rather than as a trade. */
   max-width: 1040px;
   margin: 0 auto;
   width: 100%;
@@ -237,7 +317,13 @@ body {
    sidebar stays independently readable/clickable (or not - see
    pointer-events below) during that fetch. position:fixed rather than
    absolute so it stays covering the visible viewport regardless of how
-   tall .main's own content is or how far the page is scrolled. */
+   tall .main's own content is or how far the page is scrolled.
+   The `left` below is deliberately the exact same clamp() as .sidebar's
+   own width - position:fixed takes this out of flow, so it cannot inherit
+   that width and has to restate it. The two must stay in step: if one is
+   changed without the other, the overlay silently starts covering the
+   sidebar or leaving a strip of .main uncovered.
+   tests/shared-constants.test.js compares them. */
 .main-loading-overlay {
   position: fixed;
   inset: 0;
@@ -727,7 +813,25 @@ body {
 .badge {
   display: inline-block;
   border-radius: 999px;
-  padding: 3px 10px;
+  /* Vertical padding is deliberately uneven, and the total is still 6px so
+     the pill's height is unchanged. Symmetric padding centres the LINE BOX,
+     which is not the same as centring the text you can see: this font
+     reserves 12px above the baseline and 3px below it at this size, so the
+     baseline sits 4.5px lower in the box than the visible ink implies, and
+     every badge rendered ~1.5px low inside its own pill. Shifting 1px of
+     padding from the top to the bottom lifts the line box by half that
+     difference.
+     It cannot be exact for every badge at once, because how far the ink
+     sits from the baseline depends on the letters: a word with no ascender
+     and no descender ("success") sat 1.51px low, one with an ascender but
+     no descender ("Truncated", "failed") 0.51px. Both families occur about
+     equally often here, so this splits the difference and leaves either at
+     ~0.5px - about 2% of the pill's height, against 7% before.
+     The badge's own font-size is a rem value and is never overridden per
+     breakpoint, so this one rule is the whole fix: measured identical at
+     1100px, 700px and 400px, in the table, in the card layout, on the
+     agent cards and in the sidebar. */
+  padding: 2px 10px 4px;
   font-size: 0.75rem;
   /* white-space: normal lets a multi-word badge (e.g. "No response yet")
      wrap between words when its column is narrow. Deliberately no
@@ -817,7 +921,8 @@ body {
   border: 2px solid color-mix(in srgb, var(--accent) 30%, transparent);
   border-top-color: var(--accent);
   border-radius: 50%;
-  /* Duration must match SPINNER_ANIMATION_MS in app.js — that value is
+  /* Duration must match SPINNER_ANIMATION_MS in app.js (asserted by
+     tests/shared-constants.test.js) — that value is
      what keeps a freshly re-created spinner element visually in sync with
      ones already on screen, via a computed negative animation-delay. */
   animation: spin 0.8s linear infinite;
@@ -871,9 +976,9 @@ table.call-log {
      instead.
      This size (and the padding below) used to be the >1000px-viewport
      default, with a smaller size only kicking in below that - but this
-     table's real rendered width is capped by .main's max-width:960px
-     regardless of viewport, so a 1408px-wide window still gives this
-     table only ~900px to work with. A viewport media query alone can't
+     table's real rendered width is capped by .main's max-width (1040px)
+     regardless of viewport, so even a very wide window gives this table
+     only ~974px to work with, measured. A viewport media query alone can't
      see that, so a "wide" viewport still looked cramped. Compact is now
      just the permanent default; see the narrow-phone breakpoint further
      down for the one case (real viewport under ~480px, sidebar already
@@ -928,13 +1033,25 @@ table.call-log tfoot tr.call-log-total-row td {
   font-weight: 600;
 }
 
-table.call-log tfoot tr.call-log-total-row td:first-child {
-  text-align: left;
-}
+/* Both of the totals row's own cells span several columns - the title covers
+   Agent/Type/Model, the footnote covers Status/Time - and both are centred
+   within that span by the shared table.call-log td rule above, like every
+   other cell in the table. The title carried a `text-align: left` override
+   here until it was removed: across three columns that read as though the
+   caption belonged to the Agent column alone rather than to the span it
+   actually covers. Nothing replaces it, since centred is already the
+   inherited behaviour. The card layout below 720px still left-aligns both
+   deliberately - there every cell is its own full-width block, so there is
+   no span to sit in the middle of, and a heading reads better flush left. */
 
-/* A discarded attempt that was truncated/degenerate but recovered by a
-   retry or escalation (see DEGENERATE_RETRIED_*_MARKER in app.js) -
-   dimmed to signal the failure wasn't fatal, distinct from a
+/* A discarded attempt that was recovered by a retry or escalation. Three
+   kinds qualify, all matched in renderCallLog() in app.js: truncated or
+   degenerate content (DEGENERATE_RETRIED_*_MARKER), a plain HTTP failure
+   at a fallback tier (HTTP_ERROR_ESCALATED_MARKER), and a transient
+   failure that was retried (TRANSIENT_RETRIED_MARKER). An abort caught
+   mid-call is deliberately NOT dimmed - it is a deliberate stop, not a
+   recovered failure. Dimmed to signal the failure wasn't fatal, distinct
+   from a
    [degenerate-final] row (the last available tier failing too), which
    deliberately stays at full opacity since that outcome genuinely is
    fatal. */
@@ -945,6 +1062,16 @@ table.call-log tbody tr.row-degenerated-retried {
 table.call-log abbr {
   text-decoration-style: dotted;
   cursor: help;
+}
+
+/* Type and Model each render both a short and a full spelling, and exactly
+   one is ever shown (see formatCallTypeHtml/renderCallLog in app.js). The
+   table view is the width-constrained one, so it takes the abbreviated
+   form with the full text on hover; the card view below 720px swaps them.
+   Doing it this way keeps a single render path - no width checks in JS,
+   no second DOM to keep in sync. */
+table.call-log .col-full {
+  display: none;
 }
 
 .status-caption {
@@ -1001,26 +1128,253 @@ table.call-log abbr {
   }
 }
 
-/* A real narrow-phone viewport (below this, .layout's own 900px
-   breakpoint has already stacked the sidebar above the content, so the
-   table gets the full viewport width minus .main's 20px padding either
-   side - down to the 350px floor this app targets, that's still not much
-   room).
-   Smaller text and tighter padding buy back real room for the table's
-   fixed-percentage columns here - the actual fix for less wrapping,
-   rather than a horizontal scrollbar (deliberately not used anywhere on
-   this table) or forcing any column to nowrap (which, without a
-   scrollbar to fall back on, would just overflow its cell). */
+/* Below 720px the call log stops being a table and becomes one card per
+   call.
+   Eight columns cannot be made to work at these widths. Shrinking type
+   and padding (which is all the old sub-480px rule here did) only
+   postpones the problem: at a 413px viewport every cell was wrapping
+   mid-word into a ragged column two or three characters wide, with
+   "Truncated (retried with the same model)" running down the screen one
+   word per line. That is a layout that has genuinely run out of room,
+   not one that needs tuning, so below this breakpoint each row is laid
+   out as a small card instead - the label on the left, the value on the
+   right, one field per line.
+   Done purely in CSS against the same markup rather than by rendering a
+   second DOM: the cells carry their column name in data-label (see
+   renderCallLog() in app.js), so there is one render path, no resize
+   listener, and no chance of a card view drifting out of sync with the
+   table it mirrors. The <thead> is hidden rather than removed, so the
+   table stays a real table for assistive tech and for the totals row. */
+@media (max-width: 720px) {
+  .table-scroll {
+    /* The cards carry their own borders; an outer frame around them
+       reads as a stray box once the table grid is gone. */
+    border: none;
+    border-radius: 0;
+  }
+
+  table.call-log,
+  table.call-log tbody,
+  table.call-log tfoot,
+  table.call-log tr,
+  table.call-log td {
+    display: block;
+    width: auto;
+  }
+
+  /* Visually hidden rather than display: none - the header cells are what
+     give the data cells their accessible names. */
+  table.call-log thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  table.call-log tr {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg-raised);
+    margin-bottom: 10px;
+    padding: 4px 2px;
+  }
+
+  /* The label lives in a fixed left gutter as an absolutely positioned
+     pseudo-element, and the value stays in ordinary flow.
+     Flex and grid were both tried first and both are wrong here, for the
+     same underlying reason: they turn every child element of the cell into
+     a separate item. A cell whose value is a single text node survives
+     that, but two of these are not - the Status cell holds a badge (which
+     then stretched to the full column width) and the Time cell holds two
+     spans (the second of which wrapped onto its own row, left-aligned,
+     nowhere near its label). Flex additionally refused to shrink an
+     unbroken model id below its min-content width, pushing it off-screen.
+     Normal flow has none of those problems: multiple children stay
+     inline, wrap naturally, and honour text-align. */
+  /* The divider between fields inside one card. Deliberately fainter than
+     --border itself: in the table layout that colour separates one call
+     from another, but here it runs between every field of a single call,
+     many times per card, and at full strength that many lines read as a
+     grid drawn over the card rather than as quiet grouping. Named because
+     the value has to be identical in two places (see the last-child rule
+     just below) and they must not drift apart. */
+  table.call-log {
+    --card-row-divider: color-mix(in srgb, var(--border) 34%, transparent);
+  }
+
+  table.call-log td {
+    display: block;
+    position: relative;
+    text-align: right;
+    border-right: none;
+    border-bottom: 1px solid var(--card-row-divider);
+    /* Left padding is the label gutter. "Duration" is the longest label and
+       needs ~60px at this size; 92px leaves real margin plus a gap. */
+    padding: 6px 10px 6px 92px;
+    min-height: 1.2em;
+  }
+
+  /* The base table rules strip the final ROW's bottom borders, which is
+     right for a table and wrong for cards, where every row is its own
+     box. Restore the divider first, then remove it only on each card's
+     own last field. Both of these tie the base rule on specificity and
+     win on source order, so the order here matters. */
+  table.call-log tbody tr:last-child td {
+    border-bottom: 1px solid var(--card-row-divider);
+  }
+
+  table.call-log tbody tr td:last-child,
+  table.call-log tfoot tr td:last-child {
+    border-bottom: none;
+  }
+
+  table.call-log td::before {
+    content: attr(data-label);
+    position: absolute;
+    left: 10px;
+    /* Centred against the whole row rather than against the value's first
+       line. top: 50% resolves against the cell's padding box and the
+       translate pulls the label back by half its own height, so the label
+       lands on the row's vertical centre whatever the value's height -
+       one line, a two-line token stack, a taller status badge, or a model
+       id that wraps. The cell's top and bottom padding are equal, so
+       centring in the padding box is centring in the visible row.
+       This supersedes an earlier approach that matched the label's line
+       box to the value's first line and pinned it to the cell's
+       padding-top: correct for single-line rows, but it left the label
+       sitting up against the first line on every multi-line one. */
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--text-dim);
+    /* Just under the value it labels (0.74rem), so the label still reads as
+       subordinate - but that is carried by the dim colour, the uppercase and
+       the letter-spacing, not by being conspicuously tiny. It was 0.66rem
+       from the day this layout was written until now, which rendered at
+       10.56px then and 9.50px once :root dropped to 90%: the same
+       declaration, a pixel smaller, and at this size a pixel is ten per
+       cent. This restores roughly the original appearance without opting
+       the label out of that deliberate global scale-down. The 92px gutter
+       is nowhere near a constraint on this - the longest label, DURATION,
+       needs 53px of the 82px usable. */
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    text-align: left;
+    /* Labels are single words and must never wrap inside the gutter. */
+    white-space: nowrap;
+  }
+
+  /* The agent's name is the card's heading, not another labelled field. */
+  table.call-log tbody td[data-label='Agent'] {
+    text-align: left;
+    font-weight: 700;
+    font-size: 0.9rem;
+    padding: 8px 10px 6px;
+  }
+
+  table.call-log tbody td[data-label='Agent']::before {
+    content: none;
+  }
+
+  /* Both of these stack a value over a dim caption; against a right-hand
+     edge they read better right-aligned as a unit. */
+  table.call-log td .cell-stack {
+    align-items: flex-end;
+    text-align: right;
+  }
+
+  /* A card row has room for the whole value, so these show the real thing
+     rather than the table's width-driven abbreviations: "Representative"
+     instead of "R", and the model id complete with its vendor prefix. No
+     <abbr> either - a hover tooltip is close to useless on the touch
+     devices this layout is for. */
+  table.call-log .col-short {
+    display: none;
+  }
+
+  table.call-log .col-full {
+    display: inline;
+  }
+
+  /* formatDateTimeHtml splits the timestamp across two lines for the
+     narrow Time column. A card row fits it on one line, so the break is
+     dropped - but the two spans have no whitespace between them in the
+     markup, and a space introduced via content would be collapsed away,
+     so the gap is a margin.
+     Selected via `br + .datetime-part`, not `.datetime-part +
+     .datetime-part`: the <br> is still an element between the two spans
+     even while display: none, so the adjacent-sibling combinator does not
+     see them as adjacent to each other. */
+  table.call-log td[data-label='Time'] br {
+    display: none;
+  }
+
+  table.call-log td[data-label='Time'] br + .datetime-part {
+    margin-left: 0.35em;
+  }
+
+  /* The totals row is a card too. Its per-cell top border and raised
+     background are what set it apart inside a table; as a card those
+     would draw a 2px line above every one of its fields, so they move to
+     the card itself. */
+  table.call-log tfoot tr.call-log-total-row td {
+    border-top: none;
+    background: transparent;
+  }
+
+  /* The totals card is a computed summary, not another call, so it carries
+     both a thicker and a brighter border than the ordinary cards - in the
+     table view that separation comes from a heavy top rule and a raised
+     background, neither of which reads as a divider once every row is its
+     own box. Mixed toward --text-dim rather than set to a flat lighter
+     grey so it still belongs to the same palette as --border. */
+  table.call-log tfoot tr.call-log-total-row {
+    border-width: 2px;
+    border-color: color-mix(in srgb, var(--border) 60%, var(--text-dim));
+  }
+
+  /* Its first and last cells are a heading and a footnote rather than
+     labelled fields. */
+  table.call-log tfoot tr.call-log-total-row td.total-row-title,
+  table.call-log tfoot tr.call-log-total-row td.total-row-note {
+    text-align: left;
+    padding-left: 10px;
+  }
+
+  table.call-log tfoot tr.call-log-total-row td.total-row-title {
+    font-size: 0.9rem;
+  }
+}
+
+/* A real narrow-phone viewport. The call log is already a card layout by
+   here (see the 720px block above), so this only trims the type a little
+   further for the smallest screens this app targets, down to ~350px. */
 @media (max-width: 480px) {
   table.call-log {
-    font-size: 0.7rem;
+    font-size: 0.68rem;
   }
-  table.call-log th,
+  /* The left value must stay the label gutter. An earlier version of this
+     rule set `padding: 5px 8px`, which quietly overrode the 92px gutter
+     the 720px block establishes and let a long value (a full model id)
+     run underneath its own label - invisible at any width above 480px. */
   table.call-log td {
-    padding: 5px 5px;
+    padding: 5px 8px 5px 84px;
   }
-  table.call-log th {
-    font-size: 0.6rem;
+  /* The values shrink to 0.68rem here, so the label has to come back down
+     with them or it would end up larger than the field it labels. 0.66rem
+     against a 0.68rem value is the same proportion the wider tier now has
+     (0.72 against 0.74), so the label sits the same distance below its
+     value at both sizes rather than changing character between them. */
+  table.call-log td::before {
+    font-size: 0.66rem;
+  }
+
+  table.call-log tbody td[data-label='Agent'],
+  table.call-log tfoot tr.call-log-total-row td.total-row-title {
+    font-size: 0.84rem;
   }
 }
 

@@ -18,8 +18,11 @@ const ROLE_ENV_VAR: Record<string, string> = {
 // across the whole roster (see case.ts) rather than one role at a time.
 export const ALL_AGENT_ROLES = Object.keys(ROLE_ENV_VAR);
 
-// Shared by representative.ts and judge.ts, and exposed to the frontend via
-// case.ts, so there is exactly one place this number lives - the frontend
+// Shared by representative-background.ts and judge-background.ts, and
+// exposed to the frontend via
+// case.ts, so there is exactly one place this number is defined (test
+// fixtures restate the current value, but nothing reads it from them) -
+// the frontend
 // derives "was this response truncated?" by comparing a completed call's
 // completion_tokens against this same constant (see isTruncated() in
 // app.js), which would silently go wrong if the two ever drifted apart.
@@ -36,41 +39,93 @@ export function getModelForRole(role: string): string {
   return override || DEFAULT_MODEL;
 }
 
-// Used only for the one-shot retry after a truncated response (see
-// openrouter.ts) - deliberately a different, more capable model than
-// whatever getModelForRole() resolves to, not the same model tried again.
-// Real data showed a same-model retry doesn't behave like an independent
-// second attempt: once a role's first attempt truncated, a same-model
-// retry truncated again roughly 60-75% of the time (measured on
-// daenerys_targaryen/grey_worm, the two roles this affects most) - not a
-// fresh roll, closer to "that generation was already in a bad state."
-// A genuinely different model doesn't share whatever drives that
-// correlation. Mistral Large was chosen over a different vendor
-// specifically to stay in the same style/formatting family as the
-// character prompts, which were tuned without a cross-vendor model in
-// mind - the price step up ($0.50/$1.50 per million tokens vs. the
-// default's $0.05/$0.08, see pricing.ts) is real per token but trivial in
-// absolute terms, since this only ever fires on the minority of calls
-// that truncate once, not on every call.
-const TRUNCATION_FALLBACK_MODEL = process.env.TRUNCATION_FALLBACK_MODEL || 'mistralai/mistral-large-2512';
+// Tier 2 of the escalation chain (see buildRetryTiers in openrouter.ts),
+// reached once tier 1 has used up both of its attempts - whether to
+// truncation/degeneration, a plain HTTP failure, or transient failures
+// that ran long enough to count. Deliberately a different model from
+// whatever getModelForRole() resolves to, not the same one tried again -
+// and one assumed to be more capable, though that is a judgement about
+// these models generally and not something measured on this workload. Real data showed a same-model retry doesn't behave
+// like an independent second attempt: once a role's first attempt
+// truncated, a same-model retry truncated again roughly 60-75% of the
+// time (measured on daenerys_targaryen/grey_worm, the two roles this
+// affects most) - not a fresh roll, closer to "that generation was
+// already in a bad state." A genuinely different model doesn't share
+// whatever drives that correlation.
+//
+// Was mistralai/mistral-large-2512 (chosen for the same vendor family as
+// the default model, for style/formatting consistency with prompts tuned
+// without a cross-vendor model in mind) until that model id was
+// deprecated/removed from OpenRouter's catalog sometime after this chain
+// was built - confirmed directly (2026-09-20): its own OpenRouter model
+// page now 404s, and every real call that needed to escalate past tier 1
+// failed outright rather than reaching the still-live tiers 3/4 (see
+// HTTP_ERROR_ESCALATED_MARKER in openrouter.ts for the escalation-chain
+// bug that let one dead tier kill the whole call, fixed separately from
+// this).
+//
+// Replaced with anthropic/claude-haiku-4.5 - a genuinely different vendor,
+// breaking the original same-family rationale, but the failure modes this
+// tier exists to fix (truncation, repetition-loop degeneration) are small/
+// weak-model behaviors that a model of this class is expected not to
+// exhibit at any meaningful rate for a single ~300-600 word structured
+// piece of writing. That was the reason for the choice, and it has since
+// been measured on this workload rather than left as an expectation.
+//
+// 21 calls to this model on this project, all clean: 5 served through the
+// app during real trials, and 16 in a targeted batch that drove the real
+// callOpenRouter() with the real Grey Worm and Daenerys prompts at this
+// tier's real 2800-token allowance. Every one finished naturally
+// (finish_reason=stop) and was kept. Completion lengths ran 502-789
+// tokens - the longest reaching 28% of the cap - and none truncated,
+// degenerated or was discarded. The targeted batch was slightly harsher
+// than production, since it omitted the CONCISENESS_REMINDER a real
+// escalation would carry.
+//
+// Read that for what it is. 21 clean calls is a real result on the exact
+// workload this tier serves, and it is not a basis for saying this model
+// will never truncate or degenerate - no sample size establishes that,
+// here or at any other tier. What it does establish is that the failure
+// modes this tier exists to catch have not appeared, at a cap the model
+// is nowhere near reaching. The predecessor at this tier, for contrast,
+// logged 11 discarded attempts across 89 calls, and managed 7 clean out
+// of 8 - this project's tiers 3/4 already cross
+// vendors from their own default without issue, verified across many real
+// trials. Real, verified pricing (per pricing.ts): $1.00/$5.00 per million
+// prompt/completion tokens vs. the dead Mistral Large's $0.50/$1.50 - a
+// real 2-3x step up, which is why tier 1 was given a second attempt of its
+// own (see buildRetryTiers) to catch more recoverable failures at the
+// cheap default model before ever reaching this pricier tier.
+const TRUNCATION_FALLBACK_MODEL = process.env.TRUNCATION_FALLBACK_MODEL || 'anthropic/claude-haiku-4.5';
 
 export function getTruncationFallbackModel(): string {
   return TRUNCATION_FALLBACK_MODEL;
 }
 
-// Third and fourth escalation tiers, reached only when the fallback model
-// above has already truncated on every attempt allowed it (see the tiered
-// retry loop in openrouter.ts) - real measured data on that fallback model
+// Third and fourth escalation tiers, reached once the tier above is done
+// with - normally because it used up every attempt allowed it, though a
+// plain HTTP error there escalates at once and forfeits the rest (see the
+// tiered retry loop in openrouter.ts) - real measured data on that fallback model
 // alone found it still not reliable enough on its own (a real, if rare,
 // case truncated on both of its own attempts too). These two are
-// deliberately two different, genuinely top-tier models from two
-// different companies, neither an incremental step within the same
-// family: escalating vendor as well as capability tier removes any
-// shared-family quirk as an explanation, not just a shared-size one.
+// deliberately two models from two different companies, neither an
+// incremental step within the same family: escalating vendor as well as
+// assumed capability removes any shared-family quirk as an explanation,
+// not just a shared-size one. Their capability ranking relative to each
+// other and to tier 2 is an assumption, not a measurement.
+//
+// What has been measured, from api_call_logs: openai/gpt-5.6-sol has
+// served 13 calls here, all kept, none discarded. google/gemini-2.5-pro
+// has served 9 - 6 kept and 3 failed, all three the same HTTP 400
+// "Reasoning is mandatory" rejection from before modelRequiresReasoning()
+// existed below, i.e. a configuration fault rather than anything about
+// the output. Neither has produced a truncated or degenerate result here.
+// Same caveat as tier 2: that records what has been seen at these sample
+// sizes, and is not a promise about what will be.
 // Reached rarely enough (only after every earlier tier has already
 // failed) that the real cost impact stays small despite a materially
-// higher per-token price than either the default or the Mistral Large
-// tier - see pricing.ts.
+// higher per-token price than either the default model or tier 2 - see
+// pricing.ts.
 const TOP_TIER_FALLBACK_MODEL = process.env.TOP_TIER_FALLBACK_MODEL || 'openai/gpt-5.6-sol';
 const LAST_RESORT_FALLBACK_MODEL = process.env.LAST_RESORT_FALLBACK_MODEL || 'google/gemini-2.5-pro';
 

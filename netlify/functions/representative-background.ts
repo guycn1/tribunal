@@ -7,13 +7,14 @@ import { REPRESENTATIVES } from './lib/representatives';
 import { buildRepresentativeMessages } from './lib/prompts';
 import { callOpenRouter } from './lib/openrouter';
 import { getModelForRole, AGENT_MAX_TOKENS } from './lib/models';
-import { getTrial, upsertRepresentativeArgument, logApiCall, upsertAgentProgress, isGlobalCallCapExceeded, GLOBAL_CALL_CAP } from './lib/db';
+import { getTrial, upsertRepresentativeArgument, logApiCall, upsertAgentProgress, isGlobalCallCapExceeded, isTrialAborted, GLOBAL_CALL_CAP } from './lib/db';
 import { isSiteGateOk } from './lib/siteGate';
 import type { RepresentativeRole } from './lib/types';
 
 // 1000 previously let a real argument (the longest of its group, 1000
 // completion tokens - exactly the old cap) run out mid-sentence. Now
-// shares AGENT_MAX_TOKENS with judge.ts - see the comment on that constant
+// shares AGENT_MAX_TOKENS with judge-background.ts - see the comment on
+// that constant
 // in models.ts for why one shared value.
 const MAX_TOKENS = AGENT_MAX_TOKENS;
 
@@ -74,8 +75,10 @@ const rawHandler: Handler = async (event) => {
   const caseDef = await getChargeSheet();
   const messages = buildRepresentativeMessages(repRole, caseDef);
 
-  // Every attempt that truncated/degenerated and was discarded in favor of
-  // a retry or escalation gets its own real call-log row too, written the
+  // Every discarded attempt gets its own real call-log row too - whatever
+  // discarded it (truncation/degeneration, a plain HTTP failure at that
+  // tier, a transient failure, or an abort caught between attempts) -
+  // written the
   // moment callOpenRouter() decides to discard it (not batched after the
   // whole chain finishes) - this is what lets a client polling GET
   // /api/trials/:id see the escalation happening live, mid-call, instead
@@ -113,7 +116,12 @@ const rawHandler: Handler = async (event) => {
         tierIndex: info.tierIndex,
         attemptInTier: info.attemptInTier,
         tierMaxAttempts: info.tierMaxAttempts,
-      })
+      }),
+    // Stops the escalation chain if the user abandoned this trial while it
+    // was still running - see the isAborted parameter's own comment in
+    // openrouter.ts for why a Background Function needs to poll for this
+    // rather than being cancelled directly.
+    () => isTrialAborted(id)
   );
 
   await logApiCall({
@@ -129,6 +137,20 @@ const rawHandler: Handler = async (event) => {
     errorMessage: result.errorMessage ?? null,
     durationMs: result.durationMs,
   });
+
+  // Checked AFTER logApiCall above, deliberately: whatever this call
+  // actually did still belongs in the log (the project's "visible failure,
+  // never silent" rule doesn't stop applying because the user walked away,
+  // and a role the client never listed as pending would otherwise leave no
+  // trace at all). What an aborted trial must NOT get is a saved result -
+  // quietly resurrecting an argument minutes after the user stopped the
+  // trial would contradict both the abort row and the sidebar's "Aborted"
+  // badge. Re-checked here rather than inferred from the result, since the
+  // call may well have completed in the window before the abort landed.
+  if (await isTrialAborted(id)) {
+    console.warn(`representative:${repRole}: trial was aborted by the user - discarding this result instead of saving it.`);
+    return json(200, { role: repRole, status: 'aborted' });
+  }
 
   if (result.status === 'failed' || !result.content) {
     return json(502, {
@@ -164,11 +186,12 @@ const rawHandler: Handler = async (event) => {
 export const handler = safeHandler(rawHandler);
 
 // Per-IP rate limit on this function specifically, since it's one of the
-// two that actually spend OpenRouter money (the other is judge.ts) - not
+// two that actually spend OpenRouter money (the other is
+// judge-background.ts) - not
 // declared on trials.ts/case.ts, which never call OpenRouter regardless of
 // how often they're hit. Path matches how this function is actually
 // reached: netlify.toml redirects /api/trials/:id/representatives/:role
-// here as /.netlify/functions/representative/:id/:role (see netlify.toml),
+// here as /.netlify/functions/representative-background/:id/:role,
 // so the glob covers every id/role combination.
 //
 // windowLimit/windowSize are deliberately generous, not tight - this is a
@@ -220,15 +243,29 @@ export const handler = safeHandler(rawHandler);
 // hold locally, but keeping `path` and the actual filename in agreement
 // avoids depending on that assumption at all.
 //
-// UNVERIFIED IN PRODUCTION: whether the real deployed platform's own
-// Background Function detection also needs (or merely tolerates) the
-// filename suffix, on top of config.background, has not been confirmed -
-// this project has separately, repeatedly found that its redirect-based
-// routing behaves differently locally than once deployed (see the
-// "Production deployment" bug log entries), so the same caution applies
-// here until checked against a real deploy. Whether the rate-limit path
-// glob below is what Netlify's rate limiter actually matches against is
-// similarly unconfirmed locally, unchanged from before.
+// SINCE CONFIRMED IN PRODUCTION (this used to read "unverified"): the
+// deployed site has run real trials on this exact shape - config.background
+// plus the -background filename plus the matching netlify.toml redirect -
+// and the calls genuinely ran as Background Functions there. The proof is
+// incidental but conclusive: a real production trial (2026-09-20) had two
+// judge calls run for roughly six unbroken minutes server-side before
+// anyone noticed they were stuck. A standard synchronous invocation cannot
+// do that; it would have been killed at the 10-second ceiling. So whatever
+// the platform keys off, this combination works deployed.
+//
+// What is still genuinely unknown, and no longer matters much: whether the
+// platform needs the filename suffix or merely tolerates it alongside
+// config.background. Both are present and the pair is confirmed working, so
+// there is nothing to act on - only a reason not to drop either one
+// casually.
+//
+// STILL UNVERIFIED: whether the rate-limit path glob below is what
+// Netlify's rate limiter actually matches against. Local netlify dev does
+// not simulate rate limiting at all, and nothing has exercised it against
+// the deployed site, so this one is unchanged from when it was written. If
+// it turns out not to match, the consequence is the quiet loss of one of
+// three anti-abuse layers - the global call cap in db.ts and the site gate
+// both still apply - not a break of anything.
 // No `: Config` type annotation here on purpose: the RateLimitConfig type
 // shipped by the installed @netlify/functions version (2.8.1) is missing
 // `windowLimit` entirely, even though it's a real, required field in
