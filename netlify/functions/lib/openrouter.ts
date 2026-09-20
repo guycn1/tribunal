@@ -866,12 +866,21 @@ export async function callOpenRouter(
           console.warn(
             `[openrouter] ${label}: DEGENERATE - response finished on its own (finish_reason=${finishReason}) but contains a ${degenerateCheck.runLength}-word run with no punctuation ("${degenerateCheck.sample}...") - treating as a failure rather than trusting a technically-complete but incoherent result.`
           );
-          reason = `collapsed into a ${degenerateCheck.runLength}-word run with no punctuation`;
+          // The offending text is quoted into the persisted reason, not just
+          // the console line, for a specific reason: a discarded attempt's
+          // content is never stored anywhere, so without a sample there is
+          // no way to audit a degeneration discard after the fact and tell a
+          // genuine catch from a false positive. The count alone ("repeated
+          // the same sentence 5 times") is unfalsifiable once the text is
+          // gone. Kept short so the call log stays readable.
+          reason = `collapsed into a ${degenerateCheck.runLength}-word run with no punctuation ("${degenerateCheck.sample.slice(0, 60)}...")`;
         } else {
           console.warn(
             `[openrouter] ${label}: DEGENERATE - response finished on its own (finish_reason=${finishReason}) but repeats the same sentence ${repeatCheck!.count} times ("${repeatCheck!.sample.slice(0, 80)}...") - treating as a failure rather than trusting a technically-complete but looping result.`
           );
-          reason = `repeated the same sentence ${repeatCheck!.count} times`;
+          // Same reasoning as the run-on case above - the repeated sentence
+          // itself is what makes this checkable later.
+          reason = `repeated the same sentence ${repeatCheck!.count} times ("${repeatCheck!.sample.slice(0, 60)}...")`;
         }
 
         const next = await recordFailedAttemptAndAdvance({
