@@ -1011,14 +1011,26 @@ table.call-log .col-full {
    match at a sub-480px viewport, and CSS resolves that tie by source
    order (equal specificity, last one wins), so the more aggressive
    480px sizing needs to come second or it would be silently overridden
-   by this milder tier at the very viewports that need the most help. */
+   by this milder tier at the very viewports that need the most help.
+   Side padding is 4px here rather than the 8px of the base rule above,
+   and deliberately tighter than the vertical 6px: in a band where eight
+   columns are already competing for room, padding is width that the
+   content needs more than the gutters do. Four pixels a side across
+   eight columns hands roughly 32px back to the text - real relief at the
+   901px worst case, where the table has only ~655px to work with once
+   the sidebar has taken its share. Row heights are untouched, since the
+   vertical value has not changed.
+   In practice this governs 721-1150px: below 720px the card-view rule
+   further down replaces the horizontal padding on cells entirely (it
+   needs a wide left gutter for the labels) and the header row is hidden,
+   so the value here stops applying to anything visible. */
 @media (max-width: 1150px) {
   table.call-log {
     font-size: 0.74rem;
   }
   table.call-log th,
   table.call-log td {
-    padding: 6px 6px;
+    padding: 6px 4px;
   }
   table.call-log th {
     font-size: 0.66rem;
