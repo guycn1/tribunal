@@ -311,6 +311,27 @@ const CONCISENESS_REMINDER: OpenRouterMessage = {
 // strings in app.js (same pattern as ABORTED_BY_USER_MESSAGE in abort.ts)
 // so the frontend can tell a discarded-but-recovered attempt from a
 // discarded-and-fatal one without any shared module between the two.
+//
+// NAMING, worth knowing before trusting the word: "DEGENERATE" in these
+// three constants is an umbrella for the whole content-quality class, NOT
+// the narrower failure the detectors above look for. It covers both
+//   - truncation: finish_reason === 'length'. The model was still going
+//     when max_tokens stopped it. The prose is usually fine; an external
+//     limit cut it off. Not a quality failure at all.
+//   - degeneration proper: detectDegenerateRun / detectRepeatedSentences.
+//     The model finished on its own and produced unusable text.
+// Those are orthogonal, not nested - each occurs without the other, and a
+// repetition loop that runs until it hits the cap is both at once. The
+// umbrella name is a holdover from when the run-on detector was the only
+// content check there was.
+//
+// The names are deliberately NOT being corrected: these exact strings are
+// persisted into api_call_logs.error_message on every historical row, so
+// they are effectively a wire format, and renaming them would either break
+// the rendering of past trials or mean carrying both spellings forever.
+// The distinction is made where it actually reaches a reader instead -
+// renderCallLog() in app.js picks its badge ("Truncated" vs "Degenerated")
+// from the reason text, since only the cap case says "max_tokens limit".
 export const DEGENERATE_RETRIED_SAME_MODEL_MARKER = '[degenerate-retried-same-model]';
 export const DEGENERATE_RETRIED_DIFF_MODEL_MARKER = '[degenerate-retried-diff-model]';
 export const DEGENERATE_FINAL_MARKER = '[degenerate-final]';

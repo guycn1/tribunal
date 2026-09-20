@@ -12,6 +12,13 @@ const ABORTED_BY_USER_MESSAGE = 'Aborted by user before this call could complete
 // to tell a discarded-but-recovered attempt (the role went on to succeed
 // or is still trying a further tier) from a discarded-and-fatal one (this
 // was the last available tier, and it was also truncated/degenerate).
+//
+// "DEGENERATE" in these names is an umbrella for the whole content-quality
+// class - it covers a response cut off at the token cap as well as one
+// that genuinely degenerated - which is why the badge these produce is
+// chosen from the reason text below rather than from the marker alone.
+// See the fuller note at the marker definitions in openrouter.ts for why
+// the names are kept as they are rather than corrected.
 const DEGENERATE_RETRIED_SAME_MODEL_MARKER = '[degenerate-retried-same-model]';
 const DEGENERATE_RETRIED_DIFF_MODEL_MARKER = '[degenerate-retried-diff-model]';
 const DEGENERATE_FINAL_MARKER = '[degenerate-final]';
