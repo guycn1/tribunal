@@ -119,12 +119,17 @@ body {
   color: var(--accent);
 }
 
-/* GitHub link icon, top-right of the sidebar. Semi-transparent at rest,
-   nearly opaque on hover/active (not fully 1 - keeping a hair of restraint
-   reads a little more deliberate than a flat, stark 100%), with a soft
-   shape-aware shadow on hover - drop-shadow (not box-shadow) so the
-   shadow follows the actual octocat silhouette instead of the icon's
-   rectangular bounding box. */
+/* GitHub link icon, top-right of the sidebar. Semi-transparent at rest and
+   brighter on hover/active, but deliberately well short of a flat, stark
+   100%: at full strength the octocat reads as near-white against this dark
+   sidebar and shouts louder than a secondary link in a corner should. The
+   hover value is kept clearly above the resting one so the feedback is
+   still unmistakable - the two are tuned as a pair, and dimming this one
+   without checking it against the rest value would flatten the hover.
+   Also a soft shape-aware halo on hover - drop-shadow (not box-shadow) so
+   it follows the actual octocat silhouette rather than the icon's
+   rectangular bounding box. That is a separate control from this opacity:
+   the halo is the light around the mark, this is the mark itself. */
 .github-link {
   display: inline-flex;
   flex-shrink: 0;
@@ -168,7 +173,7 @@ body {
 .github-link:hover,
 .github-link:active,
 .github-link:focus {
-  opacity: 0.95;
+  opacity: 0.86;
   /* A halo of light, not a cast shadow. The sidebar is #1c2129, so a dark
      shadow here is close to invisible no matter how far its opacity is
      pushed - darkening an already-dark surface barely changes its
@@ -180,8 +185,8 @@ body {
      fainter one that fades out - rather than one flat blur. drop-shadow,
      not box-shadow, so both follow the real silhouette instead of the
      icon's rectangular bounding box. */
-  filter: drop-shadow(0 0 5px color-mix(in srgb, var(--text) 52%, transparent))
-    drop-shadow(0 0 13px color-mix(in srgb, var(--text) 30%, transparent));
+  filter: drop-shadow(0 0 5px color-mix(in srgb, var(--text) 60%, transparent))
+    drop-shadow(0 0 13px color-mix(in srgb, var(--text) 35%, transparent));
 }
 
 .sidebar-heading {
