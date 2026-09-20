@@ -135,12 +135,19 @@ body {
 .github-link:active,
 .github-link:focus {
   opacity: 0.95;
-  /* A dark shadow reads as much fainter against this page's already-dark
-     sidebar background than it would on a light page - pushed well past
-     what would look reasonable there to actually register here. Two
-     layered shadows (a tighter, darker one plus a softer, wider one) for
-     real depth rather than a single flat blur. */
-  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.9)) drop-shadow(0 4px 10px rgba(0, 0, 0, 0.6));
+  /* A halo of light, not a cast shadow. The sidebar is #1c2129, so a dark
+     shadow here is close to invisible no matter how far its opacity is
+     pushed - darkening an already-dark surface barely changes its
+     luminance, which is why the previous black version read as nothing.
+     Light on dark is the inversion that actually registers. Zero offset on
+     both layers, since a halo should sit around the mark rather than fall
+     below it the way the old 2px/4px offsets implied. Two layers again -
+     a tight bright one that hugs the octocat's silhouette and a wider,
+     fainter one that fades out - rather than one flat blur. drop-shadow,
+     not box-shadow, so both follow the real silhouette instead of the
+     icon's rectangular bounding box. */
+  filter: drop-shadow(0 0 5px color-mix(in srgb, var(--text) 60%, transparent))
+    drop-shadow(0 0 13px color-mix(in srgb, var(--text) 35%, transparent));
 }
 
 .sidebar-heading {
