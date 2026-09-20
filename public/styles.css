@@ -1098,12 +1098,23 @@ table.call-log .col-full {
      unbroken model id below its min-content width, pushing it off-screen.
      Normal flow has none of those problems: multiple children stay
      inline, wrap naturally, and honour text-align. */
+  /* The divider between fields inside one card. Deliberately fainter than
+     --border itself: in the table layout that colour separates one call
+     from another, but here it runs between every field of a single call,
+     many times per card, and at full strength that many lines read as a
+     grid drawn over the card rather than as quiet grouping. Named because
+     the value has to be identical in two places (see the last-child rule
+     just below) and they must not drift apart. */
+  table.call-log {
+    --card-row-divider: color-mix(in srgb, var(--border) 34%, transparent);
+  }
+
   table.call-log td {
     display: block;
     position: relative;
     text-align: right;
     border-right: none;
-    border-bottom: 1px solid color-mix(in srgb, var(--border) 45%, transparent);
+    border-bottom: 1px solid var(--card-row-divider);
     /* Left padding is the label gutter. "Duration" is the longest label and
        needs ~60px at this size; 92px leaves real margin plus a gap. */
     padding: 6px 10px 6px 92px;
@@ -1116,7 +1127,7 @@ table.call-log .col-full {
      own last field. Both of these tie the base rule on specificity and
      win on source order, so the order here matters. */
   table.call-log tbody tr:last-child td {
-    border-bottom: 1px solid color-mix(in srgb, var(--border) 45%, transparent);
+    border-bottom: 1px solid var(--card-row-divider);
   }
 
   table.call-log tbody tr td:last-child,
