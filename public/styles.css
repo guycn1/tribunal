@@ -1108,17 +1108,19 @@ table.call-log .col-full {
     content: attr(data-label);
     position: absolute;
     left: 10px;
-    /* top matches the cell's own padding-top, and the line-height matches
-       the value's first line box exactly (the inherited 1.5 against the
-       cell's 0.74rem font-size). Both texts are then vertically centred
-       inside boxes of identical height starting at the same offset, so
-       their centres coincide by construction rather than by a tuned magic
-       number. The label's own font-size is smaller, so leaving it to its
-       own 1.5 ratio gives it a shorter line box and sits it fractionally
-       off - visible as a label that does not quite centre against its
-       value. */
-    top: 6px;
-    line-height: calc(1.5 * 0.74rem);
+    /* Centred against the whole row rather than against the value's first
+       line. top: 50% resolves against the cell's padding box and the
+       translate pulls the label back by half its own height, so the label
+       lands on the row's vertical centre whatever the value's height -
+       one line, a two-line token stack, a taller status badge, or a model
+       id that wraps. The cell's top and bottom padding are equal, so
+       centring in the padding box is centring in the visible row.
+       This supersedes an earlier approach that matched the label's line
+       box to the value's first line and pinned it to the cell's
+       padding-top: correct for single-line rows, but it left the label
+       sitting up against the first line on every multi-line one. */
+    top: 50%;
+    transform: translateY(-50%);
     color: var(--text-dim);
     font-size: 0.66rem;
     text-transform: uppercase;
@@ -1223,13 +1225,6 @@ table.call-log .col-full {
      run underneath its own label - invisible at any width above 480px. */
   table.call-log td {
     padding: 5px 8px 5px 84px;
-  }
-  /* Kept in step with the smaller padding and font-size above, for the
-     same reason as the 720px block: identical line boxes at identical
-     offsets. */
-  table.call-log td::before {
-    top: 5px;
-    line-height: calc(1.5 * 0.68rem);
   }
   table.call-log tbody td[data-label='Agent'],
   table.call-log tfoot tr.call-log-total-row td.total-row-title {
