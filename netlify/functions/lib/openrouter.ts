@@ -24,14 +24,14 @@ const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 // multiple genuine full-length retries, not just fast-failure ones - while
 // staying far short of ever risking the actual 15-minute wall.
 // Raised to fit the full escalation chain (see RETRY_TIERS below): worst
-// case, roughly 43s (default, 1400 tokens) + 78s x2 (mistral-large, 2800
-// tokens) + 95.5s x2 (first top-tier model, 3500 tokens) + 108s x1 (last-
-// resort model, 4000 tokens) = ~498s of attempt ceilings alone, before
-// counting backoff delays between attempts - a real, observed case hit
-// ~20 consecutive fast 429 retries at one tier alone. 650000ms (650s,
-// ~10.8 minutes) leaves real margin above that worst case while staying
-// comfortably under the real 900s (15 minute) background-function
-// ceiling, not razor-close to it.
+// case, roughly 43s x2 (default, 1400 tokens, 2 attempts) + 78s x2
+// (claude-haiku-4.5, 2800 tokens) + 95.5s x2 (first top-tier model, 3500
+// tokens) + 108s x1 (last-resort model, 4000 tokens) = ~541s of attempt
+// ceilings alone, before counting backoff delays between attempts - a
+// real, observed case hit ~20 consecutive fast 429 retries at one tier
+// alone. 650000ms (650s, ~10.8 minutes) leaves real margin above that
+// worst case while staying comfortably under the real 900s (15 minute)
+// background-function ceiling, not razor-close to it.
 const TOTAL_BUDGET_MS = 650000;
 // Don't start an attempt the remaining budget cannot plausibly finish.
 // With a 2-minute total budget instead of a ~26s one, this no longer has
@@ -72,35 +72,51 @@ export interface OpenRouterMessage {
 // in place, so silently accepting it was leaving a known, common failure
 // mode unaddressed. Framed as a fresh attempt, not "finish what you
 // started," since the model never sees its own truncated fragment here.
-// A single same-model retry measurably wasn't enough: real data showed
-// that once a role's first attempt truncated, a same-model retry
+// A single same-model retry measurably wasn't enough on its own: real data
+// showed that once a role's first attempt truncated, a same-model retry
 // truncated again 60-75% of the time - not an independent second roll,
-// closer to "that generation was already in a bad state." A single
-// different-model fallback (Mistral Large) helped a lot but still wasn't
-// reliable enough on its own either: of 8 real escalations measured, 7
-// succeeded and 1 truncated on both of its own attempts too. Rather than
-// one fallback, this is a genuine escalation chain - each tier a
-// different, more capable (and pricier) model, reached only once every
-// attempt at the tier before it has already truncated. The last two
-// tiers are deliberately from two different companies, not two models in
-// the same family, so a shared-vendor quirk can't explain a failure that
-// makes it that far. Every tier also gets more token headroom than the
-// one before it - some truncations may be genuinely-long-but-coherent
-// content hitting an arbitrary ceiling, not only degeneration, and a
-// bigger cap directly fixes that case regardless of which model is
-// generating. Reached rarely enough, given how many tiers already stand
-// before it, that the real cost stays small despite each tier being
-// meaningfully pricier than the last - see pricing.ts for the real
-// numbers.
+// closer to "that generation was already in a bad state." Still worth
+// having as tier 1's own second attempt (see maxAttempts below) precisely
+// because it's the cheapest possible recovery to try first, before paying
+// for a pricier tier - it just isn't relied on alone. A single
+// different-model fallback helped a lot but still wasn't reliable enough
+// on its own either: of 8 real escalations measured (then against Mistral
+// Large, tier 2's original model), 7 succeeded and 1 truncated on both of
+// its own attempts too. Rather than one fallback, this is a genuine
+// escalation chain - each tier a different, more capable (and pricier)
+// model, reached only once every attempt at the tier before it has
+// already truncated. The last two tiers are deliberately from two
+// different companies, not two models in the same family, so a
+// shared-vendor quirk can't explain a failure that makes it that far.
+// Every tier also gets more token headroom than the one before it - some
+// truncations may be genuinely-long-but-coherent content hitting an
+// arbitrary ceiling, not only degeneration, and a bigger cap directly
+// fixes that case regardless of which model is generating. Reached rarely
+// enough, given how many tiers already stand before it, that the real
+// cost stays small despite each tier being meaningfully pricier than the
+// last - see pricing.ts for the real numbers.
 interface RetryTier {
   getModel: () => string;
   maxTokens: number;
   maxAttempts: number;
 }
 
+// Tier 1's maxAttempts raised 1 -> 2 (2026-09-20), specifically to
+// compensate for tier 2's own cost going up when its model was replaced
+// (mistralai/mistral-large-2512, deprecated/removed from OpenRouter -
+// see getTruncationFallbackModel's comment in models.ts - was $0.50/$1.50
+// per million prompt/completion tokens; its replacement,
+// anthropic/claude-haiku-4.5, is $1.00/$5.00, a real 2-3x step up). A
+// second attempt at the free-tier-cheap default model catches more
+// recoverable truncations/degeneracies before ever paying for the pricier
+// tier, at zero extra cost when it works (the default model is priced in
+// cents per million tokens - see pricing.ts). This is also what surfaced
+// the isFallbackAttempt fix below: with tier 1 now allowed more than one
+// attempt, "is this attempt a retry" could no longer be inferred from
+// tierIndex alone.
 function buildRetryTiers(defaultModel: string, defaultMaxTokens: number): RetryTier[] {
   return [
-    { getModel: () => defaultModel, maxTokens: defaultMaxTokens, maxAttempts: 1 },
+    { getModel: () => defaultModel, maxTokens: defaultMaxTokens, maxAttempts: 2 },
     { getModel: getTruncationFallbackModel, maxTokens: 2800, maxAttempts: 2 },
     { getModel: getTopTierFallbackModel, maxTokens: 3500, maxAttempts: 2 },
     { getModel: getLastResortFallbackModel, maxTokens: 4000, maxAttempts: 1 },
@@ -299,7 +315,17 @@ export async function callOpenRouter(
     attempt++;
     lastAttemptStartedAt = Date.now();
     const tier = tiers[tierIndex];
-    const isFallbackAttempt = tierIndex > 0;
+    // "Is this a retry, not the pristine first try of the whole call" -
+    // determines whether CONCISENESS_REMINDER gets appended below. Used to
+    // be `tierIndex > 0`, which was correct only as long as tier 1 had
+    // exactly one attempt (the only way to reach attempt 2+ was to change
+    // tierIndex). Now that tier 1 gets a second attempt of its own (see
+    // buildRetryTiers), a tier-1 retry keeps tierIndex at 0 - that old
+    // condition would have silently skipped the reminder on exactly the
+    // attempt it exists for. `attempt` (the running 1-based counter,
+    // already incremented above) is the actually-correct signal regardless
+    // of which tier's own attempt budget produced the retry.
+    const isFallbackAttempt = attempt > 1;
     const attemptModel = tier.getModel();
     const attemptMaxTokens = tier.maxTokens;
     const attemptTimeout = Math.min(attemptTimeoutFor(attemptMaxTokens), remainingMs());

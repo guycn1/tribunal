@@ -36,23 +36,41 @@ export function getModelForRole(role: string): string {
   return override || DEFAULT_MODEL;
 }
 
-// Used only for the one-shot retry after a truncated response (see
-// openrouter.ts) - deliberately a different, more capable model than
-// whatever getModelForRole() resolves to, not the same model tried again.
-// Real data showed a same-model retry doesn't behave like an independent
-// second attempt: once a role's first attempt truncated, a same-model
-// retry truncated again roughly 60-75% of the time (measured on
-// daenerys_targaryen/grey_worm, the two roles this affects most) - not a
-// fresh roll, closer to "that generation was already in a bad state."
-// A genuinely different model doesn't share whatever drives that
-// correlation. Mistral Large was chosen over a different vendor
-// specifically to stay in the same style/formatting family as the
-// character prompts, which were tuned without a cross-vendor model in
-// mind - the price step up ($0.50/$1.50 per million tokens vs. the
-// default's $0.05/$0.08, see pricing.ts) is real per token but trivial in
-// absolute terms, since this only ever fires on the minority of calls
-// that truncate once, not on every call.
-const TRUNCATION_FALLBACK_MODEL = process.env.TRUNCATION_FALLBACK_MODEL || 'mistralai/mistral-large-2512';
+// Used for the retry(s) after a truncated/degenerate response at tier 1
+// (see buildRetryTiers in openrouter.ts) - deliberately a different, more
+// capable model than whatever getModelForRole() resolves to, not the same
+// model tried again. Real data showed a same-model retry doesn't behave
+// like an independent second attempt: once a role's first attempt
+// truncated, a same-model retry truncated again roughly 60-75% of the
+// time (measured on daenerys_targaryen/grey_worm, the two roles this
+// affects most) - not a fresh roll, closer to "that generation was
+// already in a bad state." A genuinely different model doesn't share
+// whatever drives that correlation.
+//
+// Was mistralai/mistral-large-2512 (chosen for the same vendor family as
+// the default model, for style/formatting consistency with prompts tuned
+// without a cross-vendor model in mind) until that model id was
+// deprecated/removed from OpenRouter's catalog sometime after this chain
+// was built - confirmed directly (2026-09-20): its own OpenRouter model
+// page now 404s, and every real call that needed to escalate past tier 1
+// failed outright rather than reaching the still-live tiers 3/4 (see
+// HTTP_ERROR_ESCALATED_MARKER in openrouter.ts for the escalation-chain
+// bug that let one dead tier kill the whole call, fixed separately from
+// this).
+//
+// Replaced with anthropic/claude-haiku-4.5 - a genuinely different vendor,
+// breaking the original same-family rationale, but the failure modes this
+// tier exists to fix (truncation, repetition-loop degeneration) are small/
+// weak-model behaviors that a frontier-adjacent model like Haiku 4.5
+// shouldn't exhibit at any meaningful rate for a single ~300-600 word
+// structured piece of writing - this project's tiers 3/4 already cross
+// vendors from their own default without issue, verified across many real
+// trials. Real, verified pricing (per pricing.ts): $1.00/$5.00 per million
+// prompt/completion tokens vs. the dead Mistral Large's $0.50/$1.50 - a
+// real 2-3x step up, which is why tier 1 was given a second attempt of its
+// own (see buildRetryTiers) to catch more recoverable failures at the
+// cheap default model before ever reaching this pricier tier.
+const TRUNCATION_FALLBACK_MODEL = process.env.TRUNCATION_FALLBACK_MODEL || 'anthropic/claude-haiku-4.5';
 
 export function getTruncationFallbackModel(): string {
   return TRUNCATION_FALLBACK_MODEL;
