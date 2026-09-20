@@ -561,8 +561,9 @@ function isRetriedMarkerLog(log) {
   );
 }
 
-// Strips a leading DEGENERATE_*_MARKER (plus the space after it) from an
-// error message before it's shown on an agent card - those markers exist
+// Strips a leading marker (plus the space after it) from an error message
+// before it's shown on an agent card - any of the six, not just the
+// DEGENERATE_* ones; the list below is the authority. Those markers exist
 // so renderCallLog() can tell attempt outcomes apart in the call log
 // table, but they're internal bookkeeping, not something a reader of the
 // card should ever see verbatim. The call log table is unaffected: it

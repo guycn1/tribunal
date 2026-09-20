@@ -559,7 +559,12 @@ export async function callOpenRouter(
     usage?: { promptTokens: number; completionTokens: number; totalTokens: number };
     cost?: number;
     skipRestOfTier?: boolean;
-    // Set only for genuinely transient failures (429/5xx/empty content).
+    // Set only for genuinely transient failures: a 429, a 5xx, an
+    // empty-content/upstream-error 200, and the fetch-level catch (a
+    // timeout or a network error). That last one is included on purpose
+    // even though a real timeout can never be "fast" - a network error
+    // that fails instantly, like a DNS blip or a connection reset, is
+    // exactly the case worth a cheap same-model retry.
     // A fast one of these gets a free same-model retry that does not spend
     // a tier attempt - see FAST_FAILURE_THRESHOLD_MS. Deliberately NOT set
     // for a plain HTTP error like a removed model id (permanent - retrying

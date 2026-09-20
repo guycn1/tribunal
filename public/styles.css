@@ -1042,10 +1042,14 @@ table.call-log tfoot tr.call-log-total-row td {
    deliberately - there every cell is its own full-width block, so there is
    no span to sit in the middle of, and a heading reads better flush left. */
 
-/* A discarded attempt that was recovered by a retry or escalation - either
-   truncated/degenerate content (DEGENERATE_RETRIED_*_MARKER) or a plain
-   HTTP failure at a fallback tier (HTTP_ERROR_ESCALATED_MARKER), both in
-   app.js - dimmed to signal the failure wasn't fatal, distinct from a
+/* A discarded attempt that was recovered by a retry or escalation. Three
+   kinds qualify, all matched in renderCallLog() in app.js: truncated or
+   degenerate content (DEGENERATE_RETRIED_*_MARKER), a plain HTTP failure
+   at a fallback tier (HTTP_ERROR_ESCALATED_MARKER), and a transient
+   failure that was retried (TRANSIENT_RETRIED_MARKER). An abort caught
+   mid-call is deliberately NOT dimmed - it is a deliberate stop, not a
+   recovered failure. Dimmed to signal the failure wasn't fatal, distinct
+   from a
    [degenerate-final] row (the last available tier failing too), which
    deliberately stays at full opacity since that outcome genuinely is
    fatal. */
