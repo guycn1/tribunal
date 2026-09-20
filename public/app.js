@@ -432,40 +432,51 @@ async function abortCurrentTrial() {
   el.sidebar.classList.remove('loading-locked');
 }
 
-// In one real run, all 4 representative calls fired at the exact same
-// instant and only the first came back with real content - the other 3
-// got an immediate 429. A start-time stagger alone (kickoffs 400ms apart)
-// did not fix this on its own in a later run: three of four still failed,
-// two of them not with a fast 429 this time but with a genuine no-response
-// timeout on their retry. A few hundred ms of head start barely matters
-// when each call's real generation takes 15-20s - four calls started even a
-// second apart still spend nearly all of that time overlapping in flight,
-// so a start-time stagger doesn't meaningfully reduce concurrent load on
-// the account. What the same run's judges phase showed instead: 3 calls
-// fired together with the same stagger all succeeded on attempt 1, no rate
-// limit at all. That contrast is the actual signal - this account handles
-// roughly 3 simultaneous in-flight calls cleanly but not 4. So the real fix
-// is a hard cap on how many calls are ever in flight at once
-// (MAX_CONCURRENT_CALLS below, via runWithConcurrencyLimit), not just a
-// stagger on when each one starts - the stagger is kept underneath it as a
-// cheap extra precaution against the pool's initial batch still landing in
-// the same instant, but it is not what does the real work here. This is
-// about OpenRouter's own account-level concurrency limit specifically, and
-// still applies regardless of the trigger/poll rewrite below - moving
-// the agent endpoints to Background Functions changes how this app
-// waits for a result, not how many calls the OpenRouter account can take
-// at once.
+// Why these two constants exist: in one real run, all 4 representative
+// calls fired at the exact same instant and only the first came back with
+// real content - the other 3 got an immediate 429. A start-time stagger
+// alone (kickoffs 400ms apart) did not fix it in a later run either: three
+// of four still failed, two of them with a genuine no-response timeout
+// rather than a fast 429. A few hundred ms of head start barely matters
+// when each call's real generation takes 15-20s. The same run's judges
+// phase - 3 calls, same stagger - all succeeded on attempt 1, which read at
+// the time as "this account takes 3 simultaneous calls cleanly but not 4,"
+// so a worker pool was added to cap how many were ever in flight at once.
+//
+// That cap no longer does that job, and hasn't since the agent endpoints
+// became Background Functions. runWithConcurrencyLimit wraps triggerAgent,
+// which returns the moment Netlify's automatic 202 arrives (~0.3-0.5s)
+// rather than when the generation finishes - so a slot frees almost
+// immediately and all 4 representatives end up genuinely in flight
+// together. Measured, not assumed: across the 38 trials in this project's
+// own api_call_logs that carry real duration data, 32 ran all 4
+// representatives simultaneously (reconstructing each call's start as its
+// timestamp minus duration_ms), including the trials run against the live
+// deployed site. What these constants actually bound now is how many
+// trigger POSTs overlap - which matters only against Netlify's per-IP rate
+// limiter, not OpenRouter's account-level concurrency.
+//
+// Kept rather than removed or "restored," deliberately. The original
+// 3-vs-4 reading dates from the free-tier era and has since been overtaken
+// by evidence: every clean run behind this project's reliability record was
+// actually made at 4 concurrent, not 3, so there is no demonstrated problem
+// left to solve. A bounded dispatch plus the stagger is still a sensible
+// thing to keep pointed at the per-IP limiter.
 const CONCURRENT_CALL_STAGGER_MS = 400;
 const MAX_CONCURRENT_CALLS = 3;
 
-// Runs `worker` over `items` with at most `limit` invocations actually in
-// flight at once. A fixed pool of `limit` runners each pull the next item
-// as soon as they're free, so item N+1 only starts once one of the first
-// `limit` items has genuinely finished - not merely after its own stagger
-// delay - which is what actually bounds concurrent load on the account
-// regardless of how long any individual call takes. Every item still runs
-// without waiting on any *specific* other item, only on a free slot, so
-// this stays real concurrency, just bounded.
+// Runs `worker` over `items` with at most `limit` calls to *worker*
+// outstanding at once. A fixed pool of `limit` runners each pull the next
+// item as soon as they're free, so item N+1 starts once one of the first
+// `limit` workers has returned. Every item still runs without waiting on
+// any *specific* other item, only on a free slot, so this stays real
+// concurrency, just bounded.
+//
+// What that actually bounds depends entirely on what `worker` waits for.
+// Both call sites pass triggerAgent, which returns at Netlify's 202 rather
+// than at the end of the generation it kicked off - so this bounds
+// overlapping trigger POSTs, not overlapping OpenRouter calls. See the
+// comment on MAX_CONCURRENT_CALLS above for the measurement behind that.
 async function runWithConcurrencyLimit(items, limit, worker) {
   let nextIndex = 0;
   async function runSlot() {
@@ -1631,21 +1642,20 @@ function renderCallLogTotals() {
   el.callLogFoot.appendChild(tr);
 }
 
-// Stale until this fix: this used to assume TOTAL_BUDGET_MS (openrouter.ts)
-// was ~26s and that representatives all run in one fully-concurrent group.
-// Neither is true any more - TOTAL_BUDGET_MS is 650000ms (real margin for
-// the full 4-tier escalation chain), and representatives are dispatched
-// through a worker pool capped at MAX_CONCURRENT_CALLS (3), not run all 4
-// at once - see runWithConcurrencyLimit() below. Worst case: the 4th
-// representative doesn't even start until one of the first 3 finishes, so
-// the representatives phase alone can take up to ~2x TOTAL_BUDGET_MS
-// (~1300s) before the judges phase (all 3 concurrent, up to another
-// ~650s) even begins - roughly 1950s (32.5 min) end to end in the genuine
-// worst case, not the few minutes the old comment assumed. Set with real
-// margin above that (not just enough to scrape by, consistent with every
-// other budget in this app), so a trial that's actually still working -
-// however slowly - doesn't get mislabeled "Interrupted" in the history
-// sidebar before it's had a real chance to finish.
+// This once assumed TOTAL_BUDGET_MS (openrouter.ts) was ~26s, and so that a
+// whole trial finishes in a few minutes. TOTAL_BUDGET_MS is 650000ms now -
+// real margin for the full 4-tier escalation chain - so the genuine worst
+// case is the representatives phase running its budget out in full, then
+// the judges phase running out its own: ~1300s, roughly 22 minutes end to
+// end. Both phases run all of their roles concurrently; an earlier revision
+// of this comment put the worst case at ~32.5 min by treating the
+// representatives as a 3-slot pool that makes the 4th wait for a free slot,
+// which is not what happens - see the comment on MAX_CONCURRENT_CALLS
+// above. Kept at 40 minutes: real margin above that (not just enough to
+// scrape by, consistent with every other budget in this app), so a trial
+// that's actually still working - however slowly - doesn't get mislabeled
+// "Interrupted" in the history sidebar before it's had a real chance to
+// finish.
 const INTERRUPTED_THRESHOLD_MS = 40 * 60 * 1000;
 
 // What the sidebar's status label is based on: whether the trial's final,

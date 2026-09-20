@@ -10,8 +10,8 @@ The Tribunal decides one question — **justified / not justified** — and give
 
 Three-tier: browser (static HTML/CSS/vanilla JS) → backend (Netlify Functions, TypeScript) → database (Supabase/Postgres). The backend holds the OpenRouter API key and orchestrates every model call; the database stores the case record, every representative argument, every judge ruling, and a full per-call log (model, tokens, cost, status, duration).
 
-- Four representatives run concurrently — they don't depend on each other. Dispatch is capped at three calls in flight at once, so the fourth starts as soon as one of the first three finishes; that cap is about the OpenRouter account's own concurrency limit, not about ordering, and four calls firing at once was measured failing where three did not.
-- Three judges run after, each independently receiving the case record plus all four representative arguments (or however many are actually available — a failed representative call is never backfilled with invented text). The same cap applies, which is a no-op for three roles.
+- Four representatives run concurrently — they don't depend on each other. Dispatch goes through a small worker pool, but because the agent endpoints are Background Functions that return as soon as the work is accepted, a pool slot frees at the trigger rather than at the end of the generation — so all four are genuinely in flight at the same time. That is measured from the call log's own timings rather than assumed, and it is how every trial behind the reliability record below actually ran. What the pool still bounds is how many trigger requests overlap, which matters only for Netlify's per-IP rate limit.
+- Three judges run after, each independently receiving the case record plus all four representative arguments (or however many are actually available — a failed representative call is never backfilled with invented text).
 - A failed model call is logged as a visible failure and never produces a fabricated argument or ruling.
 
 **Background Functions + polling.** Representative and judge calls run as Netlify Background Functions rather than standard synchronous invocations — a real generation can take well past the ~10s ceiling a synchronous function gets. The browser triggers a call, gets an immediate `202`, and polls `GET /api/trials/:id` until the result lands.
@@ -66,7 +66,7 @@ One badge per trial, summarising the whole run.
 | `Aborted` | grey | Stopped by the user before the trial reached completion. |
 | `Aborted (N of 7 completed)` | grey | Stopped by the user, but the trial had already been marked complete — the count says how much survived. |
 | `In progress…` | slate | Still running, and under 40 minutes old. |
-| `Interrupted` | red | Not finished and over 40 minutes old, so it is treated as never going to finish (a dev-server restart mid-run, say). The threshold is sized to the genuine worst case: a full four-tier escalation for every agent through a three-slot concurrency pool. |
+| `Interrupted` | red | Not finished and over 40 minutes old, so it is treated as never going to finish (a dev-server restart mid-run, say). The threshold is sized above the genuine worst case: a full four-tier escalation for every representative, then the same again for every judge — about 22 minutes. |
 
 "Missing N" counts results that actually persisted, **not** whether any individual call ever failed along the way. A transient failure that the retry recovered from is a real logged attempt, not a flaw in the outcome — labelling the run on that basis would mark almost every trial as damaged. The call log still shows every attempt in full.
 
