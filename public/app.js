@@ -1135,51 +1135,126 @@ function attachScrollbarFade(el) {
 // load at all, not just a visual glitch.
 attachScrollbarFade(el.historyList);
 
-function renderRepresentatives() {
-  el.representativeCards.innerHTML = '';
-  for (const role of REPRESENTATIVE_ROLES) {
-    const meta = REPRESENTATIVE_META[role];
-    const entry = state.representatives[role];
-    const card = document.createElement('div');
-    card.className = 'card';
-    // Cards (unlike #history-list) are torn down and recreated on every
-    // render, so this attaches fresh each time rather than once.
-    attachScrollbarFade(card);
+// A compact description of exactly the state a card was rendered from.
+// Two cards with the same signature would render byte-identically, so a
+// card whose signature hasn't changed can be left on screen untouched.
+//
+// Deliberately built from state rather than from the generated HTML: the
+// loading card's spinner embeds a wall-clock-derived animation-delay (see
+// spinnerHtml) that differs on every single render, so comparing markup
+// would never match and would defeat the whole point.
+//
+// state.trialId is included so that starting or opening a different trial
+// always rebuilds every card, rather than relying on the new trial's
+// per-role state happening to differ from the old one's.
+function agentCardSignature(entry, role) {
+  const trial = state.trialId || '';
+  if (!entry) return `${trial}|none`;
+  if (entry.status === 'success') {
+    return [
+      trial,
+      'success',
+      entry.verdict || '',
+      entry.modelUsed || '',
+      isTruncated(entry) ? 'truncated' : '',
+      // The full text, not a length or a prefix: it is fixed once a result
+      // lands, and comparing it outright removes any chance of a changed
+      // body being mistaken for an unchanged one.
+      entry.argumentText || entry.reasoningText || '',
+    ].join('|');
+  }
+  if (entry.status === 'loading') {
+    const attempt = entry.currentAttempt;
+    const progress = attempt
+      ? `${attempt.model}#${attempt.tierIndex}#${attempt.attemptInTier}#${attempt.tierMaxAttempts}`
+      : `default#${(state.modelInfo && state.modelInfo[role]) || ''}`;
+    return [trial, 'loading', progress].join('|');
+  }
+  return [trial, entry.status, entry.error || ''].join('|');
+}
 
-    const header = document.createElement('div');
-    header.className = 'card-header';
-    header.innerHTML = `
+// Replaces only the cards whose rendered state actually changed, leaving
+// every other card's DOM node exactly where it is.
+//
+// This fixes a real, long-standing annoyance: the render functions used to
+// start with `container.innerHTML = ''` and rebuild every card in the
+// phase, so a poll tick that advanced ONE agent's model/attempt line tore
+// down and recreated all of its siblings too - including cards already
+// showing a finished argument, which visibly flashed. Nothing about one
+// agent escalating requires touching another agent's card.
+//
+// Keeping untouched nodes alive also fixes two quieter side effects of the
+// old approach: a card's scroll position inside a long argument no longer
+// resets mid-read, and its already-attached fade/scrollbar listeners are
+// not repeatedly torn off and re-added.
+function reconcileAgentCards(container, roles, entryFor, buildCard) {
+  roles.forEach((role, index) => {
+    const entry = entryFor(role);
+    const signature = agentCardSignature(entry, role);
+    const existing = container.children[index];
+    if (existing && existing.dataset.cardRole === role && existing.dataset.cardSignature === signature) {
+      return;
+    }
+
+    const { card, scrollBody } = buildCard(role, entry);
+    card.dataset.cardRole = role;
+    card.dataset.cardSignature = signature;
+    if (existing) container.replaceChild(card, existing);
+    else container.appendChild(card);
+
+    // Needs real layout to measure scrollHeight/clientHeight against, so
+    // this can only run once the card is actually attached to the
+    // document - a detached element (mid-build, before the insertion
+    // above) has no box model at all, and both would just read 0.
+    if (scrollBody) attachScrollFade(scrollBody);
+  });
+
+  // Defensive only - the role lists are fixed, so this should never fire.
+  while (container.children.length > roles.length) {
+    container.removeChild(container.lastElementChild);
+  }
+}
+
+function buildRepresentativeCard(role, entry) {
+  const meta = REPRESENTATIVE_META[role];
+  const card = document.createElement('div');
+  card.className = 'card';
+  // Attached per built card, which is now only when that card's own state
+  // actually changed - not on every render of the phase.
+  attachScrollbarFade(card);
+
+  const header = document.createElement('div');
+  header.className = 'card-header';
+  header.innerHTML = `
       <span class="card-name">${meta.name}</span>
       <span class="card-seat ${meta.seat}">${meta.seat}</span>
     `;
-    card.appendChild(header);
+  card.appendChild(header);
 
-    let scrollBody = null;
-    if (entry && entry.status === 'success') {
-      const bodyWrap = document.createElement('div');
-      bodyWrap.className = 'card-body-scroll-wrap';
-      const body = document.createElement('div');
-      body.className = 'card-body card-body-scroll';
-      body.textContent = entry.argumentText;
-      bodyWrap.appendChild(body);
-      card.appendChild(bodyWrap);
-      scrollBody = body;
-      const answeredBy = document.createElement('p');
-      answeredBy.className = 'model-chain';
-      answeredBy.innerHTML = `Answered by: <span class="model-name">${shortModelName(entry.modelUsed)}</span>`;
-      card.appendChild(answeredBy);
-      appendTruncationNotice(card, entry);
-    } else {
-      const statusBody = buildAgentStatusBody(entry, role, 'Arguing');
-      if (statusBody) card.appendChild(statusBody);
-    }
-    el.representativeCards.appendChild(card);
-    // Needs real layout to measure scrollHeight/clientHeight against, so
-    // this can only run once the card is actually attached to the
-    // document - a detached element (mid-build, before the appendChild
-    // above) has no box model at all, and both would just read 0.
-    if (scrollBody) attachScrollFade(scrollBody);
+  let scrollBody = null;
+  if (entry && entry.status === 'success') {
+    const bodyWrap = document.createElement('div');
+    bodyWrap.className = 'card-body-scroll-wrap';
+    const body = document.createElement('div');
+    body.className = 'card-body card-body-scroll';
+    body.textContent = entry.argumentText;
+    bodyWrap.appendChild(body);
+    card.appendChild(bodyWrap);
+    scrollBody = body;
+    const answeredBy = document.createElement('p');
+    answeredBy.className = 'model-chain';
+    answeredBy.innerHTML = `Answered by: <span class="model-name">${shortModelName(entry.modelUsed)}</span>`;
+    card.appendChild(answeredBy);
+    appendTruncationNotice(card, entry);
+  } else {
+    const statusBody = buildAgentStatusBody(entry, role, 'Arguing');
+    if (statusBody) card.appendChild(statusBody);
   }
+  return { card, scrollBody };
+}
+
+function renderRepresentatives() {
+  reconcileAgentCards(el.representativeCards, REPRESENTATIVE_ROLES, (role) => state.representatives[role], buildRepresentativeCard);
 }
 
 // All three judges in a given trial always see the exact same set of
@@ -1211,50 +1286,48 @@ function updateJudgesCaveat() {
   el.judgesCaveat.classList.remove('hidden');
 }
 
-function renderJudges() {
-  el.judgeCards.innerHTML = '';
-  for (const role of JUDGE_ROLES) {
-    const meta = JUDGE_META[role];
-    const entry = state.judges[role];
-    const card = document.createElement('div');
-    card.className = 'card';
-    // Cards (unlike #history-list) are torn down and recreated on every
-    // render, so this attaches fresh each time rather than once.
-    attachScrollbarFade(card);
+function buildJudgeCard(role, entry) {
+  const meta = JUDGE_META[role];
+  const card = document.createElement('div');
+  card.className = 'card';
+  // See the matching note in buildRepresentativeCard.
+  attachScrollbarFade(card);
 
-    const header = document.createElement('div');
-    header.className = 'card-header';
-    header.innerHTML = `<span class="card-name">${meta.name}</span>`;
-    card.appendChild(header);
+  const header = document.createElement('div');
+  header.className = 'card-header';
+  header.innerHTML = `<span class="card-name">${meta.name}</span>`;
+  card.appendChild(header);
 
-    let scrollBody = null;
-    if (entry && entry.status === 'success') {
-      const verdict = document.createElement('p');
-      verdict.className = entry.verdict === 'justified' ? 'verdict-justified' : 'verdict-not-justified';
-      verdict.textContent = entry.verdict === 'justified' ? 'Justified' : 'Not justified';
-      card.appendChild(verdict);
+  let scrollBody = null;
+  if (entry && entry.status === 'success') {
+    const verdict = document.createElement('p');
+    verdict.className = entry.verdict === 'justified' ? 'verdict-justified' : 'verdict-not-justified';
+    verdict.textContent = entry.verdict === 'justified' ? 'Justified' : 'Not justified';
+    card.appendChild(verdict);
 
-      const bodyWrap = document.createElement('div');
-      bodyWrap.className = 'card-body-scroll-wrap';
-      const body = document.createElement('div');
-      body.className = 'card-body card-body-scroll';
-      body.textContent = entry.reasoningText;
-      bodyWrap.appendChild(body);
-      card.appendChild(bodyWrap);
-      scrollBody = body;
+    const bodyWrap = document.createElement('div');
+    bodyWrap.className = 'card-body-scroll-wrap';
+    const body = document.createElement('div');
+    body.className = 'card-body card-body-scroll';
+    body.textContent = entry.reasoningText;
+    bodyWrap.appendChild(body);
+    card.appendChild(bodyWrap);
+    scrollBody = body;
 
-      const answeredBy = document.createElement('p');
-      answeredBy.className = 'model-chain';
-      answeredBy.innerHTML = `Answered by: <span class="model-name">${shortModelName(entry.modelUsed)}</span>`;
-      card.appendChild(answeredBy);
-      appendTruncationNotice(card, entry);
-    } else {
-      const statusBody = buildAgentStatusBody(entry, role, 'Deliberating');
-      if (statusBody) card.appendChild(statusBody);
-    }
-    el.judgeCards.appendChild(card);
-    if (scrollBody) attachScrollFade(scrollBody);
+    const answeredBy = document.createElement('p');
+    answeredBy.className = 'model-chain';
+    answeredBy.innerHTML = `Answered by: <span class="model-name">${shortModelName(entry.modelUsed)}</span>`;
+    card.appendChild(answeredBy);
+    appendTruncationNotice(card, entry);
+  } else {
+    const statusBody = buildAgentStatusBody(entry, role, 'Deliberating');
+    if (statusBody) card.appendChild(statusBody);
   }
+  return { card, scrollBody };
+}
+
+function renderJudges() {
+  reconcileAgentCards(el.judgeCards, JUDGE_ROLES, (role) => state.judges[role], buildJudgeCard);
   updateJudgesCaveat();
 }
 
