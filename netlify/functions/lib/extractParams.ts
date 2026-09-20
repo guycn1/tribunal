@@ -14,7 +14,8 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 // target function's path, so it arrives as the original request path (e.g.
 // /api/trials/:id/representatives/:role), which has a literal path segment
 // ("representatives") sitting between id and role - unlike the direct
-// function path (/.netlify/functions/representative/:id/:role), where they
+// function path (/.netlify/functions/representative-background/:id/:role),
+// where they
 // are adjacent. Trial ids are always UUIDs, so searching for that shape
 // finds id correctly under either layout. role, when expected, is always
 // the final segment in both layouts.

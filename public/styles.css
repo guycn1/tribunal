@@ -307,7 +307,12 @@ body {
    sidebar stays independently readable/clickable (or not - see
    pointer-events below) during that fetch. position:fixed rather than
    absolute so it stays covering the visible viewport regardless of how
-   tall .main's own content is or how far the page is scrolled. */
+   tall .main's own content is or how far the page is scrolled.
+   The `left` below is deliberately the exact same clamp() as .sidebar's
+   own width - position:fixed takes this out of flow, so it cannot inherit
+   that width and has to restate it. The two must stay in step: if one is
+   changed without the other, the overlay silently starts covering the
+   sidebar or leaving a strip of .main uncovered. */
 .main-loading-overlay {
   position: fixed;
   inset: 0;

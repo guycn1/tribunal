@@ -440,7 +440,7 @@ async function abortCurrentTrial() {
 // the same instant, but it is not what does the real work here. This is
 // about OpenRouter's own account-level concurrency limit specifically, and
 // still applies regardless of the trigger/poll rewrite below - moving
-// representative.ts/judge.ts to Background Functions changes how this app
+// the agent endpoints to Background Functions changes how this app
 // waits for a result, not how many calls the OpenRouter account can take
 // at once.
 const CONCURRENT_CALL_STAGGER_MS = 400;
@@ -489,7 +489,7 @@ function sleep(ms, signal) {
   });
 }
 
-// representative.ts/judge.ts now run as Netlify Background Functions (see
+// the agent endpoints now run as Netlify Background Functions (see
 // config.background in each) - the fix for a verified, load-bearing
 // problem: Netlify's real free-tier synchronous function limit is 10
 // seconds, while every real OpenRouter call measured on this project has
@@ -526,7 +526,7 @@ async function triggerAgent(url, signal) {
 
   // A non-2xx this early can only be a platform-level rejection (Netlify's
   // per-IP rate limiter, most likely - see the rateLimit config on
-  // representative.ts/judge.ts) rather than anything from this app's own
+  // the agent Background Functions) rather than anything from this app's own
   // handler code, since a Background Function's own application-level
   // outcome never reaches this response at all.
   let message;
@@ -666,8 +666,9 @@ function deriveRoleStates(data) {
 // directly in the DB) still showing as unresolved on the client because
 // polling gave up first. A role that still hasn't resolved by the new
 // timeout either genuinely failed in a way this page can't see (the
-// disclosed site-gate/call-cap gap documented in representative.ts/
-// judge.ts - a rejection there is no longer visible to the poller, only
+// disclosed site-gate/call-cap gap documented in
+// representative-background.ts/judge-background.ts - a rejection there is
+// no longer visible to the poller, only
 // in Netlify's function logs) or is a real anomaly worth surfacing
 // honestly rather than silently waiting past.
 const POLL_TIMEOUT_MS = 700000;
@@ -1625,7 +1626,7 @@ function renderCallLogTotals() {
 // sidebar before it's had a real chance to finish.
 const INTERRUPTED_THRESHOLD_MS = 40 * 60 * 1000;
 
-// What "Completed - with failures" is based on: whether the trial's final,
+// What the sidebar's status label is based on: whether the trial's final,
 // persisted results are actually incomplete - NOT whether any individual
 // call ever logged a failure along the way. A transient failure that the
 // server-side retry recovers from within its own budget is a real, logged

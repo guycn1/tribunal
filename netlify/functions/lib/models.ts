@@ -18,7 +18,8 @@ const ROLE_ENV_VAR: Record<string, string> = {
 // across the whole roster (see case.ts) rather than one role at a time.
 export const ALL_AGENT_ROLES = Object.keys(ROLE_ENV_VAR);
 
-// Shared by representative.ts and judge.ts, and exposed to the frontend via
+// Shared by representative-background.ts and judge-background.ts, and
+// exposed to the frontend via
 // case.ts, so there is exactly one place this number lives - the frontend
 // derives "was this response truncated?" by comparing a completed call's
 // completion_tokens against this same constant (see isTruncated() in
@@ -36,8 +37,10 @@ export function getModelForRole(role: string): string {
   return override || DEFAULT_MODEL;
 }
 
-// Used for the retry(s) after a truncated/degenerate response at tier 1
-// (see buildRetryTiers in openrouter.ts) - deliberately a different, more
+// Tier 2 of the escalation chain (see buildRetryTiers in openrouter.ts),
+// reached once tier 1 has used up both of its attempts - whether to
+// truncation/degeneration, a plain HTTP failure, or transient failures
+// that ran long enough to count. Deliberately a different, more
 // capable model than whatever getModelForRole() resolves to, not the same
 // model tried again. Real data showed a same-model retry doesn't behave
 // like an independent second attempt: once a role's first attempt
@@ -76,9 +79,9 @@ export function getTruncationFallbackModel(): string {
   return TRUNCATION_FALLBACK_MODEL;
 }
 
-// Third and fourth escalation tiers, reached only when the fallback model
-// above has already truncated on every attempt allowed it (see the tiered
-// retry loop in openrouter.ts) - real measured data on that fallback model
+// Third and fourth escalation tiers, reached only once the tier above has
+// also used up every attempt allowed it (see the tiered retry loop in
+// openrouter.ts) - real measured data on that fallback model
 // alone found it still not reliable enough on its own (a real, if rare,
 // case truncated on both of its own attempts too). These two are
 // deliberately two different, genuinely top-tier models from two
@@ -87,8 +90,8 @@ export function getTruncationFallbackModel(): string {
 // shared-family quirk as an explanation, not just a shared-size one.
 // Reached rarely enough (only after every earlier tier has already
 // failed) that the real cost impact stays small despite a materially
-// higher per-token price than either the default or the Mistral Large
-// tier - see pricing.ts.
+// higher per-token price than either the default model or tier 2 - see
+// pricing.ts.
 const TOP_TIER_FALLBACK_MODEL = process.env.TOP_TIER_FALLBACK_MODEL || 'openai/gpt-5.6-sol';
 const LAST_RESORT_FALLBACK_MODEL = process.env.LAST_RESORT_FALLBACK_MODEL || 'google/gemini-2.5-pro';
 

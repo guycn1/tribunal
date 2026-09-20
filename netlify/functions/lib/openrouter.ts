@@ -8,8 +8,9 @@ const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 // under a second) gets more attempts than one where each try genuinely
 // takes most of the budget.
 //
-// representative.ts/judge.ts now run as Netlify Background Functions
-// (config.background = true), not standard synchronous invocations - the
+// representative-background.ts/judge-background.ts now run as Netlify
+// Background Functions (config.background = true), not standard
+// synchronous invocations - the
 // real, verified reason this whole file used to budget against a tight
 // ~26s ceiling. That number was calibrated against a *standard* Netlify
 // Function invocation limit that turned out to be wrong for what this
@@ -19,12 +20,11 @@ const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 // project (consistently 8-18s+ per call) would have been at serious risk
 // of blowing through regardless of how carefully the old budget was
 // tuned - no amount of constant-tuning fixes an architecture mismatch.
-// Background Functions get up to 15 minutes instead. 120000ms (2 minutes)
-// is still a small fraction of that real ceiling - real margin for
-// multiple genuine full-length retries, not just fast-failure ones - while
-// staying far short of ever risking the actual 15-minute wall.
-// Raised to fit the full escalation chain (see buildRetryTiers below).
-// Worst case is now sized by attemptTimeoutFor()'s prompt-aware formula -
+// Background Functions get up to 15 minutes instead, which is what makes
+// the current value possible at all: this was first set to 120000ms (2
+// minutes) on that move, then raised again to fit the full escalation
+// chain (see buildRetryTiers below).
+// Worst case is sized by attemptTimeoutFor()'s prompt-aware formula -
 // see its own comment for the arithmetic: ~649s of attempt ceilings for a
 // judge across all four tiers, ~587s for a representative, both before
 // backoff delays. 650000ms (650s, ~10.8 minutes) is deliberately sized
@@ -35,9 +35,9 @@ const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 // out before a further tier could be tried.
 const TOTAL_BUDGET_MS = 650000;
 // Don't start an attempt the remaining budget cannot plausibly finish.
-// With a 2-minute total budget instead of a ~26s one, this no longer has
-// to be tuned razor-close to the floor the way it did before (a real,
-// measured mistake at the old tight budget: 8000ms turned out to be
+// With a budget measured in minutes rather than the old ~26s, this no
+// longer has to be tuned razor-close to the floor the way it did before
+// (a real, measured mistake at the old tight budget: 8000ms turned out to be
 // exactly big enough to get eaten by backoff()'s own delay between
 // attempts, silently preventing the retry it existed to allow). 10000ms
 // here has real slack in both directions - comfortably enough for a fast
@@ -60,9 +60,12 @@ const MIN_REMAINING_TO_ATTEMPT_MS = 10000;
 // A genuine hang is the opposite case and is what the escalation budget
 // exists for: it consumes the whole per-attempt ceiling before failing.
 // Real measurements make the two trivially separable - observed 429
-// bounces landed at 1.7-4.3s, while real timeouts run 43s+, so a 10s line
-// sits in open space with wide margin on both sides rather than splitting
-// a continuum.
+// bounces landed at 1.7-4.3s, while a real timeout runs the full
+// per-attempt ceiling, which was 43s flat when this was measured and is
+// longer still now that attemptTimeoutFor() scales with prompt size
+// (~50s for a representative, ~58s for a judge, more at later tiers). So
+// a 10s line sits in open space with wide margin on both sides rather
+// than splitting a continuum, and the gap has only widened since.
 //
 // The fast path is strictly bounded (see MAX_FAST_TRANSIENT_RETRIES_PER_TIER)
 // so it can never recreate the original unbounded-retry bug: a tier gets at
@@ -307,10 +310,12 @@ const CONCISENESS_REMINDER: OpenRouterMessage = {
 // row via logApiCall(), not folded silently into whichever attempt was
 // eventually kept - the whole point being that a reader of the call log
 // can see that a role needed a fallback at all, not just its final
-// outcome. The three marker prefixes below are duplicated as literal
-// strings in app.js (same pattern as ABORTED_BY_USER_MESSAGE in abort.ts)
-// so the frontend can tell a discarded-but-recovered attempt from a
-// discarded-and-fatal one without any shared module between the two.
+// outcome. All six marker prefixes below are duplicated as literal strings
+// in app.js (same pattern as ABORTED_BY_USER_MESSAGE, which is defined in
+// db.ts and copied there too) so the frontend can tell a
+// discarded-but-recovered attempt from a discarded-and-fatal one without
+// any shared module between the two. Adding a marker here means adding it
+// there as well; there is no build step that would catch a mismatch.
 //
 // NAMING, worth knowing before trusting the word: "DEGENERATE" in these
 // three constants is an umbrella for the whole content-quality class, NOT
@@ -395,10 +400,11 @@ export interface OpenRouterResult {
   // in the chain - consistent with promptTokens/completionTokens/cost
   // above, which are likewise this attempt's own, not a running total.
   durationMs: number;
-  // Attempts that truncated/degenerated and were discarded before this
-  // result was reached - each one gets its own logApiCall() row alongside
-  // this result's own row. Empty on the common path (no escalation
-  // needed).
+  // Attempts discarded before this result was reached, whatever discarded
+  // them - truncation/degeneration, a plain HTTP failure at that tier, a
+  // transient failure, or an abort caught between attempts. Each one gets
+  // its own logApiCall() row alongside this result's own row. Empty on the
+  // common path (no retry or escalation needed).
   discardedAttempts?: DiscardedAttempt[];
 }
 
@@ -485,8 +491,8 @@ export async function callOpenRouter(
   let attempt = 0;
   // Which escalation tier we're on (0 = the default model) and how many
   // attempts have been made at that tier so far - see buildRetryTiers
-  // above. Every discarded attempt (truncated or degenerated, then
-  // retried/escalated) is recorded here rather than folded into whichever
+  // above. Every discarded attempt is recorded here - whatever kind of
+  // failure discarded it - rather than folded into whichever
   // attempt is eventually kept - each becomes its own real logApiCall()
   // row, so the call log shows the fallback happening rather than only
   // its final outcome.
@@ -760,7 +766,7 @@ export async function callOpenRouter(
         // genuinely at $0, which won't resolve by retrying, so this
         // returns immediately rather than looping like the 429/5xx
         // branches above. The exact phrase "out of credits" is matched by
-        // isOutOfCredits() in app.js - representative.ts/judge.ts wrap
+        // isOutOfCredits() in app.js - the agent Background Functions wrap
         // this failure as a 502 rather than passing the 402 status
         // through directly, so the client can't rely on the status code
         // alone here the way it does for a direct 4xx from this app's own
@@ -922,7 +928,7 @@ export async function callOpenRouter(
         // fall back to, unlike every discarded attempt already recorded
         // above. Treated as a real failure, not returned as a
         // technically-successful result for the caller to badge and move
-        // on - representative.ts/judge.ts already treat any `status:
+        // on - the agent Background Functions already treat any `status:
         // 'failed'` result as a normal, visible failure, so this needs no
         // special handling on their side. This attempt's own tokens/cost
         // are reported on its own row here - every earlier discarded

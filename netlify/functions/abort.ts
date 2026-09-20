@@ -7,18 +7,31 @@ import { JUDGES } from './lib/judges';
 import { logApiCall, ABORTED_BY_USER_MESSAGE } from './lib/db';
 
 // POST /api/trials/:id/abort
-// Body: { roles: string[] } - the agent roles still pending (loading,
-// retrying, or in the last-ditch attempt) when the user clicked Abort.
+// Body: { roles: string[] } - the agent roles still pending (loading, or
+// mid-retry/mid-escalation) when the user clicked Abort.
 //
-// This does not, and cannot, reliably stop the corresponding Netlify
-// function invocations server-side - a client aborting its own fetch()
-// does not guarantee the request it was talking to stops running. What
-// this call actually does is make the fact of the abort visible and
-// persistent: one 'failed' row per pending role, with a distinct, exact
-// error message the run-history sidebar checks for (see
-// ABORTED_BY_USER_MESSAGE / wasAborted in db.ts) so a trial the user
-// deliberately stopped reads as "Aborted," not as a generic failure or a
-// falsely-clean success if the abandoned call happens to complete anyway.
+// What this endpoint writes is one 'failed' row per pending role, carrying
+// a distinct, exact error message (see ABORTED_BY_USER_MESSAGE / wasAborted
+// in db.ts), which does two separate jobs:
+//
+//   1. It makes the abort visible and persistent, so a trial the user
+//      deliberately stopped reads as "Aborted" in the run-history sidebar
+//      rather than as a generic failure - or as a falsely-clean success, if
+//      an abandoned call happens to finish anyway.
+//   2. It is also the ONLY durable, server-visible signal that the abort
+//      happened, and the agent Background Functions poll for it: a client
+//      aborting its own fetch() cannot stop a Background Function, so each
+//      in-flight call checks isTrialAborted() between attempts and stops
+//      itself (see the isAborted callback on callOpenRouter, and
+//      isTrialAborted in db.ts).
+//
+// So this call does stop server-side work, just indirectly - by leaving a
+// record the running calls notice, not by cancelling anything. It cannot
+// interrupt an HTTP request already in flight; it stops the next attempt,
+// which is where the escalation chain's real cost lives. An earlier version
+// of this comment said the abort could not stop server-side work at all,
+// which was true before that mechanism was added (2026-09-20) and is not
+// true now.
 const rawHandler: Handler = async (event) => {
   if (event.httpMethod !== 'POST') {
     return json(405, { error: 'Method not allowed' });

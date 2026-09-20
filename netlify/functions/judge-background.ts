@@ -25,7 +25,8 @@ import type { JudgeRole, RepresentativeRole } from './lib/types';
 // target their prompt sets (roughly 600-800 tokens), with headroom above
 // that target rather than a tight fit against it, since a cap hit exactly
 // mid-sentence reads far worse than a shorter completion under it. Shares
-// AGENT_MAX_TOKENS with representative.ts - see the comment on that
+// AGENT_MAX_TOKENS with representative-background.ts - see the comment on
+// that
 // constant in models.ts for why one shared value across both role types.
 const MAX_TOKENS = AGENT_MAX_TOKENS;
 
@@ -44,11 +45,13 @@ const rawHandler: Handler = async (event) => {
   }
   const judgeRole = role as JudgeRole;
 
-  // See the matching comment in representative.ts - both checks run before
+  // See the matching comment in representative-background.ts - both checks
+  // run before
   // any Supabase trial lookup or OpenRouter call, and (now that this runs
   // as a Background Function - see config.background below) neither
   // rejection reaches the polling frontend directly, only Netlify's
-  // function logs, for the same disclosed reasons as representative.ts.
+  // function logs, for the same disclosed reasons as
+  // representative-background.ts.
   if (!isSiteGateOk(event.headers)) {
     console.warn(`judge:${judgeRole}: rejected - missing or invalid site gate header.`);
     return json(401, { role: judgeRole, status: 'failed', error: 'Missing or invalid site gate header.' });
@@ -78,8 +81,10 @@ const rawHandler: Handler = async (event) => {
 
   const messages = buildJudgeMessages(judgeRole, caseDef, availableArguments);
 
-  // Every attempt that truncated/degenerated and was discarded in favor of
-  // a retry or escalation gets its own real call-log row too, written the
+  // Every discarded attempt gets its own real call-log row too - whatever
+  // discarded it (truncation/degeneration, a plain HTTP failure at that
+  // tier, a transient failure, or an abort caught between attempts) -
+  // written the
   // moment callOpenRouter() decides to discard it (not batched after the
   // whole chain finishes) - this is what lets a client polling GET
   // /api/trials/:id see the escalation happening live, mid-call, instead

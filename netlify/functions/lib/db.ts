@@ -45,11 +45,13 @@ export interface TrialSummary extends TrialRecord {
   // Whether any individual call for this trial ever logged status='failed'
   // - including one that was immediately retried and fully recovered. Kept
   // as a real, honest low-level fact, but deliberately NOT what the
-  // frontend's "Completed" vs "Completed - with failures" label is based
-  // on: on a free tier, a transient failure that self-heals within the
-  // retry ceiling is the expected case, not the exception, so a label
-  // driven by this would fire on most runs and stop meaning anything. See
-  // resultCount below for what the sidebar actually uses.
+  // sidebar's status label is based on. A transient failure that the retry
+  // chain self-heals within its own budget is an ordinary, expected event
+  // here, not an exception - so a label driven by this would fire on most
+  // runs and stop meaning anything. (It once did: the label used to read
+  // "Completed - with failures" and was driven by exactly this flag. It
+  // now reads "Completed - missing N of 7" and is driven by resultCount
+  // below, which is what the sidebar actually uses.)
   hadFailures: boolean;
   wasAborted: boolean;
   // How many of the 7 expected results (4 representative_arguments + 3
@@ -299,7 +301,8 @@ export async function upsertAgentProgress(params: {
 // rolling window - independent of which trial, which role, or which IP
 // they come from. This is what actually bounds worst-case spend on a
 // public URL with no login: per-IP measures (see the rateLimit config on
-// representative.ts/judge.ts) slow down a single source, but only this
+// representative-background.ts/judge-background.ts) slow down a single
+// source, but only this
 // count-against-real-persisted-state check can't be defeated by spreading
 // requests across many IPs or by reading/replaying the site-gate header
 // (see siteGate.ts) - it's checked against what actually happened, not
@@ -307,8 +310,10 @@ export async function upsertAgentProgress(params: {
 //
 // Sized generously above any realistic legitimate day (manual testing plus
 // repeated real usage from other visitors) while staying well short of
-// meaningfully denting a small prepaid balance - tune GLOBAL_CALL_CAP down
-// once the real per-call cost of whichever paid model is in use is known.
+// meaningfully denting a small prepaid balance. Real per-call cost is now
+// known rather than guessed - see pricing.ts, where every model in the
+// escalation chain carries a verified per-token price - so this number can
+// be re-derived against real spend rather than set by feel.
 export const GLOBAL_CALL_CAP = 350;
 const GLOBAL_CALL_WINDOW_MS = 24 * 60 * 60 * 1000;
 
@@ -318,8 +323,9 @@ const GLOBAL_CALL_WINDOW_MS = 24 * 60 * 60 * 1000;
 // the cap self-perpetuating: once tripped, every subsequent check would
 // see its own past rejections and stay tripped for the rest of the
 // window even if real traffic had stopped. The caller still returns a
-// clear, real error to the client either way (see representative.ts /
-// judge.ts) - it just isn't persisted.
+// clear, real error to the client either way (see
+// representative-background.ts / judge-background.ts) - it just isn't
+// persisted.
 //
 // This whole cap exists to bound worst-case spend on the real, public,
 // deployed site - not to constrain the developer's own local testing,

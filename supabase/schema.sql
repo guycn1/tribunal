@@ -1,11 +1,13 @@
 -- Tribunal database schema.
 --
--- Five tables:
+-- Six tables:
 --   case_definitions        the fixed case record (seeded once, read-only in practice)
 --   trials                  one row per run of the tribunal against a case
 --   representative_arguments  one row per representative who argued in a trial
 --   judge_rulings            one row per judge who ruled in a trial
---   api_call_logs             one row per model call, success or failure
+--   api_call_logs             one row per model call attempt, kept or discarded
+--   agent_progress            one row per (trial, role), overwritten in place -
+--                             whichever attempt is currently in flight
 --
 -- Row Level Security is enabled on every table with no policies defined, so
 -- anon/authenticated clients (the browser) cannot read or write any of it —

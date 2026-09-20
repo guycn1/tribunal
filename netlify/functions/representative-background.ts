@@ -13,7 +13,8 @@ import type { RepresentativeRole } from './lib/types';
 
 // 1000 previously let a real argument (the longest of its group, 1000
 // completion tokens - exactly the old cap) run out mid-sentence. Now
-// shares AGENT_MAX_TOKENS with judge.ts - see the comment on that constant
+// shares AGENT_MAX_TOKENS with judge-background.ts - see the comment on
+// that constant
 // in models.ts for why one shared value.
 const MAX_TOKENS = AGENT_MAX_TOKENS;
 
@@ -74,8 +75,10 @@ const rawHandler: Handler = async (event) => {
   const caseDef = await getChargeSheet();
   const messages = buildRepresentativeMessages(repRole, caseDef);
 
-  // Every attempt that truncated/degenerated and was discarded in favor of
-  // a retry or escalation gets its own real call-log row too, written the
+  // Every discarded attempt gets its own real call-log row too - whatever
+  // discarded it (truncation/degeneration, a plain HTTP failure at that
+  // tier, a transient failure, or an abort caught between attempts) -
+  // written the
   // moment callOpenRouter() decides to discard it (not batched after the
   // whole chain finishes) - this is what lets a client polling GET
   // /api/trials/:id see the escalation happening live, mid-call, instead
@@ -183,11 +186,12 @@ const rawHandler: Handler = async (event) => {
 export const handler = safeHandler(rawHandler);
 
 // Per-IP rate limit on this function specifically, since it's one of the
-// two that actually spend OpenRouter money (the other is judge.ts) - not
+// two that actually spend OpenRouter money (the other is
+// judge-background.ts) - not
 // declared on trials.ts/case.ts, which never call OpenRouter regardless of
 // how often they're hit. Path matches how this function is actually
 // reached: netlify.toml redirects /api/trials/:id/representatives/:role
-// here as /.netlify/functions/representative/:id/:role (see netlify.toml),
+// here as /.netlify/functions/representative-background/:id/:role,
 // so the glob covers every id/role combination.
 //
 // windowLimit/windowSize are deliberately generous, not tight - this is a

@@ -30,7 +30,7 @@ Every discarded attempt — including a timeout — gets logged as its own real 
 
 ### Database
 
-Five tables in Supabase/Postgres: `case_definitions` (the fixed charge sheet), `trials`, `representative_arguments`, `judge_rulings`, `api_call_logs` (one row per model call attempt, kept or discarded), and `agent_progress` (one row per trial/role, overwritten in place, tracking whichever attempt is currently in flight for the live-progress display).
+Six tables in Supabase/Postgres: `case_definitions` (the fixed charge sheet), `trials`, `representative_arguments`, `judge_rulings`, `api_call_logs` (one row per model call attempt, kept or discarded), and `agent_progress` (one row per trial/role, overwritten in place, tracking whichever attempt is currently in flight for the live-progress display).
 
 ## Reading the UI: status badges
 
@@ -79,7 +79,10 @@ npm install
 cp .env.example .env   # fill in OPENROUTER_API_KEY, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
 npm run dev             # netlify dev — serves the static frontend and functions locally
 npm run typecheck       # tsc --noEmit
+npm test                # retry/escalation and card-render regression tests
 ```
+
+`npm test` needs no network and spends no quota: it compiles the real shipped TypeScript with the project's own `tsc` and drives it against a mocked `fetch`, and executes `app.js`'s real top-level code against a stub DOM.
 
 `netlify dev` costs no Netlify credits — it never touches the cloud build/deploy pipeline. It does reach the real OpenRouter API for any representative/judge call, so local testing still spends real quota.
 
@@ -93,4 +96,4 @@ This project was built with Claude Code. `CLAUDE.md`, tracked in this repository
 
 ## Status
 
-Feature-complete and stable. The full pipeline (four representatives in parallel, three judges after, independent rulings never combined) has been verified across many real end-to-end trials, both locally and against the live deployed site — including the reliability chain: tier escalation, degenerate-output detection, and recovery from truncated or transient failures. All three anti-abuse layers are in place and active: the site-gate header and the site-wide call cap are evaluated on every single request and have each been exercised directly, while the third, per-IP rate limiting, is enforced by Netlify's own platform rather than by code in this repository. A long round of frontend polish (layout, live status display, call log transparency, a responsive card view for narrow screens, cross-browser scrollbar/interaction details) is also done. Treated as done pending any further issue noticed on inspection, not as a hard, permanent freeze.
+Feature-complete and stable. The full pipeline (four representatives in parallel, three judges after, independent rulings never combined) has been verified across many real end-to-end trials against real models, both locally and against the live deployed site. The reliability chain — tier escalation, degenerate-output detection, and recovery from truncated or transient failures — has been exercised repeatedly against the real OpenRouter API, and the parts of it added most recently were verified locally rather than in production, alongside an offline regression suite (`npm test`) that drives the real shipped source. All three anti-abuse layers are in place and active: the site-gate header and the site-wide call cap are evaluated on every single request and have each been exercised directly, while the third, per-IP rate limiting, is enforced by Netlify's own platform rather than by code in this repository. A long round of frontend polish (layout, live status display, call log transparency, a responsive card view for narrow screens, cross-browser scrollbar/interaction details) is also done. Treated as done pending any further issue noticed on inspection, not as a hard, permanent freeze.
