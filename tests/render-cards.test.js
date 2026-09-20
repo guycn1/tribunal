@@ -234,6 +234,14 @@ const unlabelled = bodyCells.filter((td) => !td.includes('data-label='));
 check('every <td> in a call row has a data-label', unlabelled.length === 0, unlabelled.join(' '));
 check('all eight columns are present', bodyCells.length === 8, String(bodyCells.length));
 
+// Type and Model each emit both spellings; the stylesheet shows the short
+// one in the table and the full one in the card layout. If either half
+// stopped being rendered, one of the two views would silently lose it.
+check('Type renders the abbreviated form for the table', bodyRow.includes('<abbr class="col-short" title="Representative">R</abbr>'), bodyRow.slice(0, 200));
+check('Type renders the full word for the card view', bodyRow.includes('<span class="col-full">Representative</span>'), bodyRow.slice(0, 200));
+check('Model renders the shortened id for the table', bodyRow.includes('>mistral-small-24b-instruct-2501</abbr>'), bodyRow.slice(0, 400));
+check('Model renders the full id, vendor prefix and all, for the card view', bodyRow.includes('<span class="col-full">mistralai/mistral-small-24b-instruct-2501</span>'), bodyRow.slice(0, 400));
+
 // The totals row is deliberately different: its first and last cells are a
 // heading and a footnote, not labelled fields, and are marked as such so
 // the card layout can style them that way.

@@ -948,6 +948,16 @@ table.call-log abbr {
   cursor: help;
 }
 
+/* Type and Model each render both a short and a full spelling, and exactly
+   one is ever shown (see formatCallTypeHtml/renderCallLog in app.js). The
+   table view is the width-constrained one, so it takes the abbreviated
+   form with the full text on hover; the card view below 720px swaps them.
+   Doing it this way keeps a single render path - no width checks in JS,
+   no second DOM to keep in sync. */
+table.call-log .col-full {
+  display: none;
+}
+
 .status-caption {
   color: var(--text-dim);
   font-size: 0.72rem;
@@ -1127,16 +1137,34 @@ table.call-log abbr {
     text-align: right;
   }
 
+  /* A card row has room for the whole value, so these show the real thing
+     rather than the table's width-driven abbreviations: "Representative"
+     instead of "R", and the model id complete with its vendor prefix. No
+     <abbr> either - a hover tooltip is close to useless on the touch
+     devices this layout is for. */
+  table.call-log .col-short {
+    display: none;
+  }
+
+  table.call-log .col-full {
+    display: inline;
+  }
+
   /* formatDateTimeHtml splits the timestamp across two lines for the
-     narrow Time column. A card row is wide enough for one line, and in
-     normal flow the two spans simply sit next to each other. */
+     narrow Time column. A card row fits it on one line, so the break is
+     dropped - but the two spans have no whitespace between them in the
+     markup, and a space introduced via content would be collapsed away,
+     so the gap is a margin.
+     Selected via `br + .datetime-part`, not `.datetime-part +
+     .datetime-part`: the <br> is still an element between the two spans
+     even while display: none, so the adjacent-sibling combinator does not
+     see them as adjacent to each other. */
   table.call-log td[data-label='Time'] br {
     display: none;
   }
 
-  table.call-log td[data-label='Time'] .datetime-part + .datetime-part::before {
-    content: ' ';
-    white-space: pre;
+  table.call-log td[data-label='Time'] br + .datetime-part {
+    margin-left: 0.35em;
   }
 
   /* The totals row is a card too. Its per-cell top border and raised

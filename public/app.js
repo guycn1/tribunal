@@ -162,12 +162,22 @@ function ordinalWord(n) {
   return ORDINAL_WORDS[n] || `${n}th`;
 }
 
-// Single-letter Type column, with the full word kept available via <abbr>
-// (hover/long-press) rather than silently discarding it.
+// Both spellings of the Type value are emitted, and the stylesheet shows
+// exactly one of them - see the .col-short/.col-full pair in styles.css.
+//
+// The single letter plus an <abbr> exists only because the table view has
+// to fit eight columns across; it is a concession to width, not a better
+// way to say "Representative". The card view below 720px has a whole row
+// per field and no such constraint, so it shows the real word with no
+// tooltip to hunt for - which also matters because a tooltip is close to
+// useless on the touch devices that get the card layout in the first
+// place. Rendering both and letting CSS choose keeps this a single render
+// path with no width checks in JS.
 function formatCallTypeHtml(callType) {
-  if (callType === 'representative') return '<abbr title="Representative">R</abbr>';
-  if (callType === 'judge') return '<abbr title="Judge">J</abbr>';
-  return callType;
+  const full = callType === 'representative' ? 'Representative' : callType === 'judge' ? 'Judge' : null;
+  if (!full) return callType;
+  const short = callType === 'representative' ? 'R' : 'J';
+  return `<abbr class="col-short" title="${full}">${short}</abbr><span class="col-full">${full}</span>`;
 }
 
 // True when a successful call's completion hit the shared token cap
@@ -1496,7 +1506,7 @@ function renderCallLog() {
     tr.innerHTML = `
       <td data-label="Agent">${formatAgentName(entry.agentRole)}</td>
       <td data-label="Type">${formatCallTypeHtml(entry.callType)}</td>
-      <td data-label="Model"><abbr title="${entry.modelUsed}">${shortModelName(entry.modelUsed)}</abbr></td>
+      <td data-label="Model"><abbr class="col-short" title="${entry.modelUsed}">${shortModelName(entry.modelUsed)}</abbr><span class="col-full">${entry.modelUsed}</span></td>
       <td data-label="Tokens">${tokens}</td>
       <td data-label="Cost">${formatCost(entry.cost)}</td>
       <td data-label="Duration">${formatDuration(entry.durationMs)}</td>
