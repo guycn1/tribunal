@@ -130,6 +130,35 @@ body {
   flex-shrink: 0;
   color: var(--text);
   opacity: 0.65;
+  /* Invisible at rest (alpha 0), and present only so the hover transition
+     has something of the same shape to interpolate from. Both halves of
+     this matter, and neither is obvious:
+
+     1. The function list must match the hover state's exactly - same two
+        drop-shadows, same blur radii - so only the colour changes.
+     2. The colour must come from color-mix() here too, not the plainer
+        `transparent`. color-mix() resolves to a modern color(srgb ...)
+        value, and this engine interpolates a modern colour against a
+        legacy one (`transparent`, or the implied colour of `none`) by
+        producing rgba(1, 0, 0, ...) - a near-black - for the entire
+        transition, snapping to the real colour only at the very end.
+        Measured, not theorised: at the midpoint, from `none` and from
+        `transparent` both give rgba(1, 0, 0, 0.3), while this gives
+        oklab(0.9389 ... / 0.3), the correct near-white at half alpha.
+        Worth knowing before "simplifying" this: `var(--text) 0%` does
+        not keep the colour - this resolves to color(srgb 0 0 0 / 0),
+        transparent black, same as `transparent` would look. What it
+        keeps is the colour TYPE, and that alone is what makes the
+        interpolation work. Being transparent black costs nothing,
+        because interpolation is premultiplied, so an endpoint at alpha
+        0 contributes no hue to the steps between.
+
+     The visible symptom of getting either wrong is a glow that appears to
+     do nothing for the length of the transition and then snap in at the
+     end, while the opacity beside it fades smoothly - which is what
+     happened when this rule had no filter at all. */
+  filter: drop-shadow(0 0 5px color-mix(in srgb, var(--text) 0%, transparent))
+    drop-shadow(0 0 13px color-mix(in srgb, var(--text) 0%, transparent));
   transition:
     opacity 0.2s ease,
     filter 0.2s ease;
