@@ -81,9 +81,10 @@ export function getTruncationFallbackModel(): string {
   return TRUNCATION_FALLBACK_MODEL;
 }
 
-// Third and fourth escalation tiers, reached only once the tier above has
-// also used up every attempt allowed it (see the tiered retry loop in
-// openrouter.ts) - real measured data on that fallback model
+// Third and fourth escalation tiers, reached once the tier above is done
+// with - normally because it used up every attempt allowed it, though a
+// plain HTTP error there escalates at once and forfeits the rest (see the
+// tiered retry loop in openrouter.ts) - real measured data on that fallback model
 // alone found it still not reliable enough on its own (a real, if rare,
 // case truncated on both of its own attempts too). These two are
 // deliberately two different, genuinely top-tier models from two

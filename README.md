@@ -49,7 +49,7 @@ One row per real model attempt, including attempts that were discarded in favour
 | `Truncated` | red | The same cap hit, but on the final tier with nothing left to fall back to. Nothing was saved. |
 | `Degenerated` | red | The same detector hit, on the final tier. Nothing was saved. |
 | `Escalated` | amber | A plain HTTP failure from that tier's own model (e.g. a removed model id returning 404). Skips the tier's remaining attempts, since re-asking a model that just 404'd is pointless. |
-| `No response` | amber | A transient failure — timeout, HTTP 429, a 5xx, or a 200 carrying no content. Retried. If it came back in under 10 seconds it did not even cost the tier an attempt. |
+| `No response` | amber | A transient failure — timeout, HTTP 429, a 5xx, or a 200 carrying no content. Retried. Coming back in under 10 seconds *can* make the retry free — not counted against the tier's attempts — but only for the first few at each tier, and only with enough time budget left to try again; past that a fast failure costs an attempt like any other. |
 | `Aborted` | amber | The chain stopped itself between attempts because the trial was aborted while it was still running server-side. |
 | `truncated` | amber | Legacy only: shown *next to* a green `success` on historical rows recorded before truncation became a real failure. New trials never produce it. |
 

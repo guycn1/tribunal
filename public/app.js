@@ -527,11 +527,16 @@ async function triggerAgent(url, signal) {
     return { accepted: true };
   }
 
-  // A non-2xx this early can only be a platform-level rejection (Netlify's
-  // per-IP rate limiter, most likely - see the rateLimit config on
-  // the agent Background Functions) rather than anything from this app's own
-  // handler code, since a Background Function's own application-level
-  // outcome never reaches this response at all.
+  // A non-2xx this early can only be a platform-level rejection rather
+  // than anything from this app's own handler code, since a Background
+  // Function's own application-level outcome never reaches this response
+  // at all. Two real causes, both seen on this project: Netlify's per-IP
+  // rate limiter (see the rateLimit config on the agent Background
+  // Functions), and a routing failure - an immediate 404 on every call,
+  // which happened when the function files were renamed and netlify.toml's
+  // redirect targets still pointed at the old names. The second looks
+  // nothing like the first, so don't read every non-2xx here as rate
+  // limiting.
   let message;
   try {
     const data = await res.json();

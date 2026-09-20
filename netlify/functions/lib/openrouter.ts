@@ -150,8 +150,11 @@ export interface OpenRouterMessage {
 // Large, tier 2's original model), 7 succeeded and 1 truncated on both of
 // its own attempts too. Rather than one fallback, this is a genuine
 // escalation chain - each tier a different, more capable (and pricier)
-// model, reached only once every attempt at the tier before it has
-// already truncated. The last two tiers are deliberately from two
+// model, reached once the tier before it is done - which usually means it
+// spent every attempt allowed it, on truncation, degeneration or a slow
+// transient failure, but not always: a plain HTTP error (a removed model
+// id, say) escalates immediately and forfeits that tier's remaining
+// attempts, since re-asking a model that just 404'd cannot help. The last two tiers are deliberately from two
 // different companies, not two models in the same family, so a
 // shared-vendor quirk can't explain a failure that makes it that far.
 // Every tier also gets more token headroom than the one before it - some
