@@ -1401,6 +1401,14 @@ function renderCallLog() {
     // exactly why a six-minute stall left nothing to read here afterward.
     const isTransientRetried = err.startsWith(TRANSIENT_RETRIED_MARKER);
     const isAbortedMidCall = err.startsWith(ABORTED_MID_CALL_MARKER);
+    // The content-quality markers cover two genuinely different failures,
+    // and calling both of them "Degenerated" was simply inaccurate: a
+    // response that ran into the token cap was cut off, not incoherent.
+    // openrouter.ts writes this exact phrase for the cap case (and quotes
+    // the offending text instead for the two degeneration detectors), so
+    // it is the honest discriminator between them. Same literal-string
+    // coupling as the markers themselves.
+    const hitTokenCap = err.includes('max_tokens limit');
 
     if (isDegenerateRetried || isHttpErrorEscalated || isTransientRetried) {
       // Dims the whole row - a visual cue that this failure wasn't fatal
@@ -1436,7 +1444,7 @@ function renderCallLog() {
       const caption = isRetriedSameModel ? 'retried with the same model' : 'escalated to a different model';
       statusCellHtml = `
         <div class="cell-stack">
-          <span class="badge badge-warn">Degenerated</span>
+          <span class="badge badge-warn">${hitTokenCap ? 'Truncated' : 'Degenerated'}</span>
           <div class="status-caption">(${caption})</div>
         </div>
       `;
@@ -1464,7 +1472,7 @@ function renderCallLog() {
     } else if (isDegenerateFinal) {
       // Red, not yellow - this is the priciest fallback tier failing too,
       // with nothing left to fall back to. As fatal as a 404/429/500.
-      statusCellHtml = `<span class="badge badge-fail">Degenerated</span>`;
+      statusCellHtml = `<span class="badge badge-fail">${hitTokenCap ? 'Truncated' : 'Degenerated'}</span>`;
     } else {
       const statusBadge = entry.status === 'success' ? 'badge-ok' : 'badge-fail';
       statusCellHtml = `

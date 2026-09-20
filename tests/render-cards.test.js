@@ -39,7 +39,6 @@ function makeElement(tag = 'div') {
     dataset: {},
     style: { setProperty() {}, removeProperty() {}, getPropertyValue: () => '' },
     className: '',
-    innerHTML: '',
     textContent: '',
     scrollTop: 0,
     scrollHeight: 0,
@@ -66,6 +65,15 @@ function makeElement(tag = 'div') {
     querySelector: () => null,
     querySelectorAll: () => [],
   };
+  // Assigning innerHTML replaces an element's children in a real DOM. The
+  // stub does not parse the markup, but it must still clear them, or a
+  // render that starts with `container.innerHTML = ''` would silently
+  // accumulate rows across calls and every assertion would read a stale one.
+  let html = '';
+  Object.defineProperty(el, 'innerHTML', {
+    get: () => html,
+    set(value) { html = String(value); kids.length = 0; },
+  });
   Object.defineProperty(el, 'children', { get: () => kids });
   Object.defineProperty(el, 'lastElementChild', { get: () => kids[kids.length - 1] || null });
   Object.defineProperty(el, 'firstElementChild', { get: () => kids[0] || null });
@@ -105,7 +113,7 @@ console.log('\n=== app.js executes cleanly (catches a TDZ-class load crash) ==='
 let app;
 try {
   // Hand back exactly the pieces under test from app.js's own top-level scope.
-  app = new Function(`${SRC}\n;return { state, el, renderRepresentatives, renderJudges, agentCardSignature, REPRESENTATIVE_ROLES, JUDGE_ROLES };`)();
+  app = new Function(`${SRC}\n;return { state, el, renderRepresentatives, renderJudges, renderCallLog, agentCardSignature, REPRESENTATIVE_ROLES, JUDGE_ROLES };`)();
   check('top-level code ran with no error', true);
 } catch (error) {
   check('top-level code ran with no error', false, error.message);
@@ -174,6 +182,38 @@ state.trialId = 'a-different-trial';
 renderRepresentatives();
 const afterTrial = REPRESENTATIVE_ROLES.map((_, i) => container.children[i]);
 check('no stale card survives a trial change', beforeTrial.every((c, i) => c !== afterTrial[i]));
+
+console.log('\n=== Call log distinguishes a truncation from a degeneration ===');
+// Both come through the same content-quality marker, but they are different
+// failures: one ran into the token cap, the other produced incoherent text.
+// Labelling a capped response "Degenerated" was simply inaccurate.
+const { renderCallLog } = app;
+function statusTextFor(errorMessage, status = 'failed') {
+  state.callLog = [{
+    agentRole: 'grey_worm', callType: 'representative',
+    modelUsed: 'mistralai/mistral-small-24b-instruct-2501',
+    promptTokens: 1009, completionTokens: 1400, totalTokens: 2409,
+    cost: 0.000162, status, errorMessage, durationMs: 24258, timestamp: new Date().toISOString(),
+  }];
+  renderCallLog();
+  // renderCallLog builds each row by assigning a full markup string to
+  // tr.innerHTML; the stub stores that verbatim rather than parsing it, so
+  // the row's markup reads straight back off the property.
+  const row = el.callLogBody.children[0];
+  return row ? row.innerHTML : '';
+}
+
+const truncatedHtml = statusTextFor('[degenerate-retried-same-model] This attempt hit the max_tokens limit before finishing naturally - re-tried with the same model.');
+check('a capped response is labelled "Truncated"', /Truncated/.test(truncatedHtml) && !/Degenerated/.test(truncatedHtml), truncatedHtml.slice(0, 160));
+
+const degenerateHtml = statusTextFor('[degenerate-retried-same-model] This attempt repeated the same sentence 5 times ("i had no other way...") - re-tried with the same model.');
+check('a looping response is still labelled "Degenerated"', /Degenerated/.test(degenerateHtml) && !/Truncated/.test(degenerateHtml), degenerateHtml.slice(0, 160));
+
+const runOnHtml = statusTextFor('[degenerate-final] Every model tier was tried (4 in total, ending with google/gemini-2.5-pro) and none produced a usable response - the final attempt collapsed into a 62-word run with no punctuation ("she chose to burn...").');
+check('a final run-on failure is labelled "Degenerated"', /Degenerated/.test(runOnHtml) && !/Truncated/.test(runOnHtml), runOnHtml.slice(0, 160));
+
+const finalCapHtml = statusTextFor('[degenerate-final] Every model tier was tried (4 in total, ending with google/gemini-2.5-pro) and none produced a usable response - the final attempt hit the max_tokens limit before finishing naturally. Nothing was saved.');
+check('a final capped failure is labelled "Truncated"', /Truncated/.test(finalCapHtml) && !/Degenerated/.test(finalCapHtml), finalCapHtml.slice(0, 160));
 
 console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} check(s) failed.`);
 process.exit(failures === 0 ? 0 : 1);
