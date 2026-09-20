@@ -107,15 +107,27 @@
                    above what its own uppercase, letter-spaced header
                    text needs, not just its data, funded by trimming
                    Model and Status, both of which had more room than
-                   their content actually needed. Time took a further
-                   2% from Tokens - the bold-total-plus-dim-breakdown
-                   layout (see the Tokens cell in renderCallLog()) needs
-                   less horizontal room than a single "prompt / completion
-                   / total" line did, so it had margin to spare. -->
+                   their content actually needed.
+                   Tokens then took 2% back from Model, measured rather
+                   than estimated. The narrowest this table ever renders
+                   is 655px (at a 901px viewport - just wide enough for
+                   the sidebar, which stacks below that and gives the
+                   table more room, not less). At 655px, Tokens' old 15%
+                   was 98px, while the breakdown line needs 100px for an
+                   ordinary judge row and 106px for a five-digit prompt
+                   count - so it wrapped to two lines routinely, not just
+                   in the extreme case. Model gave up the 2% for free:
+                   the longest real model id wraps to exactly two lines
+                   anywhere between 118px and 144px, so its old 144px
+                   share was idle at this width, and at wider viewports
+                   20% still fits the same id on one line everywhere 22%
+                   did. Going further (19%/18%) does start splitting the
+                   model name at ~1100px/~1280px, which is why this
+                   stops at 20/17. -->
               <col style="width: 13%" />
               <col style="width: 6%" />
-              <col style="width: 22%" />
-              <col style="width: 15%" />
+              <col style="width: 20%" />
+              <col style="width: 17%" />
               <col style="width: 7%" />
               <col style="width: 11%" />
               <col style="width: 14%" />
