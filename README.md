@@ -32,6 +32,44 @@ Every discarded attempt — including a timeout — gets logged as its own real 
 
 Five tables in Supabase/Postgres: `case_definitions` (the fixed charge sheet), `trials`, `representative_arguments`, `judge_rulings`, `api_call_logs` (one row per model call attempt, kept or discarded), and `agent_progress` (one row per trial/role, overwritten in place, tracking whichever attempt is currently in flight for the live-progress display).
 
+## Reading the UI: status badges
+
+Every model call is shown, whether it was kept or thrown away, and every failure is labelled with what actually went wrong. These two tables are the full set of badges either view can produce.
+
+### Call log
+
+One row per real model attempt, including attempts that were discarded in favour of a retry or an escalation. Discarded rows are dimmed, since the call usually went on to succeed further down the table.
+
+| Badge | Colour | What triggered it |
+| --- | --- | --- |
+| `success` | green | The attempt returned usable content and was kept. This is the text shown on that agent's card. |
+| `failed` | red | The attempt failed and no tier or time budget remained. The agent's card reads "Call failed". |
+| `Truncated` | amber | `finish_reason === 'length'` — the model was still writing when it hit that tier's token cap. Retried or escalated; the caption says which. |
+| `Degenerated` | amber | A detector fired on text that finished *on its own*: a 40+ word run with no punctuation, or the same whole sentence 4+ times. Retried or escalated. |
+| `Truncated` | red | The same cap hit, but on the final tier with nothing left to fall back to. Nothing was saved. |
+| `Degenerated` | red | The same detector hit, on the final tier. Nothing was saved. |
+| `Escalated` | amber | A plain HTTP failure from that tier's own model (e.g. a removed model id returning 404). Skips the tier's remaining attempts, since re-asking a model that just 404'd is pointless. |
+| `No response` | amber | A transient failure — timeout, HTTP 429, a 5xx, or a 200 carrying no content. Retried. If it came back in under 10 seconds it did not even cost the tier an attempt. |
+| `Aborted` | amber | The chain stopped itself between attempts because the trial was aborted while it was still running server-side. |
+| `truncated` | amber | Legacy only: shown *next to* a green `success` on historical rows recorded before truncation became a real failure. New trials never produce it. |
+
+Truncation and degeneration are separate failures rather than nested ones — a capped response is usually coherent prose that simply got cut off, while a degenerate one finished naturally and produced unusable text. A repetition loop that runs until it hits the cap is both at once.
+
+### Run history sidebar
+
+One badge per trial, summarising the whole run.
+
+| Badge | Colour | What triggered it |
+| --- | --- | --- |
+| `Completed` | green | Finished, with all 7 of 7 results saved. |
+| `Completed — missing N of 7` | amber | Finished, but fewer than 7 results were saved: some agent failed on every tier, or was never reached. |
+| `Aborted` | grey | Stopped by the user before the trial reached completion. |
+| `Aborted (N of 7 completed)` | grey | Stopped by the user, but the trial had already been marked complete — the count says how much survived. |
+| `In progress…` | slate | Still running, and under 40 minutes old. |
+| `Interrupted` | red | Not finished and over 40 minutes old, so it is treated as never going to finish (a dev-server restart mid-run, say). The threshold is sized to the genuine worst case: a full four-tier escalation for every agent through a three-slot concurrency pool. |
+
+"Missing N" counts results that actually persisted, **not** whether any individual call ever failed along the way. A transient failure that the retry recovered from is a real logged attempt, not a flaw in the outcome — labelling the run on that basis would mark almost every trial as damaged. The call log still shows every attempt in full.
+
 ## Local development
 
 Prerequisites: Node.js, a Supabase project (schema in `supabase/schema.sql`), an OpenRouter API key.
