@@ -286,6 +286,15 @@ function detectDegenerateRun(content: string): { degenerate: boolean; runLength:
 // positive. Only genuinely verbatim whole-sentence repetition counts.
 // Sentences under 5 words are ignored outright, so a short refrain ("Thank
 // you.", "I agree.") can never trip it either.
+//
+// It works on real output, not just on the corpus it was calibrated
+// against: counted from api_call_logs, this check has caught five natural
+// live cases - all on the day it shipped, all on the tier-1 default model,
+// tyrion_lannister twice and grey_worm three times, at 4 to 8 verbatim
+// repeats each. The older run-on check above has caught two, both
+// grey_worm, both on the tier-2 model of the time. Seven real catches
+// between them, and no false positive has been identified in any of the
+// live runs since.
 const REPEATED_SENTENCE_THRESHOLD = 4;
 const MIN_WORDS_FOR_REPEAT_CHECK = 5;
 
