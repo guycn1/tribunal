@@ -173,7 +173,7 @@ body {
 .github-link:hover,
 .github-link:active,
 .github-link:focus {
-  opacity: 0.86;
+  opacity: 0.9;
   /* A halo of light, not a cast shadow. The sidebar is #1c2129, so a dark
      shadow here is close to invisible no matter how far its opacity is
      pushed - darkening an already-dark surface barely changes its
@@ -185,8 +185,18 @@ body {
      fainter one that fades out - rather than one flat blur. drop-shadow,
      not box-shadow, so both follow the real silhouette instead of the
      icon's rectangular bounding box. */
-  filter: drop-shadow(0 0 5px color-mix(in srgb, var(--text) 60%, transparent))
-    drop-shadow(0 0 13px color-mix(in srgb, var(--text) 35%, transparent));
+  /* Two layers with genuinely different jobs, which is why they are tuned
+     separately rather than as one number:
+       5px  - hugs the octocat's silhouette. This is the one that edge-lights
+              the mark and makes the ICON itself look brighter, even though
+              it is drawn outside the glyph rather than on it.
+       13px - the diffuse surround. Reads as the glow around the mark and
+              barely touches how bright the mark itself appears.
+     The 5px layer is therefore cut harder than the 13px one here (60 -> 38
+     against 35 -> 22): the complaint this addresses was the mark reading
+     too hot, not the surround being too wide. */
+  filter: drop-shadow(0 0 5px color-mix(in srgb, var(--text) 38%, transparent))
+    drop-shadow(0 0 13px color-mix(in srgb, var(--text) 22%, transparent));
 }
 
 .sidebar-heading {
