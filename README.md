@@ -43,7 +43,7 @@ One row per real model attempt, including attempts that were discarded in favour
 | Badge | Colour | What triggered it |
 | --- | --- | --- |
 | `success` | green | The attempt returned usable content and was kept. This is the text shown on that agent's card. |
-| `failed` | red | The attempt failed and no tier or time budget remained. The agent's card reads "Call failed". |
+| `failed` | red | Either a real attempt that failed with no tier or time budget left (the agent's card reads "Call failed"), or the marker row the abort endpoint writes for a role that was still pending when the user stopped the trial — recognisable by a model of `n/a` and zero tokens, and the agent's card reads "Aborted" rather than "Call failed" for that one. |
 | `Truncated` | amber | `finish_reason === 'length'` — the model was still writing when it hit that tier's token cap. Retried or escalated; the caption says which. |
 | `Degenerated` | amber | A detector fired on text that finished *on its own*: a 40+ word run with no punctuation, or the same whole sentence 4+ times. Retried or escalated. |
 | `Truncated` | red | The same cap hit, but on the final tier with nothing left to fall back to. Nothing was saved. |

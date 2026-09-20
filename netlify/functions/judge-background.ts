@@ -207,8 +207,8 @@ export const handler = safeHandler(rawHandler);
 // reasoning behind every choice here (the numbers, background:true and
 // why it's now required rather than optional, the -background filename
 // suffix and why local dev specifically needs it, the path glob, the
-// missing `: Config` annotation, and the "unverified in production"
-// caveat) - the only difference is the function name in the path,
+// missing `: Config` annotation, and what is and is not confirmed in
+// production) - the only difference is the function name in the path,
 // matching how netlify.toml routes here.
 export const config = {
   path: '/.netlify/functions/judge-background/*',

@@ -243,15 +243,29 @@ export const handler = safeHandler(rawHandler);
 // hold locally, but keeping `path` and the actual filename in agreement
 // avoids depending on that assumption at all.
 //
-// UNVERIFIED IN PRODUCTION: whether the real deployed platform's own
-// Background Function detection also needs (or merely tolerates) the
-// filename suffix, on top of config.background, has not been confirmed -
-// this project has separately, repeatedly found that its redirect-based
-// routing behaves differently locally than once deployed (see the
-// "Production deployment" bug log entries), so the same caution applies
-// here until checked against a real deploy. Whether the rate-limit path
-// glob below is what Netlify's rate limiter actually matches against is
-// similarly unconfirmed locally, unchanged from before.
+// SINCE CONFIRMED IN PRODUCTION (this used to read "unverified"): the
+// deployed site has run real trials on this exact shape - config.background
+// plus the -background filename plus the matching netlify.toml redirect -
+// and the calls genuinely ran as Background Functions there. The proof is
+// incidental but conclusive: a real production trial (2026-09-20) had two
+// judge calls run for roughly six unbroken minutes server-side before
+// anyone noticed they were stuck. A standard synchronous invocation cannot
+// do that; it would have been killed at the 10-second ceiling. So whatever
+// the platform keys off, this combination works deployed.
+//
+// What is still genuinely unknown, and no longer matters much: whether the
+// platform needs the filename suffix or merely tolerates it alongside
+// config.background. Both are present and the pair is confirmed working, so
+// there is nothing to act on - only a reason not to drop either one
+// casually.
+//
+// STILL UNVERIFIED: whether the rate-limit path glob below is what
+// Netlify's rate limiter actually matches against. Local netlify dev does
+// not simulate rate limiting at all, and nothing has exercised it against
+// the deployed site, so this one is unchanged from when it was written. If
+// it turns out not to match, the consequence is the quiet loss of one of
+// three anti-abuse layers - the global call cap in db.ts and the site gate
+// both still apply - not a break of anything.
 // No `: Config` type annotation here on purpose: the RateLimitConfig type
 // shipped by the installed @netlify/functions version (2.8.1) is missing
 // `windowLimit` entirely, even though it's a real, required field in

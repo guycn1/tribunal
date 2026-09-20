@@ -7,11 +7,13 @@ const JUDGE_ROLES = ['barak', 'elon', 'shamgar'];
 // of the generic "Call failed" one.
 const ABORTED_BY_USER_MESSAGE = 'Aborted by user before this call could complete.';
 
-// Must match the four DEGENERATE_*_MARKER/HTTP_ERROR_*_MARKER exports in
-// netlify/functions/lib/openrouter.ts exactly - used by renderCallLog()
-// to tell a discarded-but-recovered attempt (the role went on to succeed
-// or is still trying a further tier) from a discarded-and-fatal one (this
-// was the last available tier, and it was also truncated/degenerate).
+// The six marker constants below must match their exports in
+// netlify/functions/lib/openrouter.ts exactly - used by renderCallLog() to
+// tell a discarded-but-recovered attempt (the role went on to succeed or is
+// still trying a further tier) from a discarded-and-fatal one (this was the
+// last available tier and it failed too), and to pick the right badge for
+// each. Nothing checks that the two files agree, so adding a marker there
+// means adding it here as well.
 //
 // "DEGENERATE" in these names is an umbrella for the whole content-quality
 // class - it covers a response cut off at the token cap as well as one
@@ -668,8 +670,8 @@ function deriveRoleStates(data) {
 // timeout either genuinely failed in a way this page can't see (the
 // disclosed site-gate/call-cap gap documented in
 // representative-background.ts/judge-background.ts - a rejection there is
-// no longer visible to the poller, only
-// in Netlify's function logs) or is a real anomaly worth surfacing
+// no longer visible to the poller, only in Netlify's function logs) or is
+// a real anomaly worth surfacing
 // honestly rather than silently waiting past.
 const POLL_TIMEOUT_MS = 700000;
 const POLL_INTERVAL_MS = 2500;

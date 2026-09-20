@@ -796,8 +796,9 @@ export async function callOpenRouter(
         const message = `OpenRouter returned HTTP ${response.status}: ${await describeErrorBody(response)}`;
         console.log(`[openrouter] ${label}: attempt ${attempt} - ${message}`);
 
-        // Real incident (2026-09-20): mistralai/mistral-large-2512 (tier
-        // 2's default model) was deprecated/removed from OpenRouter's
+        // Real incident (2026-09-20): mistralai/mistral-large-2512, tier
+        // 2's model at the time (it is anthropic/claude-haiku-4.5 now -
+        // see models.ts), was deprecated/removed from OpenRouter's
         // catalog sometime after this chain was built, so every call that
         // needed to escalate past tier 1 failed outright here with HTTP
         // 404 "No endpoints found for mistralai/mistral-large-2512" - even
