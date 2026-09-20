@@ -123,11 +123,6 @@ const rawHandler: Handler = async (event) => {
   // for a trial the user already aborted. This was a real, observed
   // problem (2026-09-20) - two judge calls finished 30s and 1m32s after
   // the abort and wrote real rulings into an aborted trial.
-  if (await isTrialAborted(id)) {
-    console.warn(`judge:${judgeRole}: trial was aborted by the user - discarding this result instead of saving it.`);
-    return json(200, { role: judgeRole, status: 'aborted' });
-  }
-
   const parsed = result.status === 'success' && result.content ? parseJudgeOutput(result.content) : null;
   const callFailed = result.status === 'failed' || !result.content;
   const unparseable = !callFailed && !parsed;
@@ -149,6 +144,18 @@ const rawHandler: Handler = async (event) => {
         : null,
     durationMs: result.durationMs,
   });
+
+  // Checked after logApiCall, before anything is persisted or the trial is
+  // marked completed - see the matching comment in
+  // representative-background.ts. An aborted trial must not be quietly
+  // completed out from under the user, and must never gain a ruling it was
+  // stopped before finishing: this was a real, observed problem
+  // (2026-09-20), where two judge calls finished 30s and 1m32s after the
+  // abort and wrote real rulings into a trial the user had left.
+  if (await isTrialAborted(id)) {
+    console.warn(`judge:${judgeRole}: trial was aborted by the user - discarding this result instead of saving it.`);
+    return json(200, { role: judgeRole, status: 'aborted' });
+  }
 
   // A judge call that fails outright or comes back unparseable still ends
   // this judge's slot for the run rather than leaving the trial stuck — the

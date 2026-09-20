@@ -121,17 +121,6 @@ const rawHandler: Handler = async (event) => {
     () => isTrialAborted(id)
   );
 
-  // A trial the user aborted must not get a result written for it after
-  // the fact: the abort row is already in the log, the sidebar already
-  // reads the trial as "Aborted", and quietly resurrecting a role's
-  // argument minutes later would contradict both. The call may still have
-  // completed before the abort check caught it, so this is checked once
-  // more here rather than assumed from the result alone.
-  if (await isTrialAborted(id)) {
-    console.warn(`representative:${repRole}: trial was aborted by the user - discarding this result instead of saving it.`);
-    return json(200, { role: repRole, status: 'aborted' });
-  }
-
   await logApiCall({
     trialId: id,
     agentRole: repRole,
@@ -145,6 +134,20 @@ const rawHandler: Handler = async (event) => {
     errorMessage: result.errorMessage ?? null,
     durationMs: result.durationMs,
   });
+
+  // Checked AFTER logApiCall above, deliberately: whatever this call
+  // actually did still belongs in the log (the project's "visible failure,
+  // never silent" rule doesn't stop applying because the user walked away,
+  // and a role the client never listed as pending would otherwise leave no
+  // trace at all). What an aborted trial must NOT get is a saved result -
+  // quietly resurrecting an argument minutes after the user stopped the
+  // trial would contradict both the abort row and the sidebar's "Aborted"
+  // badge. Re-checked here rather than inferred from the result, since the
+  // call may well have completed in the window before the abort landed.
+  if (await isTrialAborted(id)) {
+    console.warn(`representative:${repRole}: trial was aborted by the user - discarding this result instead of saving it.`);
+    return json(200, { role: repRole, status: 'aborted' });
+  }
 
   if (result.status === 'failed' || !result.content) {
     return json(502, {
