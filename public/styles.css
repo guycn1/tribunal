@@ -163,8 +163,8 @@ body {
      do nothing for the length of the transition and then snap in at the
      end, while the opacity beside it fades smoothly - which is what
      happened when this rule had no filter at all. */
-  filter: drop-shadow(0 0 5px color-mix(in srgb, var(--text) 0%, transparent))
-    drop-shadow(0 0 13px color-mix(in srgb, var(--text) 0%, transparent));
+  filter: drop-shadow(0 0 10px color-mix(in srgb, var(--text) 0%, transparent))
+    drop-shadow(0 0 20px color-mix(in srgb, var(--text) 0%, transparent));
   transition:
     opacity 0.2s ease,
     filter 0.2s ease;
@@ -173,7 +173,7 @@ body {
 .github-link:hover,
 .github-link:active,
 .github-link:focus {
-  opacity: 0.9;
+  opacity: 0.86;
   /* A halo of light, not a cast shadow. The sidebar is #1c2129, so a dark
      shadow here is close to invisible no matter how far its opacity is
      pushed - darkening an already-dark surface barely changes its
@@ -195,8 +195,8 @@ body {
      The 5px layer is therefore cut harder than the 13px one here (60 -> 38
      against 35 -> 22): the complaint this addresses was the mark reading
      too hot, not the surround being too wide. */
-  filter: drop-shadow(0 0 5px color-mix(in srgb, var(--text) 38%, transparent))
-    drop-shadow(0 0 13px color-mix(in srgb, var(--text) 22%, transparent));
+  filter: drop-shadow(0 0 10px color-mix(in srgb, var(--text) 38%, transparent))
+    drop-shadow(0 0 20px color-mix(in srgb, var(--text) 22%, transparent));
 }
 
 .sidebar-heading {
