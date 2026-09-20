@@ -23,15 +23,16 @@ const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 // is still a small fraction of that real ceiling - real margin for
 // multiple genuine full-length retries, not just fast-failure ones - while
 // staying far short of ever risking the actual 15-minute wall.
-// Raised to fit the full escalation chain (see RETRY_TIERS below): worst
-// case, roughly 43s x2 (default, 1400 tokens, 2 attempts) + 78s x2
-// (claude-haiku-4.5, 2800 tokens) + 95.5s x2 (first top-tier model, 3500
-// tokens) + 108s x1 (last-resort model, 4000 tokens) = ~541s of attempt
-// ceilings alone, before counting backoff delays between attempts - a
-// real, observed case hit ~20 consecutive fast 429 retries at one tier
-// alone. 650000ms (650s, ~10.8 minutes) leaves real margin above that
-// worst case while staying comfortably under the real 900s (15 minute)
-// background-function ceiling, not razor-close to it.
+// Raised to fit the full escalation chain (see buildRetryTiers below).
+// Worst case is now sized by attemptTimeoutFor()'s prompt-aware formula -
+// see its own comment for the arithmetic: ~649s of attempt ceilings for a
+// judge across all four tiers, ~587s for a representative, both before
+// backoff delays. 650000ms (650s, ~10.8 minutes) is deliberately sized
+// against that, and stays comfortably under the real 900s (15 minute)
+// background-function ceiling rather than razor-close to it. A chain that
+// still overruns degrades gracefully rather than silently: remainingMs()
+// clamps the final attempt, and the loop says plainly that the budget ran
+// out before a further tier could be tried.
 const TOTAL_BUDGET_MS = 650000;
 // Don't start an attempt the remaining budget cannot plausibly finish.
 // With a 2-minute total budget instead of a ~26s one, this no longer has
@@ -43,6 +44,35 @@ const TOTAL_BUDGET_MS = 650000;
 // 429/5xx/empty-content retry, and enough margin that ordinary timing
 // jitter can't quietly cancel it out again.
 const MIN_REMAINING_TO_ATTEMPT_MS = 10000;
+
+// Splits "this model bounced us instantly" from "this model genuinely tried
+// and failed", because the right response to each is opposite.
+//
+// Counting EVERY transient failure against a tier's attempt budget (the
+// first version of the escalation fix) turned out to over-correct badly:
+// two burst 429s, returned in 2.3s and 2.9s, consumed both of tier 1's
+// attempts and pushed a representative onto the paid tier roughly five
+// seconds after the user pressed Begin new trial - for a rate limit that
+// clears on its own in a moment. A burst limit is exactly the failure that
+// deserves a patient retry on the cheapest model, not an immediate
+// escalation to a pricier one.
+//
+// A genuine hang is the opposite case and is what the escalation budget
+// exists for: it consumes the whole per-attempt ceiling before failing.
+// Real measurements make the two trivially separable - observed 429
+// bounces landed at 1.7-4.3s, while real timeouts run 43s+, so a 10s line
+// sits in open space with wide margin on both sides rather than splitting
+// a continuum.
+//
+// The fast path is strictly bounded (see MAX_FAST_TRANSIENT_RETRIES_PER_TIER)
+// so it can never recreate the original unbounded-retry bug: a tier gets at
+// most a few free fast retries before its failures start counting normally.
+const FAST_FAILURE_THRESHOLD_MS = 10000;
+// Per tier, and reset on every escalation. With backoff() this is roughly
+// 6s of patience per tier before a persistently-failing tier is escalated
+// off anyway - enough to ride out a burst limit, far too little to hide a
+// real outage.
+const MAX_FAST_TRANSIENT_RETRIES_PER_TIER = 4;
 
 // Per-attempt ceiling, scaled to how much text the call actually asked for
 // AND to how much it has to read first. A timeout signal passed to fetch()
@@ -439,6 +469,10 @@ export async function callOpenRouter(
   const tiers = buildRetryTiers(model, maxTokens);
   let tierIndex = 0;
   let attemptsAtTier = 0;
+  // Fast transient failures forgiven at the current tier (see
+  // FAST_FAILURE_THRESHOLD_MS). Reset on every escalation, so each tier
+  // gets its own small allowance rather than inheriting a spent one.
+  let fastRetriesAtTier = 0;
   const discardedAttempts: DiscardedAttempt[] = [];
   // Tracks which model the most recent attempt actually used, so a failure
   // path reached after the chain has moved to a later tier (see
@@ -482,7 +516,50 @@ export async function callOpenRouter(
     usage?: { promptTokens: number; completionTokens: number; totalTokens: number };
     cost?: number;
     skipRestOfTier?: boolean;
+    // Set only for genuinely transient failures (429/5xx/empty content).
+    // A fast one of these gets a free same-model retry that does not spend
+    // a tier attempt - see FAST_FAILURE_THRESHOLD_MS. Deliberately NOT set
+    // for a plain HTTP error like a removed model id (permanent - retrying
+    // is pointless) or for truncation/degeneracy (a real generation that
+    // genuinely used its turn).
+    allowFastRetry?: boolean;
   }): Promise<{ canContinue: boolean; allTiersExhausted: boolean }> {
+    const attemptDurationMs = Date.now() - lastAttemptStartedAt;
+
+    // A fast bounce from an otherwise-working model: retry it without
+    // spending one of this tier's real attempts, so a burst rate limit
+    // can't shove the call onto a pricier tier within seconds. Still
+    // recorded as its own visible row, and still hard-bounded.
+    if (
+      opts.allowFastRetry &&
+      attemptDurationMs < FAST_FAILURE_THRESHOLD_MS &&
+      fastRetriesAtTier < MAX_FAST_TRANSIENT_RETRIES_PER_TIER &&
+      remainingMs() >= MIN_REMAINING_TO_ATTEMPT_MS
+    ) {
+      fastRetriesAtTier++;
+      const discarded: DiscardedAttempt = {
+        model: opts.model,
+        promptTokens: opts.usage?.promptTokens ?? 0,
+        completionTokens: opts.usage?.completionTokens ?? 0,
+        totalTokens: opts.usage?.totalTokens ?? 0,
+        cost: opts.cost ?? 0,
+        errorMessage: `${opts.marker} ${opts.reason} after ${attemptDurationMs}ms - re-tried with the same model (fast failure ${fastRetriesAtTier}/${MAX_FAST_TRANSIENT_RETRIES_PER_TIER} at this tier, not counted against it).`,
+        durationMs: attemptDurationMs,
+      };
+      discardedAttempts.push(discarded);
+      if (onDiscardedAttempt) {
+        try {
+          await onDiscardedAttempt(discarded);
+        } catch (err) {
+          console.warn(`[openrouter] ${label}: onDiscardedAttempt callback failed, continuing anyway: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+      console.warn(
+        `[openrouter] ${label}: fast transient failure (${attemptDurationMs}ms) - retrying tier ${tierIndex + 1}/${tiers.length} (${tiers[tierIndex].getModel()}) without spending a tier attempt (${fastRetriesAtTier}/${MAX_FAST_TRANSIENT_RETRIES_PER_TIER}).`
+      );
+      return { canContinue: true, allTiersExhausted: false };
+    }
+
     if (opts.skipRestOfTier) {
       attemptsAtTier = tiers[tierIndex].maxAttempts;
     } else {
@@ -520,6 +597,7 @@ export async function callOpenRouter(
       if (nextTierIndex !== tierIndex) {
         tierIndex = nextTierIndex;
         attemptsAtTier = 0;
+        fastRetriesAtTier = 0;
       }
       console.warn(
         `[openrouter] ${label}: retrying at tier ${tierIndex + 1}/${tiers.length} (${tiers[tierIndex].getModel()}), ${remainingMs()}ms remaining.`
@@ -646,6 +724,7 @@ export async function callOpenRouter(
             marker: TRANSIENT_RETRIED_MARKER,
             model: attemptModel,
             reason: 'was rate limited (HTTP 429)',
+            allowFastRetry: true,
           });
           if (next.canContinue) continue;
           return failure(attemptModel, lastError, lastUsage, discardedAttempts, Date.now() - lastAttemptStartedAt, { tierIndex, tierCount: tiers.length });
@@ -676,6 +755,7 @@ export async function callOpenRouter(
             marker: TRANSIENT_RETRIED_MARKER,
             model: attemptModel,
             reason: `failed upstream (HTTP ${response.status})`,
+            allowFastRetry: true,
           });
           if (next.canContinue) continue;
           return failure(attemptModel, lastError, lastUsage, discardedAttempts, Date.now() - lastAttemptStartedAt, { tierIndex, tierCount: tiers.length });
@@ -745,6 +825,7 @@ export async function callOpenRouter(
             model: attemptModel,
             reason: upstreamError ? 'returned an upstream error instead of content' : 'returned no message content',
             usage: lastUsage,
+            allowFastRetry: true,
           });
           if (next.canContinue) continue;
           return failure(attemptModel, lastError, lastUsage, discardedAttempts, Date.now() - lastAttemptStartedAt, { tierIndex, tierCount: tiers.length });
@@ -878,6 +959,11 @@ export async function callOpenRouter(
           marker: TRANSIENT_RETRIED_MARKER,
           model: attemptModel,
           reason: isTimeout ? `did not respond within ${attemptTimeout}ms` : `failed to complete (${lastError})`,
+          // A genuine timeout is never "fast" so this is a no-op for it,
+          // but a network-level error that fails instantly (DNS blip,
+          // connection reset) is exactly the transient case worth a cheap
+          // same-model retry rather than an immediate escalation.
+          allowFastRetry: true,
         });
         if (next.canContinue) continue;
         return failure(attemptModel, lastError, lastUsage, discardedAttempts, Date.now() - lastAttemptStartedAt, { tierIndex, tierCount: tiers.length });

@@ -5,7 +5,8 @@
   "description": "A multi-agent tribunal that runs a fixed fictional case through four representative agents and three judge agents, each modeled on a distinct reasoning style.",
   "scripts": {
     "dev": "netlify dev",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node tests/retry-logic.test.js"
   },
   "dependencies": {
     "@netlify/functions": "^2.8.1",
