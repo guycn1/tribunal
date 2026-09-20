@@ -69,11 +69,14 @@ export function getModelForRole(role: string): string {
 // tier exists to fix (truncation, repetition-loop degeneration) are small/
 // weak-model behaviors that a model of this class is expected not to
 // exhibit at any meaningful rate for a single ~300-600 word structured
-// piece of writing. That expectation is the reason for the choice, and it
-// is worth being clear that it is still only an expectation: no trial on
-// this project has yet produced a kept-or-discarded result from this
-// model, so its content reliability here is untested. The rate measured
-// for its predecessor at this tier was 7 clean out of 8 escalations - this project's tiers 3/4 already cross
+// piece of writing. That expectation is the reason for the choice.
+//
+// Early evidence on this project supports it, though the sample is small:
+// counted directly against api_call_logs, every call this model has served
+// here succeeded and was kept - 5 of 5, at 528-672 completion tokens
+// against its 2800 cap, with none truncated, degenerate or discarded. Too
+// few to call a rate, but nothing so far contradicts the premise. For
+// comparison the predecessor at this tier managed 7 clean out of 8 - this project's tiers 3/4 already cross
 // vendors from their own default without issue, verified across many real
 // trials. Real, verified pricing (per pricing.ts): $1.00/$5.00 per million
 // prompt/completion tokens vs. the dead Mistral Large's $0.50/$1.50 - a
