@@ -1108,7 +1108,17 @@ table.call-log .col-full {
     content: attr(data-label);
     position: absolute;
     left: 10px;
-    top: 7px;
+    /* top matches the cell's own padding-top, and the line-height matches
+       the value's first line box exactly (the inherited 1.5 against the
+       cell's 0.74rem font-size). Both texts are then vertically centred
+       inside boxes of identical height starting at the same offset, so
+       their centres coincide by construction rather than by a tuned magic
+       number. The label's own font-size is smaller, so leaving it to its
+       own 1.5 ratio gives it a shorter line box and sits it fractionally
+       off - visible as a label that does not quite centre against its
+       value. */
+    top: 6px;
+    line-height: calc(1.5 * 0.74rem);
     color: var(--text-dim);
     font-size: 0.66rem;
     text-transform: uppercase;
@@ -1207,8 +1217,19 @@ table.call-log .col-full {
   table.call-log {
     font-size: 0.68rem;
   }
+  /* The left value must stay the label gutter. An earlier version of this
+     rule set `padding: 5px 8px`, which quietly overrode the 92px gutter
+     the 720px block establishes and let a long value (a full model id)
+     run underneath its own label - invisible at any width above 480px. */
   table.call-log td {
-    padding: 5px 8px;
+    padding: 5px 8px 5px 84px;
+  }
+  /* Kept in step with the smaller padding and font-size above, for the
+     same reason as the 720px block: identical line boxes at identical
+     offsets. */
+  table.call-log td::before {
+    top: 5px;
+    line-height: calc(1.5 * 0.68rem);
   }
   table.call-log tbody td[data-label='Agent'],
   table.call-log tfoot tr.call-log-total-row td.total-row-title {
