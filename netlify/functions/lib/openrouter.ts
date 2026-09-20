@@ -85,8 +85,11 @@ const MAX_FAST_TRANSIENT_RETRIES_PER_TIER = 4;
 // The prompt-size term is not cosmetic - it was added (2026-09-20) after a
 // real incident where judge calls timed out repeatedly against a ceiling
 // that only ever considered max_tokens. A judge's prompt carries the full
-// case record plus all four representative arguments (~4500 real prompt
-// tokens measured), roughly 4.5x a representative's (~1000), but the old
+// case record plus all four representative arguments. Counted across every
+// successful call in api_call_logs: a judge prompt runs a median of 3896
+// tokens (mean 3943, p90 4483), a representative's 1028 (mean 1166, p90
+// 2068) - so a judge carries something like 3.8x a representative's
+// prompt, not the "roughly 4.5x" this comment used to claim. The old
 // formula gave both the identical 43000ms. Real measured judge completions
 // on the default model in that incident: 26.9s, 33.9s, and 43.2s - the
 // last of those finishing with under 0ms to spare against that very
@@ -94,13 +97,20 @@ const MAX_FAST_TRANSIENT_RETRIES_PER_TIER = 4;
 // A ceiling that half the real distribution overruns isn't a safety limit,
 // it's a coin flip, so prompt size now feeds it directly.
 //
-// Worst-case sum across the whole escalation chain stays inside
-// TOTAL_BUDGET_MS by construction: for a judge (~4550 prompt tokens) the
-// four tiers come to roughly 58s x2 + 93s x2 + 111s x2 + 123s = ~649s,
-// just inside the 650s budget; a representative (~1030 prompt tokens) sums
-// to ~587s. Anything that still overruns is handled gracefully rather than
-// silently - remainingMs() clamps the last attempt, and the loop reports
-// honestly that the budget ran out before a further tier could be tried.
+// Sum of attempt ceilings across the whole escalation chain, for a prompt
+// of typical size: a judge at 4550 tokens comes to 648.6s and a
+// representative at 1030 to 587.0s, both just inside the 650s budget.
+// Those two figures are what the budget was sized against.
+//
+// It is NOT inside the budget by construction, which this comment used to
+// claim. The ceiling scales with prompt size and real prompts have a long
+// tail - the largest judge prompt in the log is 11318 tokens, which sums
+// to 767s, over budget by nearly two minutes. Even p90 (4483) only reaches
+// 647.5s, so the tail has to be genuinely unusual before this bites, and
+// it bites safely when it does: remainingMs() clamps the last attempt and
+// the loop reports honestly that the budget ran out before a further tier
+// could be tried. The effect of an outsized prompt is fewer tiers actually
+// reached, not a silent overrun.
 // Math.round is load-bearing, not tidiness: the prompt term uses a
 // fractional multiplier, so an odd token estimate yields a half
 // millisecond - and AbortSignal.timeout() throws outright on a
