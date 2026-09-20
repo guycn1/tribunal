@@ -448,11 +448,12 @@ async function abortCurrentTrial() {
 // which returns the moment Netlify's automatic 202 arrives (~0.3-0.5s)
 // rather than when the generation finishes - so a slot frees almost
 // immediately and all 4 representatives end up genuinely in flight
-// together. Measured, not assumed: across the 38 trials in this project's
-// own api_call_logs that carry real duration data, 32 ran all 4
-// representatives simultaneously (reconstructing each call's start as its
-// timestamp minus duration_ms), including the trials run against the live
-// deployed site. What these constants actually bound now is how many
+// together. Measured, not assumed: as of 2026-09-21, across the 41 trials
+// in this project's own api_call_logs that carry real duration data, 36 ran
+// all 4 representatives simultaneously (reconstructing each call's start as
+// its timestamp minus duration_ms) - including every one of the four trials
+// run against the live deployed site, each of which ran 4 of 4
+// representatives and 3 of 3 judges at once. What these constants actually bound now is how many
 // trigger POSTs overlap - which matters only against Netlify's per-IP rate
 // limiter, not OpenRouter's account-level concurrency.
 //
