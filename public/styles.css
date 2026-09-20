@@ -143,8 +143,9 @@ body {
         producing rgba(1, 0, 0, ...) - a near-black - for the entire
         transition, snapping to the real colour only at the very end.
         Measured, not theorised: at the midpoint, from `none` and from
-        `transparent` both give rgba(1, 0, 0, 0.3), while this gives
-        oklab(0.9389 ... / 0.3), the correct near-white at half alpha.
+        `transparent` both give rgba(1, 0, 0, ...) - a near-black - while
+        this gives oklab(0.9389 ...), the correct near-white, and holds
+        that lightness at every step while only the alpha climbs.
         Worth knowing before "simplifying" this: `var(--text) 0%` does
         not keep the colour - this resolves to color(srgb 0 0 0 / 0),
         transparent black, same as `transparent` would look. What it
@@ -179,8 +180,8 @@ body {
      fainter one that fades out - rather than one flat blur. drop-shadow,
      not box-shadow, so both follow the real silhouette instead of the
      icon's rectangular bounding box. */
-  filter: drop-shadow(0 0 5px color-mix(in srgb, var(--text) 60%, transparent))
-    drop-shadow(0 0 13px color-mix(in srgb, var(--text) 35%, transparent));
+  filter: drop-shadow(0 0 5px color-mix(in srgb, var(--text) 52%, transparent))
+    drop-shadow(0 0 13px color-mix(in srgb, var(--text) 30%, transparent));
 }
 
 .sidebar-heading {
