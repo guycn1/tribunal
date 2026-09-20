@@ -1542,8 +1542,11 @@ function renderCallLog() {
         </div>
       `;
     } else if (isDegenerateFinal) {
-      // Red, not yellow - this is the priciest fallback tier failing too,
-      // with nothing left to fall back to. As fatal as a 404/429/500.
+      // Red, not yellow - this is the LAST fallback tier failing too, with
+      // nothing left to fall back to. As fatal as a 404/429/500. (Last,
+      // not priciest: tier 4 is actually cheaper per call than tier 3 -
+      // see the pricing note in openrouter.ts. What makes this red is that
+      // the chain is out of options, not what the attempt cost.)
       statusCellHtml = `<span class="badge badge-fail">${hitTokenCap ? 'Truncated' : 'Degenerated'}</span>`;
     } else {
       const statusBadge = entry.status === 'success' ? 'badge-ok' : 'badge-fail';

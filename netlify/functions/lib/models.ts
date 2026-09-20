@@ -42,9 +42,10 @@ export function getModelForRole(role: string): string {
 // Tier 2 of the escalation chain (see buildRetryTiers in openrouter.ts),
 // reached once tier 1 has used up both of its attempts - whether to
 // truncation/degeneration, a plain HTTP failure, or transient failures
-// that ran long enough to count. Deliberately a different, more
-// capable model than whatever getModelForRole() resolves to, not the same
-// model tried again. Real data showed a same-model retry doesn't behave
+// that ran long enough to count. Deliberately a different model from
+// whatever getModelForRole() resolves to, not the same one tried again -
+// and one assumed to be more capable, though that is a judgement about
+// these models generally and not something measured on this workload. Real data showed a same-model retry doesn't behave
 // like an independent second attempt: once a role's first attempt
 // truncated, a same-model retry truncated again roughly 60-75% of the
 // time (measured on daenerys_targaryen/grey_worm, the two roles this
@@ -66,9 +67,13 @@ export function getModelForRole(role: string): string {
 // Replaced with anthropic/claude-haiku-4.5 - a genuinely different vendor,
 // breaking the original same-family rationale, but the failure modes this
 // tier exists to fix (truncation, repetition-loop degeneration) are small/
-// weak-model behaviors that a frontier-adjacent model like Haiku 4.5
-// shouldn't exhibit at any meaningful rate for a single ~300-600 word
-// structured piece of writing - this project's tiers 3/4 already cross
+// weak-model behaviors that a model of this class is expected not to
+// exhibit at any meaningful rate for a single ~300-600 word structured
+// piece of writing. That expectation is the reason for the choice, and it
+// is worth being clear that it is still only an expectation: no trial on
+// this project has yet produced a kept-or-discarded result from this
+// model, so its content reliability here is untested. The rate measured
+// for its predecessor at this tier was 7 clean out of 8 escalations - this project's tiers 3/4 already cross
 // vendors from their own default without issue, verified across many real
 // trials. Real, verified pricing (per pricing.ts): $1.00/$5.00 per million
 // prompt/completion tokens vs. the dead Mistral Large's $0.50/$1.50 - a
@@ -87,10 +92,13 @@ export function getTruncationFallbackModel(): string {
 // tiered retry loop in openrouter.ts) - real measured data on that fallback model
 // alone found it still not reliable enough on its own (a real, if rare,
 // case truncated on both of its own attempts too). These two are
-// deliberately two different, genuinely top-tier models from two
-// different companies, neither an incremental step within the same
-// family: escalating vendor as well as capability tier removes any
-// shared-family quirk as an explanation, not just a shared-size one.
+// deliberately two models from two different companies, neither an
+// incremental step within the same family: escalating vendor as well as
+// assumed capability removes any shared-family quirk as an explanation,
+// not just a shared-size one. Both were exercised directly against the
+// real API and confirmed to work with this app's request shape; their
+// capability ranking relative to each other and to tier 2 is an
+// assumption, not a measurement.
 // Reached rarely enough (only after every earlier tier has already
 // failed) that the real cost impact stays small despite a materially
 // higher per-token price than either the default model or tier 2 - see

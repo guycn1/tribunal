@@ -149,8 +149,8 @@ export interface OpenRouterMessage {
 // on its own either: of 8 real escalations measured (then against Mistral
 // Large, tier 2's original model), 7 succeeded and 1 truncated on both of
 // its own attempts too. Rather than one fallback, this is a genuine
-// escalation chain - each tier a different, more capable (and pricier)
-// model, reached once the tier before it is done - which usually means it
+// escalation chain - each tier a different model, reached once the tier
+// before it is done - which usually means it
 // spent every attempt allowed it, on truncation, degeneration or a slow
 // transient failure, but not always: a plain HTTP error (a removed model
 // id, say) escalates immediately and forfeits that tier's remaining
@@ -162,8 +162,21 @@ export interface OpenRouterMessage {
 // arbitrary ceiling, not only degeneration, and a bigger cap directly
 // fixes that case regardless of which model is generating. Reached rarely
 // enough, given how many tiers already stand before it, that the real
-// cost stays small despite each tier being meaningfully pricier than the
-// last - see pricing.ts for the real numbers.
+// cost stays small despite the later tiers being far pricier than the
+// default - see pricing.ts for the real numbers.
+//
+// Note the chain is NOT monotonically pricier, despite reading that way:
+// per million tokens it runs $0.05/$0.08, then $1.00/$5.00, then
+// $2.00/$10.00, then $1.25/$10.00. Tier 4 is cheaper per prompt token
+// than tier 3 and identical per completion token, so for a judge-shaped
+// call (~4550 in, ~900 out) tier 4 costs about $0.0147 against tier 3's
+// $0.0181. The ordering is by expected capability and by wanting the last
+// two tiers to come from different vendors, not by price - if you are
+// reasoning about worst-case spend, tier 3 is the expensive one.
+//
+// "More capable" is the premise the ordering rests on, and it is a
+// judgement about these models in general, not something this project has
+// measured. Nothing here ranks them on this workload.
 interface RetryTier {
   getModel: () => string;
   maxTokens: number;

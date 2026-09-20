@@ -20,14 +20,23 @@ import {
 import { isSiteGateOk } from './lib/siteGate';
 import type { JudgeRole, RepresentativeRole } from './lib/types';
 
-// Judges write the longest output of any agent in this system — a fuller
-// opinion plus the leading VERDICT line. Sized against the ~450-600 word
-// target their prompt sets (roughly 600-800 tokens), with headroom above
-// that target rather than a tight fit against it, since a cap hit exactly
-// mid-sentence reads far worse than a shorter completion under it. Shares
-// AGENT_MAX_TOKENS with representative-background.ts - see the comment on
-// that
-// constant in models.ts for why one shared value across both role types.
+// Judges are asked for the longest output in this system - a fuller opinion
+// plus the leading VERDICT line, against a ~450-600 word target where a
+// representative gets 300-500 (roughly 600-800 tokens either way). Sized
+// with headroom above that target rather than a tight fit against it,
+// since a cap hit exactly mid-sentence reads far worse than a shorter
+// completion under it.
+//
+// Asked for, not observed: in practice representatives are the ones that
+// overrun. Measured across this project's real trials, judges have run to
+// the cap very rarely - one batch of 30 judge calls produced zero
+// truncations - while representatives hit it often enough to need the
+// escalation chain regularly. Whatever drives that, it is not the stated
+// word targets, so do not reason about the cap from the targets alone.
+//
+// Shares AGENT_MAX_TOKENS with representative-background.ts - see the
+// comment on that constant in models.ts for why one shared value across
+// both role types.
 const MAX_TOKENS = AGENT_MAX_TOKENS;
 
 const rawHandler: Handler = async (event) => {
