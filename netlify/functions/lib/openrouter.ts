@@ -429,6 +429,22 @@ export const TRANSIENT_RETRIED_MARKER = '[transient-retried]';
 // callback on callOpenRouter().
 export const ABORTED_MID_CALL_MARKER = '[aborted-mid-call]';
 
+// The four markers above that mean "this attempt was thrown away and the
+// chain went on to another one" - a row carrying one of them is never a
+// role's final outcome. DEGENERATE_FINAL_MARKER and ABORTED_MID_CALL_MARKER
+// are final. app.js draws the same line in isRetriedMarkerLog(), and
+// tests/shared-constants.test.js asserts the two lists agree.
+export const RETRIED_ATTEMPT_MARKERS = [
+  DEGENERATE_RETRIED_SAME_MODEL_MARKER,
+  DEGENERATE_RETRIED_DIFF_MODEL_MARKER,
+  HTTP_ERROR_ESCALATED_MARKER,
+  TRANSIENT_RETRIED_MARKER,
+];
+
+export function isRetriedAttemptMessage(errorMessage: string | null | undefined): boolean {
+  return typeof errorMessage === 'string' && RETRIED_ATTEMPT_MARKERS.some((marker) => errorMessage.startsWith(marker));
+}
+
 // Passed to onAttemptStart the moment each attempt begins - see the
 // parameter's own comment on callOpenRouter() for why this exists
 // alongside DiscardedAttempt rather than being folded into it.

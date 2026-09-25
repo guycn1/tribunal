@@ -1,4 +1,6 @@
 import { getSupabaseClient } from './supabase';
+import { isRetriedAttemptMessage } from './openrouter';
+import { JUDGES } from './judges';
 import type {
   AgentProgressRecord,
   ApiCallLogRecord,
@@ -443,23 +445,34 @@ export async function logApiCall(params: {
   }
 }
 
-// A trial is marked completed once all three judges have been attempted
-// (successfully or not) — a failed judge call still ends the run for that
-// seat rather than leaving the trial stuck "in progress" forever.
+// A trial is marked completed once every judge has a final outcome logged,
+// successful or not — a failed judge call still ends the run for that seat
+// rather than leaving the trial stuck "in progress" forever.
+//
+// This counts judges, not log rows. It used to mark the trial completed at 3
+// judge rows, which was right while each judge logged exactly one; once every
+// discarded attempt got a row of its own, a single judge that needed two
+// retries reached 3 alone and marked the trial completed while the other two
+// were still running. A row carrying a retried marker is not an outcome, so
+// it is left out; anything else - a success, a final failure, an abort - is.
 export async function markTrialCompletedIfJudgingDone(trialId: string): Promise<void> {
   const supabase = getSupabaseClient();
-  const { count, error } = await supabase
+  const { data, error } = await supabase
     .from('api_call_logs')
-    .select('id', { count: 'exact', head: true })
+    .select('agent_role, error_message')
     .eq('trial_id', trialId)
     .eq('call_type', 'judge');
 
   if (error) {
-    console.error('Failed to count judge call attempts:', error.message);
+    console.error('Failed to read judge call attempts:', error.message);
     return;
   }
 
-  if ((count ?? 0) >= 3) {
+  const finished = new Set(
+    (data ?? []).filter((row) => !isRetriedAttemptMessage(row.error_message)).map((row) => row.agent_role as string)
+  );
+
+  if (Object.keys(JUDGES).every((role) => finished.has(role))) {
     const { error: updateError } = await supabase
       .from('trials')
       .update({ status: 'completed', updated_at: new Date().toISOString() })

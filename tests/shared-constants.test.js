@@ -99,6 +99,25 @@ for (const [name, value] of backendMarkers) {
   check(`${name} has the same value in both`, frontendMarkers.get(name) === value, `backend '${value}' vs frontend '${frontendMarkers.get(name)}'`);
 }
 
+// --- 1b. Which markers mean "discarded and retried": the same set on both sides
+console.log('\n=== Both sides agree which markers are retries, not outcomes ===');
+
+// A row carrying one of these is not a role's final outcome. The frontend
+// uses its list (isRetriedMarkerLog) to keep polling a role instead of
+// showing "Call failed"; the backend uses its own (RETRIED_ATTEMPT_MARKERS)
+// to decide when every judge has finished and the trial is complete. If the
+// two disagree, one side calls a role finished while the other is still
+// waiting on it.
+const frontendRetried = new Set(((appJs.match(/function isRetriedMarkerLog[\s\S]*?\n\}/) || [''])[0].match(/[A-Z0-9_]+_MARKER\b/g) || []));
+const backendRetried = new Set(((openrouter.match(/export const RETRIED_ATTEMPT_MARKERS = \[[\s\S]*?\];/) || [''])[0].match(/[A-Z0-9_]+_MARKER\b/g) || []));
+check('found the retried markers in app.js', frontendRetried.size > 0, String(frontendRetried.size));
+check('found the retried markers in openrouter.ts', backendRetried.size > 0, String(backendRetried.size));
+check(
+  'both name the same markers',
+  frontendRetried.size === backendRetried.size && [...frontendRetried].every((name) => backendRetried.has(name)),
+  `app.js: ${[...frontendRetried].join(', ')} | openrouter.ts: ${[...backendRetried].join(', ')}`
+);
+
 // --- 2. ABORTED_BY_USER_MESSAGE: db.ts <-> app.js ------------------------
 console.log('\n=== The abort marker message agrees ===');
 

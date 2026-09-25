@@ -171,10 +171,22 @@ const rawHandler: Handler = async (event) => {
     return json(200, { role: judgeRole, status: 'aborted' });
   }
 
+  if (parsed) {
+    await upsertJudgeRuling({
+      trialId: id,
+      role: judgeRole,
+      verdict: parsed.verdict,
+      reasoningText: parsed.reasoningText,
+      modelUsed: result.model,
+    });
+  }
+
   // A judge call that fails outright or comes back unparseable still ends
   // this judge's slot for the run rather than leaving the trial stuck — the
-  // trial is marked completed once all three have been attempted, whatever
-  // the outcome, and this judge simply has no ruling recorded.
+  // trial is marked completed once every judge has a final outcome,
+  // whatever it was, and this judge simply has no ruling recorded. Checked
+  // only after the ruling above is saved, so a trial can never read as
+  // completed while its last ruling is still unwritten.
   await markTrialCompletedIfJudgingDone(id);
 
   if (!parsed) {
@@ -186,14 +198,6 @@ const rawHandler: Handler = async (event) => {
         : 'Model response did not include a parseable VERDICT line.',
     });
   }
-
-  await upsertJudgeRuling({
-    trialId: id,
-    role: judgeRole,
-    verdict: parsed.verdict,
-    reasoningText: parsed.reasoningText,
-    modelUsed: result.model,
-  });
 
   return json(200, {
     role: judgeRole,
