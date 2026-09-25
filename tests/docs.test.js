@@ -141,6 +141,20 @@ const REPO_FILES = (() => {
   }
 })();
 
+/**
+ * Whether git ignores a path - true even for one that does not exist.
+ * @param {string} relPath
+ * @returns {boolean}
+ */
+function isGitIgnored(relPath) {
+  try {
+    execFileSync('git', ['check-ignore', '-q', relPath], { cwd: ROOT, stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Every .ts file under netlify/functions/, as [relative path, source]. */
 const FUNCTION_SOURCES = (() => {
   const out = [];
@@ -571,7 +585,12 @@ async function main() {
   console.log('\n=== README and SPEC.md: every file they name exists ===');
   for (const [doc, text] of [['README.md', README], ['SPEC.md', SPEC]]) {
     const named = [...new Set([...text.matchAll(/`([^`\s]+)`/g)].map((m) => m[1]))]
-      .filter((t) => t !== 'n/a' && !t.startsWith('/') && (t.includes('/') || /\.(ts|js|md|sql|toml|json|css|html|example)$/.test(t)));
+      .filter((t) => t !== 'n/a' && !t.startsWith('/') && (t.includes('/') || /\.(ts|js|md|sql|toml|json|css|html|example)$/.test(t)))
+      // Git-ignored paths are named on purpose, as things that are generated
+      // locally and never committed (node_modules/, .netlify/) - so a fresh
+      // clone rightly lacks them. Checking them would make this suite pass
+      // or fail depending on what has been run in the working copy.
+      .filter((t) => !isGitIgnored(t));
     const missing = named.filter((t) => {
       if (t.includes('/')) return !fs.existsSync(path.join(ROOT, t));
       return !(REPO_FILES || []).some((f) => path.basename(f) === t);
