@@ -1,20 +1,22 @@
-// Regression tests for the agent-card render path in public/app.js.
-//
-// Run with `npm test`. No framework and no browser: app.js's real source is
-// executed against a minimal DOM stub, and the functions under test are
-// handed back out of that scope, so these assert the actual shipped file
-// rather than a copy of it.
-//
-// What this exists to protect:
-//   1. The page must still execute top-to-bottom without throwing. app.js
-//      has shipped a temporal-dead-zone crash before (a const read before
-//      its declaration line), and a syntax-only check cannot catch that -
-//      only really running the top-level code can.
-//   2. Updating one agent's card must not disturb any other agent's card.
-//      The render functions used to begin with `innerHTML = ''` and rebuild
-//      every card in the phase, so a single agent escalating made all of
-//      its siblings visibly flash - including cards already showing a
-//      finished argument.
+/**
+ * @file Regression tests for the agent-card render path in public/app.js.
+ *
+ * Run with `npm test`. No framework and no browser: app.js's real source is
+ * executed against a minimal DOM stub, and the functions under test are
+ * handed back out of that scope, so these assert the actual shipped file
+ * rather than a copy of it.
+ *
+ * What this exists to protect:
+ *   1. The page must still execute top-to-bottom without throwing. app.js
+ *      has shipped a temporal-dead-zone crash before (a const read before
+ *      its declaration line), and a syntax-only check cannot catch that -
+ *      only really running the top-level code can.
+ *   2. Updating one agent's card must not disturb any other agent's card.
+ *      The render functions used to begin with `innerHTML = ''` and rebuild
+ *      every card in the phase, so a single agent escalating made all of
+ *      its siblings visibly flash - including cards already showing a
+ *      finished argument.
+ */
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -22,6 +24,15 @@ const path = require('node:path');
 const SRC = fs.readFileSync(path.join(__dirname, '..', 'public', 'app.js'), 'utf8');
 
 let failures = 0;
+/**
+ * Records and prints one assertion. A failure is counted rather than thrown,
+ * so every check in the file runs and reports.
+ *
+ * @param {string} name
+ * @param {unknown} condition Truthy to pass.
+ * @param {unknown} [detail] Printed after a failure, to show what was
+ *   actually found.
+ */
 function check(name, condition, detail) {
   if (condition) console.log(`  PASS  ${name}`);
   else {
@@ -31,6 +42,14 @@ function check(name, condition, detail) {
 }
 
 // --- the smallest DOM that app.js's card path actually touches ------------
+/**
+ * Builds a stub element carrying just the DOM surface app.js's render path
+ * touches. Children are tracked, so node identity can be asserted across
+ * renders; markup assigned to innerHTML is stored verbatim, not parsed.
+ *
+ * @param {string} [tag='div']
+ * @returns {object}
+ */
 function makeElement(tag = 'div') {
   const kids = [];
   const el = {
@@ -188,6 +207,14 @@ console.log('\n=== Call log distinguishes a truncation from a degeneration ===')
 // failures: one ran into the token cap, the other produced incoherent text.
 // Labelling a capped response "Degenerated" was simply inaccurate.
 const { renderCallLog } = app;
+/**
+ * Renders a one-row call log for a representative whose only logged attempt
+ * carries `errorMessage`, and returns that row's markup.
+ *
+ * @param {string} errorMessage
+ * @param {'success' | 'failed'} [status='failed']
+ * @returns {string} The row's markup, or '' if no row was rendered.
+ */
 function statusTextFor(errorMessage, status = 'failed') {
   state.callLog = [{
     agentRole: 'grey_worm', callType: 'representative',

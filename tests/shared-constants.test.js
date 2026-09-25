@@ -1,32 +1,48 @@
-// Asserts that values deliberately duplicated across files still agree.
-//
-// Run with `npm test`. No framework, no network, no build: every check
-// reads the real source files as text and compares what it finds.
-//
-// Why these duplications exist and can't simply be removed: public/app.js is
-// served as a plain static file with no build step, so it cannot import from
-// the esbuild-bundled Netlify Functions, and CSS cannot read a JS constant.
-// Each pair below is therefore a hand-maintained copy with a comment asking
-// the next person to keep it in step - and a comment cannot enforce anything.
-// That is what this file is for.
-//
-// The marker strings are the ones that actually matter at runtime. They are a
-// wire format: the backend writes them into api_call_logs.error_message and
-// the frontend matches on the prefix to decide what a row means. A marker
-// that exists on the backend but is missing or misspelled in app.js falls
-// straight past isRetriedMarkerLog()'s guard in deriveRoleStates() and lands
-// in the terminal-failure branch, so an agent card reads "Call failed" while
-// its escalation chain is still running and about to succeed. That is the
-// exact bug 197609b and c1155f3 were written to fix, it fails silently, and
-// it only shows on the escalation path - the path a developer sees least.
+/**
+ * @file Asserts that values deliberately duplicated across files still agree.
+ *
+ * Run with `npm test`. No framework, no network, no build: every check
+ * reads the real source files as text and compares what it finds.
+ *
+ * Why these duplications exist and can't simply be removed: public/app.js is
+ * served as a plain static file with no build step, so it cannot import from
+ * the esbuild-bundled Netlify Functions, and CSS cannot read a JS constant.
+ * Each pair below is therefore a hand-maintained copy with a comment asking
+ * the next person to keep it in step - and a comment cannot enforce anything.
+ * That is what this file is for.
+ *
+ * The marker strings are the ones that actually matter at runtime. They are a
+ * wire format: the backend writes them into api_call_logs.error_message and
+ * the frontend matches on the prefix to decide what a row means. A marker
+ * that exists on the backend but is missing or misspelled in app.js falls
+ * straight past isRetriedMarkerLog()'s guard in deriveRoleStates() and lands
+ * in the terminal-failure branch, so an agent card reads "Call failed" while
+ * its escalation chain is still running and about to succeed. That is the
+ * exact bug 197609b and c1155f3 were written to fix, it fails silently, and
+ * it only shows on the escalation path - the path a developer sees least.
+ */
 
 const fs = require('node:fs');
 const path = require('node:path');
 
 const ROOT = path.join(__dirname, '..');
+/**
+ * Reads a repository file as UTF-8 text.
+ * @param {...string} p Path segments, relative to the repository root.
+ * @returns {string}
+ */
 const read = (...p) => fs.readFileSync(path.join(ROOT, ...p), 'utf8');
 
 let failures = 0;
+/**
+ * Records and prints one assertion. A failure is counted rather than thrown,
+ * so every check in the file runs and reports.
+ *
+ * @param {string} name
+ * @param {unknown} condition Truthy to pass.
+ * @param {unknown} [detail] Printed after a failure, to show what was
+ *   actually found.
+ */
 function check(name, condition, detail) {
   if (condition) console.log(`  PASS  ${name}`);
   else {
@@ -43,6 +59,12 @@ const css = read('public', 'styles.css');
 // --- 1. The six marker strings: openrouter.ts <-> app.js ------------------
 console.log('\n=== Marker strings agree between backend and frontend ===');
 
+/**
+ * Finds every `const *_MARKER = '...'` declaration in a source file,
+ * exported or not.
+ * @param {string} source
+ * @returns {Map<string, string>} Each marker's name, mapped to its string.
+ */
 function markers(source) {
   const found = new Map();
   const re = /(?:export\s+)?const\s+([A-Z0-9_]*MARKER)\s*=\s*'([^']*)'/g;
@@ -88,7 +110,7 @@ check('ABORTED_BY_USER_MESSAGE found in app.js', Boolean(abortFrontend));
 check(
   'ABORTED_BY_USER_MESSAGE is identical in both',
   Boolean(abortBackend) && abortBackend === abortFrontend,
-  `db.ts '${abortBackend}' vs app.js '${abortFrontend}' - loadTrial() compares this by exact equality to show "Aborted" rather than "Call failed"`
+  `db.ts '${abortBackend}' vs app.js '${abortFrontend}' - deriveRoleStates() compares this by exact equality to show "Aborted" rather than "Call failed"`
 );
 
 // --- 3. Spinner duration: app.js <-> styles.css --------------------------
