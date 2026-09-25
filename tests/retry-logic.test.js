@@ -252,7 +252,9 @@ async function main() {
       captured.length = 0;
       await callOpenRouter(DEFAULT, [{ role: 'user', content: 'x'.repeat(chars) }], 1400, `${label}:t`);
       const line = captured.find((l) => l.includes(`${label}:t`) && l.includes('timeout='));
-      timeouts.push(Number(line.match(/timeout=(\d+)ms/)[1]));
+      // [\d.]+, not \d+: a fractional timeout is exactly what the integer
+      // check below exists to catch, so it must parse rather than crash.
+      timeouts.push(Number(line.match(/timeout=([\d.]+)ms/)[1]));
     }
     const [rep, judge, odd] = timeouts;
     check('a judge prompt gets a larger ceiling than a representative', judge > rep + 5000, `${rep} vs ${judge}`);

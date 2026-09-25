@@ -229,7 +229,10 @@ const { shortModelName } = app;
   ['some-model-2501', 'some-model-2501'],
   [undefined, 'unknown model'],
 ].forEach(([full, expected]) => {
-  const got = shortModelName(full);
+  // Caught, so a shortener that throws fails this one check instead of
+  // taking the rest of the suite down with it.
+  let got;
+  try { got = shortModelName(full); } catch (error) { got = `threw: ${error.message}`; }
   check(`${full} -> ${expected}`, got === expected, got);
 });
 // A name that merely contains the letters is not a segment and must survive.

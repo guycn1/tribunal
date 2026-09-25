@@ -96,7 +96,7 @@ const minus = (a, b) => { const bs = new Set(b); return [...new Set(a)].filter((
  * @param {string} s
  * @returns {string}
  */
-const norm = (s) => s.replace(/\*\*|\*|`/g, '').replace(/[“”]/g, '"').replace(/[‘’]/g, "'").replace(/\s+/g, ' ').trim();
+const norm = (s) => String(s ?? '').replace(/\*\*|\*|`/g, '').replace(/[“”]/g, '"').replace(/[‘’]/g, "'").replace(/\s+/g, ' ').trim();
 
 // ------------------------------------------------------------ the schema
 /**
@@ -220,7 +220,12 @@ async function main() {
   check('every documented route exists in netlify.toml', unrouted.length === 0, unrouted.map((r) => r.path).join(', '));
 
   const documentedFns = [...new Set(rows.map((r) => r.fn))];
-  for (const fn of documentedFns) {
+  // Checked first, and the rest of this section only looks at functions that
+  // exist: a README row naming a missing file must fail here, not crash the
+  // suite on the read or require of a file that is not there.
+  const missingFns = documentedFns.filter((fn) => !fs.existsSync(path.join(ROOT, 'netlify', 'functions', `${fn}.ts`)));
+  check('every function the table names exists', missingFns.length === 0, missingFns.join(', '));
+  for (const fn of documentedFns.filter((f) => !missingFns.includes(f))) {
     const handled = [...functionSource(fn).matchAll(/httpMethod (?:===|!==) '([A-Z]+)'/g)].map((m) => m[1]);
     const listed = rows.filter((r) => r.fn === fn).map((r) => r.method);
     check(`${fn}.ts: the documented methods are exactly the ones it accepts`, minus(handled, listed).length === 0 && minus(listed, handled).length === 0, `accepts ${[...new Set(handled)]}, documented ${listed}`);
@@ -251,7 +256,7 @@ async function main() {
     const response = await backend.load(`${fn}.js`).handler({ httpMethod: method, path: urlPath, headers, queryStringParameters: {}, body }, {});
     return response.statusCode;
   };
-  for (const row of rows.filter((r) => !r.fn.endsWith('-background'))) {
+  for (const row of rows.filter((r) => !r.fn.endsWith('-background') && !missingFns.includes(r.fn))) {
     const body = row.path.endsWith('/abort') ? JSON.stringify({ roles: ['barak'] }) : undefined;
     process.env.SITE_GATE_TOKEN = GATE;
     const correct = await invoke(row.fn, row.method, row.path.replace(':id', TRIAL_ID), { headers: { 'x-site-gate': GATE }, body });
@@ -300,7 +305,7 @@ async function main() {
 
   const rate = agentPara.match(/(\d+) requests per (\d+) minutes/);
   check('the per-IP rate limit is stated', Boolean(rate));
-  for (const fn of backgroundFns) {
+  for (const fn of rate ? backgroundFns : []) {
     const src = functionSource(fn);
     const limit = Number((src.match(/windowLimit:\s*(\d+)/) || [])[1]);
     const windowSeconds = Number((src.match(/windowSize:\s*(\d+)/) || [])[1]);
@@ -481,7 +486,7 @@ async function main() {
   console.log('\n=== README: the badge tables match what app.js renders ===');
   installDom();
   const app = loadApp([
-    'state', 'el', 'renderCallLog', 'trialStatusLabel', 'trialStatusClass', 'POLL_TIMEOUT_MS', 'TOTAL_EXPECTED_RESULTS', 'ABORTED_BY_USER_MESSAGE',
+    'state', 'el', 'renderCallLog', 'trialStatusLabel', 'trialStatusClass', 'POLL_TIMEOUT_MS', 'INTERRUPTED_THRESHOLD_MS', 'TOTAL_EXPECTED_RESULTS', 'ABORTED_BY_USER_MESSAGE',
     'DEGENERATE_RETRIED_SAME_MODEL_MARKER', 'DEGENERATE_RETRIED_DIFF_MODEL_MARKER', 'DEGENERATE_FINAL_MARKER', 'HTTP_ERROR_ESCALATED_MARKER', 'TRANSIENT_RETRIED_MARKER', 'ABORTED_MID_CALL_MARKER',
   ]);
   // What each badge class looks like, in the words the README uses. Each is
@@ -524,16 +529,21 @@ async function main() {
   const documentedCallLog = new Set([...callLogSection.matchAll(/^\| `([^`]+)` \| (\w+) \|/gm)].map((m) => `${m[1]}|${m[2]}`));
   check('the call log table is there', documentedCallLog.size > 0);
   check('every call-log badge app.js can render is in the table', minus(rendered, documentedCallLog).length === 0, minus(rendered, documentedCallLog).join(', '));
-  check('every badge in the table is one app.js renders', minus(documentedCallLog, rendered).length === 0, minus(documentedCallLog, rendered).join(', '));
+  check('every badge in the call log table is one app.js renders', minus(documentedCallLog, rendered).length === 0, minus(documentedCallLog, rendered).join(', '));
 
   const sidebarSection = section(README, '### Run history sidebar');
-  const threshold = (sidebarSection.match(/under (\d+) minutes old/) || [])[1];
+  const threshold = Number((sidebarSection.match(/under (\d+) minutes old/) || [])[1]);
+  check('the interrupted threshold is stated', Number.isFinite(threshold));
+  // Every trial state is rendered whatever the README says, so the tables are
+  // compared even when the threshold sentence is missing: aged past the
+  // code's own threshold, not the (absent) documented one.
+  const pastThreshold = app.INTERRUPTED_THRESHOLD_MS / 60000 + 1;
   const now = Date.now();
   const sidebar = new Set();
   for (const wasAborted of [false, true]) {
     for (const status of ['completed', 'created']) {
       for (const resultCount of [app.TOTAL_EXPECTED_RESULTS, app.TOTAL_EXPECTED_RESULTS - 2]) {
-        for (const ageMinutes of [1, Number(threshold) + 1]) {
+        for (const ageMinutes of [1, pastThreshold]) {
           const trial = { wasAborted, status, resultCount, createdAt: new Date(now - ageMinutes * 60000).toISOString() };
           sidebar.add(`${app.trialStatusLabel(trial).replace(/\b\d+ of (\d+)/, 'N of $1')}|${(CLASS_COLOUR[app.trialStatusClass(trial)] || ['?'])[0]}`);
         }
@@ -543,16 +553,18 @@ async function main() {
   const documentedSidebar = new Set([...sidebarSection.matchAll(/^\| `([^`]+)` \| (\w+) \|/gm)].map((m) => `${m[1]}|${m[2]}`));
   check('the sidebar table is there', documentedSidebar.size > 0);
   check('every sidebar badge app.js can render is in the table', minus(sidebar, documentedSidebar).length === 0, minus(sidebar, documentedSidebar).join(', '));
-  check('every badge in the table is one app.js renders', minus(documentedSidebar, sidebar).length === 0, minus(documentedSidebar, sidebar).join(', '));
-  const labelAt = (minutes) => app.trialStatusLabel({ wasAborted: false, status: 'created', resultCount: 0, createdAt: new Date(Date.now() - minutes * 60000).toISOString() });
-  check(`a run is "In progress" just under ${threshold} minutes`, labelAt(Number(threshold) - 0.1) === 'In progress…', labelAt(Number(threshold) - 0.1));
-  check(`and "Interrupted" just over`, labelAt(Number(threshold) + 0.1) === 'Interrupted', labelAt(Number(threshold) + 0.1));
-  check(`"over ${threshold} minutes old" agrees`, sidebarSection.includes(`over ${threshold} minutes old`));
+  check('every badge in the sidebar table is one app.js renders', minus(documentedSidebar, sidebar).length === 0, minus(documentedSidebar, sidebar).join(', '));
+  if (Number.isFinite(threshold)) {
+    const labelAt = (minutes) => app.trialStatusLabel({ wasAborted: false, status: 'created', resultCount: 0, createdAt: new Date(Date.now() - minutes * 60000).toISOString() });
+    check(`a run is "In progress" just under ${threshold} minutes`, labelAt(threshold - 0.1) === 'In progress…', labelAt(threshold - 0.1));
+    check(`and "Interrupted" just over`, labelAt(threshold + 0.1) === 'Interrupted', labelAt(threshold + 0.1));
+    check(`"over ${threshold} minutes old" agrees`, sidebarSection.includes(`over ${threshold} minutes old`));
+  }
   const budgetMs = Number((OPENROUTER_SRC.match(/const TOTAL_BUDGET_MS = (\d+);/) || [])[1]);
   const worstCase = (sidebarSection.match(/about (\d+) minutes/) || [])[1];
-  check(`the worst case is about ${worstCase} minutes: two phases of the ${budgetMs / 1000}s budget`, Math.round((2 * budgetMs) / 60000) === Number(worstCase), String((2 * budgetMs) / 60000));
+  check(`the worst case is about ${worstCase ?? '(not stated)'} minutes: two phases of the ${budgetMs / 1000}s budget`, Math.round((2 * budgetMs) / 60000) === Number(worstCase), String((2 * budgetMs) / 60000));
   const pollClaim = (api.match(/after about (\d+) minutes/) || [])[1];
-  check(`polling gives up after about ${pollClaim} minutes`, Math.round(app.POLL_TIMEOUT_MS / 60000) === Number(pollClaim), String(app.POLL_TIMEOUT_MS / 60000));
+  check(`polling gives up after about ${pollClaim ?? '(not stated)'} minutes`, Math.round(app.POLL_TIMEOUT_MS / 60000) === Number(pollClaim), String(app.POLL_TIMEOUT_MS / 60000));
   const expected = app.TOTAL_EXPECTED_RESULTS;
   const resultClaims = [...README.matchAll(/(?:all|its) (\d+)(?: of (\d+))? results/g)].flatMap((m) => [m[1], m[2]].filter(Boolean).map(Number));
   check(`every "N of ${expected} results" uses ${expected}`, resultClaims.length > 0 && resultClaims.every((n) => n === expected), resultClaims.join(', '));
