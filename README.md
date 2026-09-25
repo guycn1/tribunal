@@ -28,9 +28,40 @@ Every discarded attempt — including a timeout — gets logged as its own real 
 
 **Anti-abuse / cost controls**, layered since the deployed site runs on a paid model with no login: a site-wide rolling call cap, per-IP rate limiting on the two functions that spend OpenRouter quota, and a lightweight site-gate header that filters traffic that never loaded the page at all (not real access control — the token is a public constant in `app.js` — just a cheap first filter).
 
+### API endpoints
+
+Each route below is a rewrite in `netlify.toml` to one function in `netlify/functions/`. Everything this app's own code returns is JSON.
+
+| Method | Path | Function | What it does |
+| --- | --- | --- | --- |
+| `GET` | `/api/case` | `case.ts` | The fixed case record, the starting model for each role, and the shared completion-token cap. Read once when the page loads. |
+| `GET` | `/api/trials` | `trials.ts` | The 50 most recent trials, for the run-history sidebar — each with how many of its 7 results were saved and whether it was aborted. |
+| `POST` | `/api/trials` | `trials.ts` | Creates a trial and returns it with the case record (`201`). Needs the site-gate header. Makes no model call. |
+| `GET` | `/api/trials/:id` | `trial.ts` | Everything recorded for one trial: its arguments, rulings, every call-log row, and the attempt each role is on right now. Polled throughout a run, and read once to open a past trial. `404` for an unknown id. |
+| `POST` | `/api/trials/:id/representatives/:role` | `representative-background.ts` | Runs one representative through the escalation chain and saves the argument. |
+| `POST` | `/api/trials/:id/judges/:role` | `judge-background.ts` | Runs one judge on the case record plus whichever representative arguments were saved, and saves the ruling. |
+| `POST` | `/api/trials/:id/abort` | `abort.ts` | Takes `{ "roles": [...] }` — the roles still pending — and records an abort for each. The running calls check for it between attempts and stop. |
+
+**The two agent endpoints behave differently from the rest.** They are the only ones that spend OpenRouter quota, and the only Background Functions: Netlify answers the POST with `202` as soon as the call is accepted and runs the handler afterwards, so nothing the handler returns ever reaches the browser, which learns the outcome by polling `GET /api/trials/:id`. The handler checks, in order, that the role is one it knows (`jon_snow`, `tyrion_lannister`, `daenerys_targaryen` or `grey_worm`; `barak`, `elon` or `shamgar`), the site-gate header, the site-wide call cap, and that the trial exists. Because of the `202`, a rejection at any of those steps shows up only in Netlify's function logs — in the browser, that role never resolves, and its card says so once polling gives up, after about 12 minutes. Netlify's per-IP rate limit (45 requests per 5 minutes on each of the two, declared in each function's `config`) is enforced by the platform ahead of the handler, so a rejection there would reach the browser directly; it has never been tripped, so that path is untested in production. A judge's reply must contain a `VERDICT: justified` or `VERDICT: not justified` line, and one without it is logged as a failure rather than saved.
+
 ### Database
 
-Six tables in Supabase/Postgres: `case_definitions` (the fixed charge sheet), `trials`, `representative_arguments`, `judge_rulings`, `api_call_logs` (one row per model call attempt, kept or discarded), and `agent_progress` (one row per trial/role, overwritten in place, tracking whichever attempt is currently in flight for the live-progress display).
+Six tables in Supabase/Postgres. `supabase/schema.sql` is the authority on every column, type and constraint; what follows is a map of what each table holds and the rules worth knowing, not a copy of that file.
+
+- Row-level security is on for all six tables, with no policies, so the public (anon) key can read or write nothing. Only the backend's service-role key can, and the browser never talks to Supabase directly.
+- Every table except `case_definitions` belongs to a single trial through `trial_id`, and deleting a trial deletes its rows in all of them.
+
+**`case_definitions`** — one row per case, keyed by `case_code`. Holds the charge sheet: `title`, `accused`, `deceased`, `act_alleged`, `background`, `agreed_facts` (a JSON array of strings), `question` and `scope_note`. `schema.sql` seeds the only row, `T-001`, and the app reads the case from here at runtime rather than from any copy in the code.
+
+**`trials`** — one row per run: `id` (a UUID — the `:id` in every route above), `case_code`, `status`, `created_at` and `updated_at`. `status` is `created` or `completed`, and the judge endpoint is what sets `completed`.
+
+**`representative_arguments`** — one row per representative whose argument was kept: `trial_id`, `role`, `seat` (`defense` or `prosecution`), `argument_text` and `model_used`. There is at most one row per trial and role, so a representative that needed several attempts still counts once; this table and `judge_rulings` are what the sidebar's "N of 7" counts. Discarded attempts never land here — they live in `api_call_logs`.
+
+**`judge_rulings`** — one row per judge whose ruling was kept: `trial_id`, `role`, `verdict` (`justified` or `not justified`), `reasoning_text` and `model_used`. At most one row per trial and role. A trial's three rulings are independent rows, and nothing in the schema or the code combines them.
+
+**`api_call_logs`** — one row per model-call attempt, kept or discarded, appended and never updated. It carries the fields the spec requires for every call — `agent_role`, `model_used`, `prompt_tokens`, `completion_tokens`, `total_tokens`, `cost` (in US dollars), `status` (`success` or `failed`) and `timestamp` — plus `trial_id`, `call_type` (`representative` or `judge`), `error_message` and `duration_ms`. A discarded attempt's `error_message` starts with a marker saying what happened to it, such as `[transient-retried]`, and `duration_ms` is empty on rows logged before that column existed. An abort is recorded here too, as a `failed` row with the model `n/a` for each pending role; that row is what running calls look for to know they should stop.
+
+**`agent_progress`** — one row per trial and role (`trial_id` and `role` together are its key), overwritten each time a new attempt starts: `model`, `tier_index`, `attempt_in_tier` and `tier_max_attempts`. It drives the live "Model: … (second attempt)" line on a card that is still running. A row left behind after a role has finished is harmless: the page only reads it for a role with no final result yet.
 
 ## Reading the UI: status badges
 
@@ -69,6 +100,54 @@ One badge per trial, summarising the whole run.
 | `Interrupted` | red | Not finished and over 40 minutes old, so it is treated as never going to finish (a dev-server restart mid-run, say). The threshold is sized above the genuine worst case: a full four-tier escalation for every representative, then the same again for every judge — about 22 minutes. |
 
 "Missing N" counts results that actually persisted, **not** whether any individual call ever failed along the way. A transient failure that the retry recovered from is a real logged attempt, not a flaw in the outcome — labelling the run on that basis would mark almost every trial as damaged. The call log still shows every attempt in full.
+
+## Project layout
+
+Every file tracked in the repository. `node_modules/` and `.netlify/` are generated locally and git-ignored.
+
+```text
+.
+├── public/                           static frontend, served as-is — no build step
+│   ├── index.html
+│   ├── app.js                        all client logic: starting a trial, polling, rendering
+│   └── styles.css
+├── netlify/functions/                backend — one file per Netlify Function
+│   ├── case.ts                       GET /api/case
+│   ├── trials.ts                     GET and POST /api/trials
+│   ├── trial.ts                      GET /api/trials/:id
+│   ├── representative-background.ts  POST /api/trials/:id/representatives/:role
+│   ├── judge-background.ts           POST /api/trials/:id/judges/:role
+│   ├── abort.ts                      POST /api/trials/:id/abort
+│   └── lib/                          code shared by the functions above
+│       ├── openrouter.ts             the escalation chain: tiers, timeouts, detectors
+│       ├── models.ts                 the model for each tier, and the token cap
+│       ├── pricing.ts                per-token prices, for the cost column
+│       ├── prompts.ts                builds each agent's prompt; parses a judge's verdict
+│       ├── representatives.ts        the four representatives, in character
+│       ├── judges.ts                 the three judges' reasoning methods
+│       ├── chargeSheet.ts            reads the case record from the database
+│       ├── db.ts                     every Supabase query, the call cap, the abort check
+│       ├── supabase.ts               the Supabase client (service-role key)
+│       ├── siteGate.ts               the X-Site-Gate header check
+│       ├── extractParams.ts          reads :id and :role from the request
+│       ├── safeHandler.ts            turns an uncaught error into a JSON 500
+│       ├── response.ts               JSON response helper
+│       └── types.ts                  types shared across the backend
+├── supabase/schema.sql               all six tables, the seeded case, RLS, grants
+├── tests/                            npm test — no network, spends no quota
+│   ├── retry-logic.test.js           the escalation chain, from the real TypeScript
+│   ├── render-cards.test.js          app.js run against a stub DOM
+│   └── shared-constants.test.js      values duplicated across files still agree
+├── netlify.toml                      build settings and the /api/* routes
+├── package.json, package-lock.json
+├── tsconfig.json                     type-checks netlify/functions (not app.js)
+├── .env.example                      the four environment variables
+├── .gitignore
+├── .vscode/settings.json             turns format-on-save off for this workspace
+├── SPEC.md                           the requirements, from the course's Case Design Dossier
+├── README.md
+└── CLAUDE.md                         the working brief and full build/decision log
+```
 
 ## Local development
 
