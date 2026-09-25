@@ -255,6 +255,12 @@ const SITE_GATE_TOKEN = 'g8YdtIo_-n2zLFDsgWqqfuQmVKaNsHQaQtruTybqlvY';
 const SITE_GATE_HEADERS = { 'X-Site-Gate': SITE_GATE_TOKEN };
 
 /**
+ * Ends an alert() about a request that got no response at all - fetch()
+ * itself failed, so the server was never reached.
+ */
+const SERVER_UNREACHABLE_MESSAGE = 'the server could not be reached. Check your connection and try again.';
+
+/**
  * Display name and seat for each representative.
  * @type {Record<RepresentativeRole, {name: string, seat: Seat}>}
  */
@@ -530,14 +536,12 @@ function isTruncated(entry) {
  *
  * Does nothing while a trial is already running or one is being opened from
  * history. Progress is reported through `state` and the cards as it
- * happens, not through the returned promise. A trial the server refuses to
- * create is reported with alert().
+ * happens, not through the returned promise. Failing to create the trial,
+ * or to load its call log once it has run, is reported with alert().
  *
- * @returns {Promise<void>} Settles once the run has fully unwound and the
+ * @returns {Promise<void>} Resolves once the run has fully unwound and the
  *   controls are restored, which is what abortCurrentTrial() waits for.
- *   Rejects if creating the trial or the final call-log refresh fails
- *   outright (a network error, or a non-JSON reply to the create request);
- *   the controls are restored either way.
+ *   Failed requests are reported to the user rather than rejecting it.
  */
 async function beginTrial() {
   if (state.running || state.loadingTrial) return;
@@ -556,10 +560,20 @@ async function beginTrial() {
   el.sidebar.classList.add('loading-locked');
 
   try {
-    const res = await fetch('/api/trials', { method: 'POST', headers: SITE_GATE_HEADERS });
-    const data = await res.json();
-    if (!res.ok) {
-      alert(`Failed to create trial: ${data.error || res.status}`);
+    // A request that never reaches the server makes fetch() throw, and a
+    // platform error page (a 502, say) is not JSON. Both used to escape
+    // as an uncaught rejection, so the click looked as if it had done
+    // nothing - the error reached only the browser console.
+    let res;
+    try {
+      res = await fetch('/api/trials', { method: 'POST', headers: SITE_GATE_HEADERS });
+    } catch {
+      alert(`Failed to create trial: ${SERVER_UNREACHABLE_MESSAGE}`);
+      return;
+    }
+    const data = await res.json().catch(() => null);
+    if (!res.ok || !data) {
+      alert(`Failed to create trial: ${(data && data.error) || `unexpected response (HTTP ${res.status})`}`);
       return;
     }
 
@@ -609,8 +623,11 @@ async function beginTrial() {
     if (!controller.signal.aborted) {
       await runJudgesPhase(controller.signal);
     }
-    await refreshFullTrial();
+    const callLogLoaded = await refreshFullTrial();
     await refreshHistory();
+    if (!callLogLoaded) {
+      alert("This trial's call log could not be loaded. Reopen the trial from Run history to see it.");
+    }
   } finally {
     state.running = false;
     updateHistoryLockState();
@@ -715,10 +732,9 @@ async function abortCurrentTrial() {
   // (its finally block is what clears state.running, re-enables "Begin
   // new trial", and hides the Abort button) before dropping the overlay -
   // otherwise it would disappear while those controls are still visibly
-  // mid-transition for a moment longer. beginTrial() can reject - a
-  // network failure while creating the trial or refreshing the call log
-  // is not caught inside it - so this is wrapped to make sure a rejection
-  // there can never leave the overlay stuck.
+  // mid-transition for a moment longer. beginTrial() reports its own
+  // failed requests rather than rejecting, so a rejection here would mean
+  // a bug - but even then it must never leave the overlay stuck.
   try {
     await state.trialPromise;
   } catch {
@@ -1232,18 +1248,28 @@ async function runJudgesPhase(signal) {
 
 /**
  * Re-reads the current trial and re-renders the call log from it, so the
- * log shows every attempt the server recorded during the run. Does nothing
- * without a current trial, or if the request returns an error status.
+ * log shows every attempt the server recorded during the run.
  *
- * @returns {Promise<void>} Rejects on a network error.
+ * @returns {Promise<boolean>} Whether the call log was loaded: false if the
+ *   request failed or returned an error status, and true with no request
+ *   at all when there is no current trial. Never rejects on a failed
+ *   request - the caller decides how to report it.
  */
 async function refreshFullTrial() {
-  if (!state.trialId) return;
-  const res = await fetch(`/api/trials/${state.trialId}`);
-  if (!res.ok) return;
-  const data = await res.json();
+  if (!state.trialId) return true;
+  let data;
+  try {
+    const res = await fetch(`/api/trials/${state.trialId}`);
+    if (!res.ok) return false;
+    data = await res.json();
+  } catch {
+    return false;
+  }
+  // Outside the try on purpose: a rendering bug should surface as the bug
+  // it is, not be reported as a call log that failed to load.
   state.callLog = data.apiCallLogs || [];
   renderCallLog();
+  return true;
 }
 
 /**
@@ -1339,11 +1365,13 @@ async function refreshHistory() {
  * section.
  *
  * Does nothing while a trial is running or another is being opened. A
- * trial the server cannot return is reported with alert().
+ * trial that cannot be loaded - the server unreachable, or an error in
+ * reply - is reported with alert().
  *
  * @param {string} trialId
- * @returns {Promise<void>} Rejects on a network error; the loading overlay
- *   and the sidebar are restored either way.
+ * @returns {Promise<void>} Resolves once the loading overlay and the
+ *   sidebar are restored. Failed requests are reported to the user rather
+ *   than rejecting it.
  */
 async function loadTrial(trialId) {
   if (state.running || state.loadingTrial) return;
@@ -1351,12 +1379,21 @@ async function loadTrial(trialId) {
   el.mainLoadingOverlay.classList.remove('hidden');
   el.sidebar.classList.add('loading-locked');
   try {
-    const res = await fetch(`/api/trials/${trialId}`);
-    if (!res.ok) {
+    // Same reasoning as trial creation in beginTrial(): a failure to reach
+    // the server, or a reply that isn't JSON, is reported rather than left
+    // to escape as an uncaught rejection that looks like an ignored click.
+    let res;
+    try {
+      res = await fetch(`/api/trials/${trialId}`);
+    } catch {
+      alert(`Could not load that trial: ${SERVER_UNREACHABLE_MESSAGE}`);
+      return;
+    }
+    const data = res.ok ? await res.json().catch(() => null) : null;
+    if (!data) {
       alert('Could not load that trial.');
       return;
     }
-    const data = await res.json();
 
     state.trialId = trialId;
     state.caseDef = data.caseDef;

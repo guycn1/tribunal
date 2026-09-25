@@ -1,5 +1,6 @@
 /**
- * @file Regression tests for the agent-card render path in public/app.js.
+ * @file Regression tests for public/app.js: its agent-card render path, and
+ * how it reports a request that fails outright.
  *
  * Run with `npm test`. No framework and no browser: app.js's real source is
  * executed against a minimal DOM stub, and the functions under test are
@@ -16,6 +17,10 @@
  *      every card in the phase, so a single agent escalating made all of
  *      its siblings visibly flash - including cards already showing a
  *      finished argument.
+ *   3. A request that fails outright must reach the user. Creating a trial,
+ *      opening one from history, and the call-log refresh after a run all
+ *      used to let a network failure escape as an uncaught rejection, so a
+ *      click appeared to do nothing and the error reached only the console.
  */
 
 const fs = require('node:fs');
@@ -132,7 +137,7 @@ console.log('\n=== app.js executes cleanly (catches a TDZ-class load crash) ==='
 let app;
 try {
   // Hand back exactly the pieces under test from app.js's own top-level scope.
-  app = new Function(`${SRC}\n;return { state, el, renderRepresentatives, renderJudges, renderCallLog, agentCardSignature, shortModelName, REPRESENTATIVE_ROLES, JUDGE_ROLES };`)();
+  app = new Function(`${SRC}\n;return { state, el, renderRepresentatives, renderJudges, renderCallLog, agentCardSignature, shortModelName, REPRESENTATIVE_ROLES, JUDGE_ROLES, beginTrial, loadTrial };`)();
   check('top-level code ran with no error', true);
 } catch (error) {
   check('top-level code ran with no error', false, error.message);
@@ -318,5 +323,111 @@ const { shortModelName } = app;
 // A name that merely contains the letters is not a segment and must survive.
 check('"instructor" is not stripped', shortModelName('vendor/model-instructor-v2') === 'model-instructor-v2', shortModelName('vendor/model-instructor-v2'));
 
-console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} check(s) failed.`);
-process.exit(failures === 0 ? 0 : 1);
+/**
+ * A stub fetch Response carrying a JSON body.
+ * @param {number} status
+ * @param {unknown} body
+ * @returns {{ok: boolean, status: number, json: () => Promise<unknown>}}
+ */
+function jsonReply(status, body) {
+  return { ok: status >= 200 && status < 300, status, json: async () => body };
+}
+
+/**
+ * The checks that need to await app.js's own async flows. Kept apart from
+ * the synchronous render checks above, which must not wait on anything.
+ * @returns {Promise<void>}
+ */
+async function requestFailureChecks() {
+  const { beginTrial, loadTrial, JUDGE_ROLES } = app;
+  const alerts = [];
+  global.alert = (message) => alerts.push(String(message));
+  // fetch() rejects, rather than resolving with an error status, when the
+  // server is never reached - offline, DNS, connection refused.
+  const unreachable = async () => { throw new TypeError('Failed to fetch'); };
+  const controlsRestored = () =>
+    state.running === false && state.loadingTrial === false && state.abortController === null && el.newTrialBtn.disabled === false;
+
+  /**
+   * Runs one flow under a given fetch stub, and reports whether it
+   * rejected - the failure mode being guarded against.
+   * @param {() => Promise<void>} flow
+   * @param {typeof global.fetch} fetchStub
+   * @returns {Promise<unknown>} What it rejected with, or null.
+   */
+  async function run(flow, fetchStub) {
+    alerts.length = 0;
+    global.fetch = fetchStub;
+    try {
+      await flow();
+      return null;
+    } catch (error) {
+      return error;
+    }
+  }
+
+  console.log('\n=== Creating a trial: a failed request is reported, not swallowed ===');
+  let rejection = await run(beginTrial, unreachable);
+  check('an unreachable server does not reject', rejection === null, String(rejection));
+  check('the user is told the server could not be reached', alerts.length === 1 && /could not be reached/.test(alerts[0]), JSON.stringify(alerts));
+  check('the controls are restored', controlsRestored());
+
+  rejection = await run(beginTrial, async () => ({ ok: false, status: 502, json: async () => { throw new SyntaxError('Unexpected token <'); } }));
+  check('a non-JSON error page does not reject', rejection === null, String(rejection));
+  check('the user is told the status', alerts.length === 1 && /HTTP 502/.test(alerts[0]), JSON.stringify(alerts));
+
+  rejection = await run(beginTrial, async () => jsonReply(401, { error: 'Missing or invalid site gate header.' }));
+  check("a JSON error still shows the server's own message", alerts.length === 1 && alerts[0].includes('Missing or invalid site gate header.'), JSON.stringify(alerts));
+
+  console.log('\n=== Opening a trial from history: a failed request is reported ===');
+  rejection = await run(() => loadTrial('some-trial'), unreachable);
+  check('an unreachable server does not reject', rejection === null, String(rejection));
+  check('the user is told the server could not be reached', alerts.length === 1 && /could not be reached/.test(alerts[0]), JSON.stringify(alerts));
+  check('the loading overlay is released', controlsRestored());
+
+  rejection = await run(() => loadTrial('some-trial'), async () => ({ ok: true, status: 200, json: async () => { throw new SyntaxError('Unexpected end of JSON input'); } }));
+  check('an unreadable reply does not reject', rejection === null, String(rejection));
+  check('it is reported as a trial that could not be loaded', alerts.length === 1 && alerts[0] === 'Could not load that trial.', JSON.stringify(alerts));
+
+  console.log('\n=== A run whose final call-log refresh fails ===');
+  // A whole trial, end to end, with every wait made instant: sleep() and
+  // the pollers all go through setTimeout.
+  const realSetTimeout = global.setTimeout;
+  global.setTimeout = (fn) => { setImmediate(fn); return 0; };
+  const caseDef = { title: 'T-001', accused: 'a', deceased: 'd', actAlleged: 'x', background: 'p', agreedFacts: [], question: 'q', scopeNote: 's' };
+  const record = {
+    trial: { id: 'run-1' }, caseDef, agentProgress: {}, apiCallLogs: [],
+    representativeArguments: REPRESENTATIVE_ROLES.map((role) => ({ role, seat: 'defense', argumentText: 'An argument.', modelUsed: 'm' })),
+    judgeRulings: JUDGE_ROLES.map((role) => ({ role, verdict: 'justified', reasoningText: 'Reasons.', modelUsed: 'm' })),
+  };
+  let trialReads = 0;
+  let historyReads = 0;
+  rejection = await run(beginTrial, async (url, options = {}) => {
+    const method = options.method || 'GET';
+    if (method === 'POST') return url === '/api/trials' ? jsonReply(201, { trial: { id: 'run-1' }, caseDef }) : jsonReply(202, {});
+    if (url === '/api/trials') { historyReads++; return jsonReply(200, { trials: [] }); }
+    // One poll resolves every representative, the next every judge; the
+    // read after that is the call-log refresh, which is the one that fails.
+    if (url === '/api/trials/run-1' && ++trialReads <= 2) return jsonReply(200, record);
+    if (url === '/api/trials/run-1') throw new TypeError('Failed to fetch');
+    throw new Error(`unexpected request: ${method} ${url}`);
+  });
+  global.setTimeout = realSetTimeout;
+  check('the run does not reject', rejection === null, String(rejection));
+  check('the refresh really was the request that failed', trialReads === 3, String(trialReads));
+  check('the missing call log is reported', alerts.length === 1 && /call log could not be loaded/.test(alerts[0]), JSON.stringify(alerts));
+  check('the run history is still refreshed after it', historyReads === 1, String(historyReads));
+  check('every result from the run stays on screen', [...Object.values(state.representatives), ...Object.values(state.judges)].every((e) => e.status === 'success') && Object.keys(state.judges).length === JUDGE_ROLES.length);
+  check('the controls are restored', controlsRestored());
+}
+
+requestFailureChecks().then(
+  () => {
+    console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} check(s) failed.`);
+    process.exit(failures === 0 ? 0 : 1);
+  },
+  (error) => {
+    console.log('SUITE ERROR:', error);
+    process.exit(1);
+  }
+);
