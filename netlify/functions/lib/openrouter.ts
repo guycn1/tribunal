@@ -835,7 +835,6 @@ export async function callOpenRouter(
 
         lastError = `OpenRouter returned HTTP 429 (rate limited)`;
         console.log(`[openrouter] ${label}: attempt ${attempt} - ${lastError}, retrying`);
-        await backoff(attempt);
         {
           // Counted against this tier's attempt budget like any other
           // failure, so a rate-limited tier escalates to the next model
@@ -849,7 +848,16 @@ export async function callOpenRouter(
             reason: 'was rate limited (HTTP 429)',
             allowFastRetry: true,
           });
-          if (next.canContinue) continue;
+          // The pause comes after the attempt is recorded, never before:
+          // recordFailedAttemptAndAdvance() times the attempt, and a backoff
+          // taken first was counted as part of it - inflating the logged
+          // duration by up to 2.3s, and meaning a failure had to come back
+          // in about 8s, not the intended FAST_FAILURE_THRESHOLD_MS, to
+          // count as fast. The same holds at every backoff() below.
+          if (next.canContinue) {
+            await backoff(attempt);
+            continue;
+          }
           return failure(attemptModel, lastError, lastUsage, discardedAttempts, Date.now() - lastAttemptStartedAt, { tierIndex, tierCount: tiers.length });
         }
       }
@@ -877,7 +885,6 @@ export async function callOpenRouter(
       if (response.status >= 500) {
         lastError = `OpenRouter returned HTTP ${response.status}`;
         console.log(`[openrouter] ${label}: attempt ${attempt} - ${lastError}, retrying`);
-        await backoff(attempt);
         {
           const next = await recordFailedAttemptAndAdvance({
             marker: TRANSIENT_RETRIED_MARKER,
@@ -885,7 +892,10 @@ export async function callOpenRouter(
             reason: `failed upstream (HTTP ${response.status})`,
             allowFastRetry: true,
           });
-          if (next.canContinue) continue;
+          if (next.canContinue) {
+            await backoff(attempt);
+            continue;
+          }
           return failure(attemptModel, lastError, lastUsage, discardedAttempts, Date.now() - lastAttemptStartedAt, { tierIndex, tierCount: tiers.length });
         }
       }
@@ -947,7 +957,6 @@ export async function callOpenRouter(
           : `OpenRouter response contained no message content (finish_reason=${finishReason}, prompt_tokens=${promptTokens}, completion_tokens=${completionTokens}).`;
         lastUsage = { promptTokens, completionTokens, totalTokens };
         console.log(`[openrouter] ${label}: attempt ${attempt} - ${lastError}, retrying`);
-        await backoff(attempt);
         {
           const next = await recordFailedAttemptAndAdvance({
             marker: TRANSIENT_RETRIED_MARKER,
@@ -956,7 +965,10 @@ export async function callOpenRouter(
             usage: lastUsage,
             allowFastRetry: true,
           });
-          if (next.canContinue) continue;
+          if (next.canContinue) {
+            await backoff(attempt);
+            continue;
+          }
           return failure(attemptModel, lastError, lastUsage, discardedAttempts, Date.now() - lastAttemptStartedAt, { tierIndex, tierCount: tiers.length });
         }
       }
@@ -1077,15 +1089,6 @@ export async function callOpenRouter(
           ? err.message
           : String(err);
       console.log(`[openrouter] ${label}: attempt ${attempt} - ${lastError}, retrying`);
-      // backoff()'s delay exists to avoid hammering a rate limiter that
-      // will keep refusing for a moment - a real reason to wait for the
-      // 429/5xx/empty-content branches above, but not for a timeout, where
-      // nothing suggests waiting helps and every remaining millisecond of a
-      // fixed, already-tight budget matters more than a precautionary
-      // pause. A genuine timeout skips straight to the retry check instead.
-      if (!isTimeout) {
-        await backoff(attempt);
-      }
       // This branch is the one that produced the real 6-minute stall: it
       // used to fall straight through to the next loop iteration without
       // touching attemptsAtTier or tierIndex, so a model that kept timing
@@ -1103,7 +1106,16 @@ export async function callOpenRouter(
           // same-model retry rather than an immediate escalation.
           allowFastRetry: true,
         });
-        if (next.canContinue) continue;
+        if (next.canContinue) {
+          // backoff()'s delay exists to avoid hammering a rate limiter that
+          // will keep refusing for a moment - a real reason to wait after
+          // the 429/5xx/empty-content branches above, but not after a
+          // timeout, where nothing suggests waiting helps and every
+          // remaining millisecond of a fixed budget matters more than a
+          // precautionary pause.
+          if (!isTimeout) await backoff(attempt);
+          continue;
+        }
         return failure(attemptModel, lastError, lastUsage, discardedAttempts, Date.now() - lastAttemptStartedAt, { tierIndex, tierCount: tiers.length });
       }
     }

@@ -15,33 +15,11 @@
  * Each one below is a test, so none of them can quietly come back.
  */
 
-const { execFileSync } = require('node:child_process');
-const fs = require('node:fs');
-const os = require('node:os');
-const path = require('node:path');
+const { compileBackend } = require('./support/compile-backend');
 
-const ROOT = path.join(__dirname, '..');
-const OUT = fs.mkdtempSync(path.join(os.tmpdir(), 'tribunal-tests-'));
-
-// Run tsc's own JS entrypoint with this Node binary rather than the
-// node_modules/.bin shim: on Windows that shim is a .cmd, which
-// execFileSync cannot spawn without a shell.
-const tsc = path.join(ROOT, 'node_modules', 'typescript', 'bin', 'tsc');
-execFileSync(
-  process.execPath,
-  [
-    tsc,
-    path.join('netlify', 'functions', 'lib', 'openrouter.ts'),
-    path.join('netlify', 'functions', 'lib', 'pricing.ts'),
-    path.join('netlify', 'functions', 'lib', 'models.ts'),
-    '--target', 'ES2020', '--module', 'commonjs', '--moduleResolution', 'node',
-    '--esModuleInterop', '--skipLibCheck', '--outDir', OUT,
-  ],
-  { cwd: ROOT, stdio: 'inherit' }
-);
-
+const backend = compileBackend(['lib/openrouter.ts']);
 process.env.OPENROUTER_API_KEY = 'test-key';
-const { callOpenRouter } = require(path.join(OUT, 'openrouter.js'));
+const { callOpenRouter } = backend.load('lib/openrouter.js');
 
 /** Tier 1 of the escalation chain - the default, and cheapest, model. */
 const DEFAULT = 'mistralai/mistral-small-24b-instruct-2501';
@@ -227,6 +205,11 @@ async function main() {
     check('succeeded once the burst cleared', r.status === 'success', r.status);
     check('the 429s are still logged', (r.discardedAttempts || []).length === 2, String((r.discardedAttempts || []).length));
     check('logged as not counted against the tier', (r.discardedAttempts || []).every((d) => /not counted against it/.test(d.errorMessage)), (r.discardedAttempts || [])[0]?.errorMessage);
+    // These 429s come back instantly, so each logged duration should be close
+    // to zero. The backoff pause after one is at least 800ms, and it used to
+    // be timed as part of the attempt - which also made a failure need to
+    // return in about 8s, not 10, to count as fast.
+    check('each logged duration is the attempt alone, not the pause after it', (r.discardedAttempts || []).every((d) => d.durationMs < 400), (r.discardedAttempts || []).map((d) => d.durationMs).join(', '));
   });
 
   // ------------------------------------------------------------------ 5
@@ -298,7 +281,7 @@ async function main() {
 
   console.log = realLog;
   console.warn = realWarn;
-  fs.rmSync(OUT, { recursive: true, force: true });
+  backend.cleanup();
   say(failures === 0 ? '\nAll checks passed.' : `\n${failures} check(s) failed.`);
   process.exit(failures === 0 ? 0 : 1);
 }
