@@ -23,10 +23,7 @@
  *      click appeared to do nothing and the error reached only the console.
  */
 
-const fs = require('node:fs');
-const path = require('node:path');
-
-const SRC = fs.readFileSync(path.join(__dirname, '..', 'public', 'app.js'), 'utf8');
+const { installDom, loadApp } = require('./support/load-app');
 
 let failures = 0;
 /**
@@ -46,114 +43,13 @@ function check(name, condition, detail) {
   }
 }
 
-// --- the smallest DOM that app.js's card path actually touches ------------
-/**
- * Builds a stub element carrying just the DOM surface app.js's render path
- * touches. Children are tracked, so node identity can be asserted across
- * renders; markup assigned to innerHTML is stored verbatim, not parsed.
- *
- * @param {string} [tag='div']
- * @returns {object}
- */
-function makeElement(tag = 'div') {
-  const kids = [];
-  const classes = new Set();
-  const el = {
-    tagName: String(tag).toUpperCase(),
-    kids,
-    dataset: {},
-    style: { setProperty() {}, removeProperty() {}, getPropertyValue: () => '' },
-    className: '',
-    textContent: '',
-    scrollTop: 0,
-    scrollHeight: 0,
-    clientHeight: 0,
-    hidden: false,
-    parentElement: null,
-    // Tracked for real, not a no-op: the loading overlay, the sidebar lock
-    // and the Abort button are all shown and hidden through classes, and a
-    // no-op here once let a check pass with the overlay stuck on screen.
-    // className stays a separate plain string, unlike a real DOM - no check
-    // reads a class that was set through className.
-    classList: {
-      add: (...names) => names.forEach((name) => classes.add(name)),
-      remove: (...names) => names.forEach((name) => classes.delete(name)),
-      toggle(name, force) {
-        const on = force === undefined ? !classes.has(name) : Boolean(force);
-        if (on) classes.add(name);
-        else classes.delete(name);
-        return on;
-      },
-      contains: (name) => classes.has(name),
-    },
-    addEventListener() {},
-    removeEventListener() {},
-    getBoundingClientRect: () => ({ top: 0, bottom: 0, left: 0, right: 0, width: 0, height: 0 }),
-    scrollIntoView() {},
-    appendChild(child) { kids.push(child); child.parentElement = el; return child; },
-    removeChild(child) {
-      const i = kids.indexOf(child);
-      if (i >= 0) kids.splice(i, 1);
-      return child;
-    },
-    replaceChild(next, old) {
-      const i = kids.indexOf(old);
-      if (i >= 0) kids[i] = next;
-      next.parentElement = el;
-      return old;
-    },
-    querySelector: () => null,
-    querySelectorAll: () => [],
-  };
-  // Assigning innerHTML replaces an element's children in a real DOM. The
-  // stub does not parse the markup, but it must still clear them, or a
-  // render that starts with `container.innerHTML = ''` would silently
-  // accumulate rows across calls and every assertion would read a stale one.
-  let html = '';
-  Object.defineProperty(el, 'innerHTML', {
-    get: () => html,
-    set(value) { html = String(value); kids.length = 0; },
-  });
-  Object.defineProperty(el, 'children', { get: () => kids });
-  Object.defineProperty(el, 'lastElementChild', { get: () => kids[kids.length - 1] || null });
-  Object.defineProperty(el, 'firstElementChild', { get: () => kids[0] || null });
-  return el;
-}
-
-const byId = new Map();
-global.document = {
-  getElementById: (id) => {
-    if (!byId.has(id)) byId.set(id, makeElement());
-    return byId.get(id);
-  },
-  createElement: (tag) => makeElement(tag),
-  querySelector: () => makeElement(),
-  querySelectorAll: () => [],
-  addEventListener() {},
-  body: makeElement(),
-  documentElement: makeElement(),
-  readyState: 'complete',
-};
-global.window = {
-  addEventListener() {},
-  requestAnimationFrame: () => 0,
-  cancelAnimationFrame() {},
-  scrollTo() {},
-  matchMedia: () => ({ matches: false, addEventListener() {} }),
-  location: { href: 'http://localhost/' },
-};
-global.requestAnimationFrame = () => 0;
-global.cancelAnimationFrame = () => {};
-global.fetch = async () => ({ ok: true, status: 200, json: async () => ({}) });
-global.alert = () => {};
-global.AbortController = class { constructor() { this.signal = { aborted: false, addEventListener() {} }; } abort() {} };
-global.DOMException = class extends Error {};
+installDom();
 
 console.log('\n=== app.js executes cleanly (catches a TDZ-class load crash) ===');
 let app;
 try {
   // Hand back exactly the pieces under test from app.js's own top-level scope.
-  app = new Function(`${SRC}\n;return { state, el, renderRepresentatives, renderJudges, renderCallLog, agentCardSignature, shortModelName, REPRESENTATIVE_ROLES, JUDGE_ROLES, beginTrial, loadTrial };`)();
+  app = loadApp(['state', 'el', 'renderRepresentatives', 'renderJudges', 'renderCallLog', 'agentCardSignature', 'shortModelName', 'REPRESENTATIVE_ROLES', 'JUDGE_ROLES', 'beginTrial', 'loadTrial']);
   check('top-level code ran with no error', true);
 } catch (error) {
   check('top-level code ran with no error', false, error.message);

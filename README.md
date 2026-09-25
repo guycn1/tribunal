@@ -49,11 +49,11 @@ Each route below is a rewrite in `netlify.toml` to one function in `netlify/func
 Six tables in Supabase/Postgres. `supabase/schema.sql` is the authority on every column, type and constraint; what follows is a map of what each table holds and the rules worth knowing, not a copy of that file.
 
 - Row-level security is on for all six tables, with no policies, so the public (anon) key can read or write nothing. Only the backend's service-role key can, and the browser never talks to Supabase directly.
-- Every table except `case_definitions` belongs to a single trial through `trial_id`, and deleting a trial deletes its rows in all of them.
+- Every table except `case_definitions` and `trials` itself belongs to a single trial through `trial_id`, and deleting a trial deletes its rows in all of them.
 
 **`case_definitions`** — one row per case, keyed by `case_code`. Holds the charge sheet: `title`, `accused`, `deceased`, `act_alleged`, `background`, `agreed_facts` (a JSON array of strings), `question` and `scope_note`. `schema.sql` seeds the only row, `T-001`, and the app reads the case from here at runtime rather than from any copy in the code.
 
-**`trials`** — one row per run: `id` (a UUID — the `:id` in every route above), `case_code`, `status`, `created_at` and `updated_at`. `status` is `created` or `completed`, and the judge endpoint is what sets `completed`.
+**`trials`** — one row per run: `id` (a UUID — the `:id` in every route above), `case_code`, `status`, `created_at` and `updated_at`. `status` is `created` until every judge has a final outcome — a ruling, or a failure the chain gave up on — and then `completed`, set by whichever judge finishes last.
 
 **`representative_arguments`** — one row per representative whose argument was kept: `trial_id`, `role`, `seat` (`defense` or `prosecution`), `argument_text` and `model_used`. There is at most one row per trial and role, so a representative that needed several attempts still counts once; this table and `judge_rulings` are what the sidebar's "N of 7" counts. Discarded attempts never land here — they live in `api_call_logs`.
 
@@ -136,12 +136,18 @@ Every file tracked in the repository. `node_modules/` and `.netlify/` are genera
 ├── supabase/schema.sql               all six tables, the seeded case, RLS, grants
 ├── tests/                            npm test — no network, spends no quota
 │   ├── retry-logic.test.js           the escalation chain, from the real TypeScript
-│   ├── render-cards.test.js          app.js run against a stub DOM
-│   └── shared-constants.test.js      values duplicated across files still agree
+│   ├── trial-status.test.js          when a trial is marked completed
+│   ├── render-cards.test.js          app.js: card rendering and failed requests
+│   ├── shared-constants.test.js      values duplicated across files still agree
+│   ├── docs.test.js                  README, SPEC.md and CLAUDE.md agree with the code
+│   └── support/                      setup shared by the suites above
+│       ├── compile-backend.js        compiles the real backend TypeScript
+│       ├── fake-supabase.js          an in-memory Supabase, for running the backend
+│       └── load-app.js               runs the real app.js against a stub DOM
 ├── netlify.toml                      build settings and the /api/* routes
 ├── package.json, package-lock.json
 ├── tsconfig.json                     type-checks netlify/functions (not app.js)
-├── .env.example                      the four environment variables
+├── .env.example                      every environment variable the backend reads
 ├── .gitignore
 ├── .vscode/settings.json             turns format-on-save off for this workspace
 ├── SPEC.md                           the requirements, from the course's Case Design Dossier
@@ -160,10 +166,16 @@ npm install
 cp .env.example .env   # fill in OPENROUTER_API_KEY, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
 npm run dev             # netlify dev — serves the static frontend and functions locally
 npm run typecheck       # tsc --noEmit
-npm test                # three regression suites (see below)
+npm test                # five regression suites (see below)
 ```
 
-`npm test` needs no network and spends no quota. It runs three suites over the real source rather than copies of it: the retry/escalation logic, compiled from the shipped TypeScript with the project's own `tsc` and driven against a mocked `fetch`; the card-render path, by executing `app.js`'s real top-level code against a stub DOM; and the cross-file constants, by reading the files that duplicate a value and asserting they still agree.
+`npm test` needs no network and spends no quota. Every suite runs the real source rather than a copy of it — the backend compiled from its TypeScript with the project's own `tsc`, and `app.js` executed against a stub DOM:
+
+- `tests/retry-logic.test.js` — the escalation chain, driven against a mocked `fetch`.
+- `tests/trial-status.test.js` — when a trial is marked completed, against an in-memory stand-in for Supabase, including the real judge endpoint end to end.
+- `tests/render-cards.test.js` — `app.js`'s card rendering, and how it reports a request that fails outright.
+- `tests/shared-constants.test.js` — values that are deliberately duplicated across files still agree.
+- `tests/docs.test.js` — this README, `SPEC.md` and the requirement parts of `CLAUDE.md` still say what the code does. Every file, route, table, column, threshold, price and badge they describe is checked against its source, so changing one without the other fails the suite.
 
 `netlify dev` costs no Netlify credits — it never touches the cloud build/deploy pipeline. It does reach the real OpenRouter API for any representative/judge call, so local testing still spends real quota.
 
