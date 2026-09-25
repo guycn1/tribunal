@@ -57,6 +57,7 @@ function check(name, condition, detail) {
  */
 function makeElement(tag = 'div') {
   const kids = [];
+  const classes = new Set();
   const el = {
     tagName: String(tag).toUpperCase(),
     kids,
@@ -69,7 +70,22 @@ function makeElement(tag = 'div') {
     clientHeight: 0,
     hidden: false,
     parentElement: null,
-    classList: { add() {}, remove() {}, toggle() {}, contains: () => false },
+    // Tracked for real, not a no-op: the loading overlay, the sidebar lock
+    // and the Abort button are all shown and hidden through classes, and a
+    // no-op here once let a check pass with the overlay stuck on screen.
+    // className stays a separate plain string, unlike a real DOM - no check
+    // reads a class that was set through className.
+    classList: {
+      add: (...names) => names.forEach((name) => classes.add(name)),
+      remove: (...names) => names.forEach((name) => classes.delete(name)),
+      toggle(name, force) {
+        const on = force === undefined ? !classes.has(name) : Boolean(force);
+        if (on) classes.add(name);
+        else classes.delete(name);
+        return on;
+      },
+      contains: (name) => classes.has(name),
+    },
     addEventListener() {},
     removeEventListener() {},
     getBoundingClientRect: () => ({ top: 0, bottom: 0, left: 0, right: 0, width: 0, height: 0 }),
@@ -345,17 +361,46 @@ async function requestFailureChecks() {
   // fetch() rejects, rather than resolving with an error status, when the
   // server is never reached - offline, DNS, connection refused.
   const unreachable = async () => { throw new TypeError('Failed to fetch'); };
-  const controlsRestored = () =>
-    state.running === false && state.loadingTrial === false && state.abortController === null && el.newTrialBtn.disabled === false;
+
+  /** Puts the page back as index.html starts it, with nothing running. */
+  function resetToIdle() {
+    state.running = false;
+    state.loadingTrial = false;
+    state.abortController = null;
+    el.newTrialBtn.disabled = false;
+    el.abortBtn.classList.add('hidden');
+    el.mainLoadingOverlay.classList.add('hidden');
+    el.sidebar.classList.remove('loading-locked');
+  }
 
   /**
-   * Runs one flow under a given fetch stub, and reports whether it
-   * rejected - the failure mode being guarded against.
+   * Whether the page is idle again: nothing running, both buttons back to
+   * normal, and the loading overlay and sidebar lock gone.
+   * @returns {boolean}
+   */
+  function isIdle() {
+    return (
+      state.running === false &&
+      state.loadingTrial === false &&
+      state.abortController === null &&
+      el.newTrialBtn.disabled === false &&
+      el.abortBtn.classList.contains('hidden') &&
+      el.mainLoadingOverlay.classList.contains('hidden') &&
+      !el.sidebar.classList.contains('loading-locked')
+    );
+  }
+
+  /**
+   * Runs one flow under a given fetch stub, from an idle page, and reports
+   * whether it rejected - the failure mode being guarded against. Starting
+   * each flow idle keeps one broken flow from cascading into failures in
+   * every flow after it, which would hide which one actually broke.
    * @param {() => Promise<void>} flow
    * @param {typeof global.fetch} fetchStub
    * @returns {Promise<unknown>} What it rejected with, or null.
    */
   async function run(flow, fetchStub) {
+    resetToIdle();
     alerts.length = 0;
     global.fetch = fetchStub;
     try {
@@ -370,7 +415,7 @@ async function requestFailureChecks() {
   let rejection = await run(beginTrial, unreachable);
   check('an unreachable server does not reject', rejection === null, String(rejection));
   check('the user is told the server could not be reached', alerts.length === 1 && /could not be reached/.test(alerts[0]), JSON.stringify(alerts));
-  check('the controls are restored', controlsRestored());
+  check('the controls, overlay and sidebar are restored', isIdle());
 
   rejection = await run(beginTrial, async () => ({ ok: false, status: 502, json: async () => { throw new SyntaxError('Unexpected token <'); } }));
   check('a non-JSON error page does not reject', rejection === null, String(rejection));
@@ -383,17 +428,23 @@ async function requestFailureChecks() {
   rejection = await run(() => loadTrial('some-trial'), unreachable);
   check('an unreachable server does not reject', rejection === null, String(rejection));
   check('the user is told the server could not be reached', alerts.length === 1 && /could not be reached/.test(alerts[0]), JSON.stringify(alerts));
-  check('the loading overlay is released', controlsRestored());
+  check('the loading overlay and sidebar are released', isIdle());
 
   rejection = await run(() => loadTrial('some-trial'), async () => ({ ok: true, status: 200, json: async () => { throw new SyntaxError('Unexpected end of JSON input'); } }));
   check('an unreadable reply does not reject', rejection === null, String(rejection));
   check('it is reported as a trial that could not be loaded', alerts.length === 1 && alerts[0] === 'Could not load that trial.', JSON.stringify(alerts));
 
   console.log('\n=== A run whose final call-log refresh fails ===');
-  // A whole trial, end to end, with every wait made instant: sleep() and
-  // the pollers all go through setTimeout.
+  // A whole trial, end to end, on a virtual clock. sleep() and the pollers
+  // wait through setTimeout, and the pollers give up by Date.now(), so both
+  // are driven here. Making the waits instant without advancing the clock
+  // would turn a poll that never resolves into a real 700-second spin -
+  // a hung suite rather than a failed check.
   const realSetTimeout = global.setTimeout;
-  global.setTimeout = (fn) => { setImmediate(fn); return 0; };
+  const realNow = Date.now;
+  let virtualMs = 0;
+  Date.now = () => realNow() + virtualMs;
+  global.setTimeout = (fn, ms = 0) => { virtualMs += ms; setImmediate(fn); return 0; };
   const caseDef = { title: 'T-001', accused: 'a', deceased: 'd', actAlleged: 'x', background: 'p', agreedFacts: [], question: 'q', scopeNote: 's' };
   const record = {
     trial: { id: 'run-1' }, caseDef, agentProgress: {}, apiCallLogs: [],
@@ -413,12 +464,13 @@ async function requestFailureChecks() {
     throw new Error(`unexpected request: ${method} ${url}`);
   });
   global.setTimeout = realSetTimeout;
+  Date.now = realNow;
   check('the run does not reject', rejection === null, String(rejection));
   check('the refresh really was the request that failed', trialReads === 3, String(trialReads));
   check('the missing call log is reported', alerts.length === 1 && /call log could not be loaded/.test(alerts[0]), JSON.stringify(alerts));
   check('the run history is still refreshed after it', historyReads === 1, String(historyReads));
   check('every result from the run stays on screen', [...Object.values(state.representatives), ...Object.values(state.judges)].every((e) => e.status === 'success') && Object.keys(state.judges).length === JUDGE_ROLES.length);
-  check('the controls are restored', controlsRestored());
+  check('the controls, overlay and sidebar are restored', isIdle());
 }
 
 requestFailureChecks().then(
