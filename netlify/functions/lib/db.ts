@@ -16,12 +16,13 @@ import type {
 // Written by abort.ts, one row per role still pending when the user clicked
 // Abort. This is a factual record of a client-side decision ("the browser
 // stopped waiting on this call, at the user's request") rather than a claim
-// about what happened server-side - the Netlify invocation for that role
-// may separately still complete on its own and log its own real outcome,
-// since aborting a fetch() client-side does not reliably stop the function
-// invocation it was talking to. Both rows are legitimate; this schema
-// already allows multiple api_call_logs rows per role per trial (each
-// retry attempt already produces its own row).
+// about what happened server-side - the browser cannot cancel the
+// Background Function running that role, so it may still finish the
+// attempt it is on and log that attempt's real outcome. (It checks for
+// this row between attempts and stops there - see isTrialAborted below -
+// and never saves a result into an aborted trial.) Both rows are
+// legitimate; this schema already allows multiple api_call_logs rows per
+// role per trial (each retry attempt already produces its own row).
 //
 // No trials.status enum change needed for this - "aborted" is derived here
 // the same way hadFailures already is, by checking api_call_logs for this
@@ -82,15 +83,15 @@ export async function listTrials(limit = 50): Promise<TrialSummary[]> {
   let abortedTrialIds = new Set<string>();
   const resultCounts = new Map<string, number>();
 
-  // Four follow-up queries, none of which depend on each other's results -
-  // only on `ids` from the trials query above - so there is no reason for
-  // them to run one after another. They previously did (three sequential
-  // round trips, one of them two separate queries against the same table),
-  // which was a real, measured contributor to the run-history sidebar
-  // occasionally taking several seconds to populate. Now: one combined
-  // query against api_call_logs (status and error_message both pulled in
-  // one pass, since failedTrialIds and abortedTrialIds are both derived
-  // from it) plus the two result-count queries, all fired together.
+  // The follow-up queries depend only on `ids` from the trials query above,
+  // not on each other's results, so there is no reason for them to run one
+  // after another. They previously did: four queries in three sequential
+  // round trips, two of them separate queries against the same table -
+  // a real, measured contributor to the run-history sidebar occasionally
+  // taking several seconds to populate. Now: one combined query against
+  // api_call_logs (status and error_message both pulled in one pass, since
+  // failedTrialIds and abortedTrialIds are both derived from it) plus the
+  // two result-count queries - three queries, all fired together.
   if (ids.length > 0) {
     const [
       { data: logs, error: logsError },
@@ -324,10 +325,11 @@ const GLOBAL_CALL_WINDOW_MS = 24 * 60 * 60 * 1000;
 // toward the very total this function checks, which would make a trip of
 // the cap self-perpetuating: once tripped, every subsequent check would
 // see its own past rejections and stay tripped for the rest of the
-// window even if real traffic had stopped. The caller still returns a
-// clear, real error to the client either way (see
-// representative-background.ts / judge-background.ts) - it just isn't
-// persisted.
+// window even if real traffic had stopped. The caller still returns an
+// error and writes a console.warn (see representative-background.ts /
+// judge-background.ts), but as a Background Function its response never
+// reaches the browser - a trip is visible only in Netlify's function
+// logs.
 //
 // This whole cap exists to bound worst-case spend on the real, public,
 // deployed site - not to constrain the developer's own local testing,
@@ -386,9 +388,9 @@ export async function isGlobalCallCapExceeded(): Promise<{ exceeded: boolean; co
 // stop rather than carry on alone against a trial the user has visibly
 // walked away from.
 //
-// Fails CLOSED-to-continuing on error - a Supabase hiccup returns false
-// ("not aborted"), so a transient lookup failure can never silently kill a
-// real, wanted call. Spending a little extra on a call the user abandoned
+// Fails open on error - a Supabase hiccup returns false ("not aborted"),
+// so the call carries on, and a transient lookup failure can never
+// silently kill a real, wanted call. Spending a little extra on a call the user abandoned
 // is the far cheaper mistake of the two.
 export async function isTrialAborted(trialId: string): Promise<boolean> {
   const supabase = getSupabaseClient();

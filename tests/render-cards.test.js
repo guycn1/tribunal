@@ -1,6 +1,7 @@
 /**
- * @file Regression tests for public/app.js: its agent-card render path, and
- * how it reports a request that fails outright.
+ * @file Regression tests for public/app.js: its agent-card and call-log
+ * render paths, how it shortens model ids, and how it reports a request
+ * that fails outright.
  *
  * Run with `npm test`. No framework and no browser: app.js's real source is
  * executed against a minimal DOM stub, and the functions under test are
@@ -21,6 +22,10 @@
  *      opening one from history, and the call-log refresh after a run all
  *      used to let a network failure escape as an uncaught rejection, so a
  *      click appeared to do nothing and the error reached only the console.
+ *   4. The call log must say what actually happened: a capped response is
+ *      "Truncated" and an incoherent one "Degenerated", every cell carries
+ *      its column name for the narrow card layout, and a model id is
+ *      shortened by rule without losing the date stamp.
  */
 
 const { installDom, loadApp } = require('./support/load-app');

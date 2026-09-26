@@ -11,8 +11,9 @@
  * chain that silently never escalated, a timeout ceiling that ignored
  * prompt size, a degeneration check blind to its most common signature, a
  * fractional millisecond that would have crashed half of all real calls,
- * and a fast-429 storm that escalated to a costlier tier within five seconds.
- * Each one below is a test, so none of them can quietly come back.
+ * a fast-429 storm that escalated to a costlier tier within five seconds,
+ * and a backoff pause timed as part of the attempt before it. Each one
+ * below is a test, so none of them can quietly come back.
  */
 
 const { compileBackend } = require('./support/compile-backend');

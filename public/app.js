@@ -185,11 +185,11 @@ const JUDGE_ROLES = ['barak', 'elon', 'shamgar'];
 const ABORTED_BY_USER_MESSAGE = 'Aborted by user before this call could complete.';
 
 // The six marker constants below must match their exports in
-// netlify/functions/lib/openrouter.ts exactly - used by renderCallLog() to
-// tell a discarded-but-recovered attempt (the role went on to succeed or is
-// still trying a further tier) from a discarded-and-fatal one (this was the
-// last available tier and it failed too), and to pick the right badge for
-// each. There is no import to keep them in step - this file is served as
+// netlify/functions/lib/openrouter.ts exactly - used by deriveRoleStates()
+// and renderCallLog() to tell a discarded-but-recovered attempt (the role
+// went on to succeed or is still trying a further tier) from a
+// discarded-and-fatal one (the chain had nothing left to try), and by
+// renderCallLog() to pick the right badge for each. There is no import to keep them in step - this file is served as
 // plain static JS with no build step - so tests/shared-constants.test.js
 // asserts the two sets match instead. Add a marker there, add it here.
 //
@@ -212,9 +212,9 @@ const DEGENERATE_RETRIED_DIFF_MODEL_MARKER = '[degenerate-retried-diff-model]';
  */
 const DEGENERATE_FINAL_MARKER = '[degenerate-final]';
 /**
- * A fallback tier's model rejected the request outright (e.g. a removed
- * model id - see the `!response.ok` branch this marker comes from in
- * openrouter.ts) and the chain escalated straight to the next tier. Same
+ * A tier's model rejected the request outright (e.g. a removed model id -
+ * see the `!response.ok` branch this marker comes from in openrouter.ts)
+ * and the chain escalated straight to the next tier. Same
  * "not a terminal outcome" treatment as the two DEGENERATE_RETRIED_*
  * markers above.
  */
@@ -772,8 +772,9 @@ async function abortCurrentTrial() {
 // concurrency.
 //
 // Kept rather than removed or "restored," deliberately. The original
-// 3-vs-4 reading dates from the free-tier era and has since been overtaken
-// by evidence: every clean run behind this project's reliability record was
+// 3-vs-4 reading came from two runs on 2026-08-28 - on today's default
+// model, but while the agent calls were still synchronous functions - and
+// has since been overtaken by evidence: every clean run behind this project's reliability record was
 // actually made at 4 concurrent, not 3, so there is no demonstrated problem
 // left to solve. A bounded dispatch plus the stagger is still a sensible
 // thing to keep pointed at the per-IP limiter.
@@ -866,8 +867,8 @@ function sleep(ms, signal) {
  * The agent endpoints now run as Netlify Background Functions (see
  * config.background in each) - the fix for a verified, load-bearing
  * problem: Netlify's real free-tier synchronous function limit is 10
- * seconds, while every real OpenRouter call measured on this project has
- * taken 8-18s+ per attempt, before any retry. A standard invocation could
+ * seconds, while every real OpenRouter call measured on this project at
+ * the time had taken 8-18s+ per attempt, before any retry. A standard invocation could
  * not reliably survive that gap no matter how the internal retry/timeout
  * budget was tuned. Background Functions get up to 15 minutes instead -
  * but the platform responds 202 immediately and runs the handler
@@ -1585,8 +1586,8 @@ function buildAgentStatusBody(entry, role, verb) {
   // still be running server-side (Background Functions get up to 15
   // minutes) - polling just stopped waiting on this page. Worded to say
   // that honestly rather than implying the call itself is known to have
-  // failed, since it may not have. See pollForRoles() in the trigger/poll
-  // rewrite for what actually produces this status.
+  // failed, since it may not have. See pollForRoles() for what actually
+  // produces this status.
   if (entry.status === 'timeout') {
     const wrap = document.createElement('div');
     const badge = document.createElement('span');
@@ -1698,10 +1699,11 @@ const SCROLLBAR_FADE_MS = 220;
  * pseudo-classes for a genuine :hover-driven CSS rule to key off, but a
  * plain custom-property value it's already reading recalculates on
  * every write exactly like Chromium does, so the same JS loop works
- * identically there. The dragging tier is untouched - real
- * ::-webkit-scrollbar-thumb:active, snapping instantly, unaffected by
- * any of this - direct-manipulation feedback to a physical mouse press
- * arguably should stay instant, not fade in.
+ * identically there. The dragging tier is separate and untouched by any of
+ * this - a ::-webkit-scrollbar-thumb:active rule, snapping instantly, since
+ * direct-manipulation feedback to a physical mouse press arguably should
+ * stay instant, not fade in. It does not render in current Chrome, Edge or
+ * Firefox, though - see the scrollbar comments in styles.css.
  *
  * @param {HTMLElement} el The element to watch for the pointer. The opacity
  *   is written to its --scrollbar-thumb-opacity custom property, which a
@@ -2090,8 +2092,8 @@ function renderCallLog() {
     const isRetriedDiffModel = err.startsWith(DEGENERATE_RETRIED_DIFF_MODEL_MARKER);
     const isDegenerateRetried = isRetriedSameModel || isRetriedDiffModel;
     const isDegenerateFinal = err.startsWith(DEGENERATE_FINAL_MARKER);
-    // A fallback tier's model rejected the request outright (e.g. a
-    // removed model id) and the chain escalated to the next tier - see
+    // A tier's model rejected the request outright (e.g. a removed model
+    // id) and the chain escalated to the next tier - see
     // HTTP_ERROR_ESCALATED_MARKER's own comment above. Always an
     // escalation to a different model, never a same-model retry (unlike
     // the degenerate/truncation case), since retrying the exact same
@@ -2120,9 +2122,8 @@ function renderCallLog() {
 
     // A response still truncated after every attempt the escalation chain
     // allows is now a real failure (openrouter.ts), correctly shown via
-    // the status column
-    // below - this badge only still fires for historical rows recorded
-    // before that change, where the log genuinely says 'success' with a
+    // the status column below - this badge only still fires for historical
+    // rows recorded before that change, where the log genuinely says 'success' with a
     // completion that's an exact multiple of the cap (1x from an older,
     // single-attempt truncation, or 2x from a retry that also truncated
     // before this fix existed). Same reasoning and formula as isTruncated().
@@ -2173,11 +2174,12 @@ function renderCallLog() {
         </div>
       `;
     } else if (isDegenerateFinal) {
-      // Red, not yellow - this is the LAST fallback tier failing too, with
-      // nothing left to fall back to. As fatal as a 404/429/500. (Last,
-      // not priciest: tier 4 is actually cheaper per call than tier 3 -
-      // see the pricing note in openrouter.ts. What makes this red is that
-      // the chain is out of options, not what the attempt cost.)
+      // Red, not yellow - the chain has nothing left to fall back to: the
+      // last tier failed too, or the time budget ran out before another
+      // tier could be tried. As fatal as a 404/429/500. (Last, not
+      // priciest: tier 4 is actually cheaper per call than tier 3 - see
+      // the pricing note in openrouter.ts. What makes this red is that the
+      // chain is out of options, not what the attempt cost.)
       statusCellHtml = `<span class="badge badge-fail">${hitTokenCap ? 'Truncated' : 'Degenerated'}</span>`;
     } else {
       const statusBadge = entry.status === 'success' ? 'badge-ok' : 'badge-fail';

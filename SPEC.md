@@ -60,4 +60,4 @@ Daenerys attacks King's Landing. The city surrenders, but Daenerys burns streets
 
 ---
 
-How this repo actually satisfies the above — the specific model(s) used, cost/reliability engineering, anti-abuse measures, exact schema, and every decision behind them — is documented in `README.md` (current state) and `CLAUDE.md` (full running log), not repeated here.
+How this repo actually satisfies the above — the specific model(s) used, cost/reliability engineering, anti-abuse measures, the database (defined in `supabase/schema.sql`, and mapped in `README.md`), and every decision behind them — is documented in `README.md` (current state) and `CLAUDE.md` (full running log), not repeated here.

@@ -19,8 +19,8 @@ import { logApiCall, ABORTED_BY_USER_MESSAGE } from './lib/db';
 //      rather than as a generic failure - or as a falsely-clean success, if
 //      an abandoned call happens to finish anyway.
 //   2. It is also the ONLY durable, server-visible signal that the abort
-//      happened, and the agent Background Functions poll for it: a client
-//      aborting its own fetch() cannot stop a Background Function, so each
+//      happened, and the agent Background Functions poll for it: the
+//      browser has no way to cancel a Background Function, so each
 //      in-flight call checks isTrialAborted() between attempts and stops
 //      itself (see the isAborted callback on callOpenRouter, and
 //      isTrialAborted in db.ts).

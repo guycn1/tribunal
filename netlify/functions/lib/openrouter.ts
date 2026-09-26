@@ -3,10 +3,12 @@ import { getTruncationFallbackModel, getTopTierFallbackModel, getLastResortFallb
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
-// Retries are bounded by a total time budget rather than a fixed attempt
-// count, so a call that fails fast (e.g. a burst rate limit, returned in
-// under a second) gets more attempts than one where each try genuinely
-// takes most of the budget.
+// Retries are bounded two ways: each escalation tier's own attempt count
+// (see buildRetryTiers below), and a total time budget over the whole
+// chain. A call that fails fast (e.g. a burst rate limit, returned in
+// under a second) gets a few extra same-model retries that don't count
+// against its tier - see FAST_FAILURE_THRESHOLD_MS - while one where each
+// try genuinely takes most of its ceiling uses up its tier's attempts.
 //
 // representative-background.ts/judge-background.ts now run as Netlify
 // Background Functions (config.background = true), not standard
@@ -86,31 +88,38 @@ const MAX_FAST_TRANSIENT_RETRIES_PER_TIER = 4;
 // real incident where judge calls timed out repeatedly against a ceiling
 // that only ever considered max_tokens. A judge's prompt carries the full
 // case record plus all four representative arguments. Counted across every
-// successful call in api_call_logs: a judge prompt runs a median of 3896
-// tokens (mean 3943, p90 4483), a representative's 1028 (mean 1166, p90
-// 2068) - so a judge carries something like 3.8x a representative's
-// prompt, not the "roughly 4.5x" this comment used to claim. The old
-// formula gave both the identical 43000ms. Real measured judge completions
-// on the default model in that incident: 26.9s, 33.9s, and 43.2s - the
-// last of those finishing with under 0ms to spare against that very
-// ceiling, with several sibling attempts timing out outright just past it.
-// A ceiling that half the real distribution overruns isn't a safety limit,
-// it's a coin flip, so prompt size now feeds it directly.
+// successful call in api_call_logs as of 2026-09-21: a judge prompt runs a
+// median of 3896 tokens (mean 3943, p90 4483), a representative's 1028
+// (mean 1166, p90 2068) - so a judge carries something like 3.8x a
+// representative's prompt, not the "roughly 4.5x" this comment used to
+// claim. The old formula gave both the identical 43000ms. Real measured
+// judge completions on the default model in that incident: 26.9s, 33.9s,
+// and 43.2s - the last of those at that very ceiling (a logged duration
+// can read slightly over it, since it also covers the progress write made
+// just before the request starts), with several sibling attempts timing
+// out outright just past it. A ceiling that half the real distribution
+// overruns isn't a safety limit, it's a coin flip, so prompt size now
+// feeds it directly.
 //
-// Sum of attempt ceilings across the whole escalation chain, for a prompt
-// of typical size: a judge at 4550 tokens comes to 648.6s and a
-// representative at 1030 to 587.0s, both just inside the 650s budget.
-// Those two figures are what the budget was sized against.
+// Sum of attempt ceilings across the whole escalation chain: a judge at
+// 4550 prompt tokens (the incident's judges - above p90, so a deliberately
+// generous case) comes to 648.6s, and a representative at 1030 (about the
+// median) to 587.0s, both just inside the 650s budget. Those two figures
+// are what the budget was sized against.
 //
 // It is NOT inside the budget by construction, which this comment used to
 // claim. The ceiling scales with prompt size and real prompts have a long
-// tail - the largest judge prompt in the log is 11318 tokens, which sums
-// to 767s, over budget by nearly two minutes. Even p90 (4483) only reaches
-// 647.5s, so the tail has to be genuinely unusual before this bites, and
-// it bites safely when it does: remainingMs() clamps the last attempt and
-// the loop reports honestly that the budget ran out before a further tier
-// could be tried. The effect of an outsized prompt is fewer tiers actually
-// reached, not a silent overrun.
+// tail - the largest judge prompt in the log (as of 2026-09-21) is 11318
+// tokens, which sums to 767s, over budget by nearly two minutes. Even p90
+// (4483) only reaches 647.5s, so the tail has to be genuinely unusual
+// before this bites, and it bites safely when it does: remainingMs()
+// clamps the last attempt and the loop reports honestly that the budget
+// ran out before a further tier could be tried. The effect of an outsized
+// prompt is fewer tiers actually reached, not a silent overrun.
+//
+// The result is also clamped: never under 30000ms, and never over the
+// whole budget less MIN_REMAINING_TO_ATTEMPT_MS.
+//
 // Math.round is load-bearing, not tidiness: the prompt term uses a
 // fractional multiplier, so an odd token estimate yields a half
 // millisecond - and AbortSignal.timeout() throws outright on a
@@ -298,18 +307,19 @@ function detectDegenerateRun(content: string): { degenerate: boolean; runLength:
 // you.", "I agree.") can never trip it either.
 //
 // It works on real output, not just on the corpus it was calibrated
-// against: counted from api_call_logs, this check has caught six natural
-// live cases, all on the tier-1 default model, at 4 to 8 verbatim repeats
-// each - five on the day it shipped (tyrion_lannister twice, grey_worm
-// three times) and one on the deployed site the next day, grey_worm again,
-// at exactly the 4-repeat threshold. That last one is the only catch so
-// far that happened in production rather than in local testing, and it is
-// worth knowing what it cost to miss: the response had finish_reason=stop
-// at 604 tokens, so without this check it would have been saved and shown
-// as a perfectly ordinary successful argument. The older run-on check
-// above has caught two, both grey_worm, both on the tier-2 model of the
-// time, at 180 and 84 words - far past the 40-word line, and the 84-word
-// one was read in full and confirmed degenerate.
+// against: counted from api_call_logs as of 2026-09-26, this check has
+// caught seven natural live cases, all on the tier-1 default model, at 4
+// to 8 verbatim repeats each - five in local testing on the day it
+// shipped (tyrion_lannister twice, grey_worm three times), then two on the
+// deployed site the next day: grey_worm again, at exactly the 4-repeat
+// threshold, and later a judge, the first catch on a judge (shamgar, 5
+// repeats). The first production catch is worth knowing what it cost to
+// miss: the response had finish_reason=stop at 604 tokens, so without
+// this check it would have been saved and shown as a perfectly ordinary
+// successful argument.
+// The older run-on check above has caught two, both grey_worm, both on the
+// tier-2 model of the time, at 180 and 84 words - far past the 40-word
+// line, and the 84-word one was read in full and confirmed degenerate.
 //
 // On false positives, the honest answer is that they are mostly not
 // auditable here, and this should not be reported as if it were a clean
@@ -368,12 +378,12 @@ const CONCISENESS_REMINDER: OpenRouterMessage = {
 };
 
 // Every discarded attempt - whatever discarded it: truncation or
-// degeneration, a plain HTTP failure at that tier, a transient failure, or
-// an abort caught between attempts - gets logged as its own real row via
-// logApiCall(), not folded silently into whichever attempt was
-// eventually kept - the whole point being that a reader of the call log
-// can see that a role needed a fallback at all, not just its final
-// outcome. All six marker prefixes below are duplicated as literal strings
+// degeneration, a plain HTTP failure at that tier, or a transient failure
+// - gets logged as its own real row via logApiCall(), not folded silently
+// into whichever attempt was eventually kept, and so does a call that
+// stops itself because the trial was aborted - the whole point being that
+// a reader of the call log can see that a role needed a fallback at all,
+// not just its final outcome. All six marker prefixes below are duplicated as literal strings
 // in app.js (same pattern as ABORTED_BY_USER_MESSAGE, which is defined in
 // db.ts and copied there too) so the frontend can tell a
 // discarded-but-recovered attempt from a discarded-and-fatal one without
@@ -405,10 +415,11 @@ const CONCISENESS_REMINDER: OpenRouterMessage = {
 export const DEGENERATE_RETRIED_SAME_MODEL_MARKER = '[degenerate-retried-same-model]';
 export const DEGENERATE_RETRIED_DIFF_MODEL_MARKER = '[degenerate-retried-diff-model]';
 export const DEGENERATE_FINAL_MARKER = '[degenerate-final]';
-// A plain HTTP-level failure (bad/removed model id, permissions, etc.) at a
-// fallback tier, discarded in favor of escalating to the next tier - see
-// the `!response.ok` branch below for why this needed its own marker
-// rather than falling straight to a terminal failure() the way it used to.
+// A plain HTTP-level failure (bad/removed model id, permissions, etc.) at
+// any tier but the last, discarded in favor of escalating to the next
+// tier - see the `!response.ok` branch below for why this needed its own
+// marker rather than falling straight to a terminal failure() the way it
+// used to.
 // No same-model variant: unlike truncation/degeneracy, retrying the exact
 // same model that just returned e.g. a 404 has no plausible upside, so
 // this always escalates straight to the next tier rather than spending
@@ -482,10 +493,11 @@ export interface OpenRouterResult {
   // above, which are likewise this attempt's own, not a running total.
   durationMs: number;
   // Attempts discarded before this result was reached, whatever discarded
-  // them - truncation/degeneration, a plain HTTP failure at that tier, a
-  // transient failure, or an abort caught between attempts. Each one gets
-  // its own logApiCall() row alongside this result's own row. Empty on the
-  // common path (no retry or escalation needed).
+  // them - truncation/degeneration, a plain HTTP failure at that tier, or a
+  // transient failure. Each one gets its own logApiCall() row alongside
+  // this result's own row (written live, through onDiscardedAttempt). An
+  // abort is not in here: it ends the chain, so it is this result itself.
+  // Empty on the common path (no retry or escalation needed).
   discardedAttempts?: DiscardedAttempt[];
 }
 
@@ -499,22 +511,22 @@ export async function callOpenRouter(
   messages: OpenRouterMessage[],
   maxTokens: number,
   label: string,
-  // Fired the moment a discarded attempt is decided (see the `continue`
-  // branch below), before the chain moves on to the next attempt/tier -
-  // lets the caller persist it to the DB immediately, rather than only
-  // after this whole function returns. That is what puts each discarded
-  // attempt in the call log as it happens, rather than the whole batch
-  // appearing at once after the chain finishes - without it, every
-  // discarded attempt only became visible once the entire chain had
-  // already finished.
+  // Fired the moment a discarded attempt is decided (see
+  // recordFailedAttemptAndAdvance below), before the chain moves on to the
+  // next attempt/tier - lets the caller persist it to the DB immediately,
+  // rather than only after this whole function returns. That is what puts
+  // each discarded attempt in the call log as it happens: before it
+  // existed, representative-background.ts/judge-background.ts logged the
+  // whole discardedAttempts array in one batch after awaiting this
+  // function, so every discarded attempt only became visible once the
+  // entire chain had already finished.
   //
   // Note what this does NOT do, since it used to claim otherwise: it is
   // not what shows a live card "currently trying X". A discarded attempt
   // is by definition over, so this is always one step behind whatever is
   // actually in flight. onAttemptStart below is what covers that, and the
-  // two exist separately for exactly this reason. (see representative-
-  // background.ts/judge-background.ts, which used to log the whole
-  // discardedAttempts array in one batch after awaiting this function).
+  // two exist separately for exactly this reason.
+  //
   // Optional and fire-and-forget-tolerant (awaited if it returns a
   // promise, but a rejection here should never break the actual retry
   // logic) - a caller that doesn't care about live progress can simply
@@ -711,9 +723,10 @@ export async function callOpenRouter(
         } catch (err) {
           // Never let a logging failure interrupt the actual escalation -
           // this callback exists purely to make progress visible sooner,
-          // not to gate whether the chain can keep going. The final row
-          // logged by the caller still carries the complete
-          // discardedAttempts array as a fallback if a live write is lost.
+          // not to gate whether the chain can keep going. The cost is that
+          // an attempt whose write fails is missing from the call log: the
+          // agent functions log only their final result afterwards, not
+          // the returned discardedAttempts array, so nothing re-writes it.
           console.warn(`[openrouter] ${label}: onDiscardedAttempt callback failed, continuing anyway: ${err instanceof Error ? err.message : String(err)}`);
         }
       }
@@ -805,10 +818,11 @@ export async function callOpenRouter(
           // into "He knew that I was a threat to the realm. He knew that I
           // was a threat to his sisters..." repeated for the entire
           // remaining budget, on both the original attempt and the
-          // truncation retry below - the retry's added instruction only
-          // addresses length, not repetition, so it couldn't have fixed
-          // this on its own. Still comfortably short of values (near the
-          // +/-2.0 ends) that visibly distort normal prose.
+          // truncation retry of the time - whose added instruction then
+          // addressed only length, not repetition, so it couldn't have
+          // fixed this on its own (CONCISENESS_REMINDER covers both now).
+          // Still comfortably short of values (near the +/-2.0 ends) that
+          // visibly distort normal prose.
           frequency_penalty: 0.7,
           presence_penalty: 0.35,
         }),
@@ -836,12 +850,14 @@ export async function callOpenRouter(
         lastError = `OpenRouter returned HTTP 429 (rate limited)`;
         console.log(`[openrouter] ${label}: attempt ${attempt} - ${lastError}, retrying`);
         {
-          // Counted against this tier's attempt budget like any other
+          // A fast bounce gets a few free same-model retries first (see
+          // FAST_FAILURE_THRESHOLD_MS); past those, or for a slow one, it
+          // counts against this tier's attempt budget like any other
           // failure, so a rate-limited tier escalates to the next model
           // instead of hammering the same one until the budget drains.
-          // Escalating is a genuinely good response to a rate limit: the
-          // next tier is a different model, often on a different provider
-          // path entirely.
+          // Escalating is a genuinely good response to a persistent rate
+          // limit: the next tier is a different model, often on a
+          // different provider path entirely.
           const next = await recordFailedAttemptAndAdvance({
             marker: TRANSIENT_RETRIED_MARKER,
             model: attemptModel,
@@ -865,9 +881,9 @@ export async function callOpenRouter(
       if (response.status === 402) {
         // Real credit exhaustion on a paid account - the balance is
         // genuinely at $0, which won't resolve by retrying, so this
-        // returns immediately rather than looping like the 429/5xx
-        // branches above. The wording matters because it is what a reader
-        // actually sees: this message is persisted to
+        // returns immediately rather than retrying like the 429 branch
+        // above and the 5xx branch below. The wording matters because it is
+        // what a reader actually sees: this message is persisted to
         // api_call_logs.error_message and rendered verbatim on the agent's
         // card, so it has to explain itself without a status code beside
         // it. (It used to be matched by an isOutOfCredits() helper in
@@ -915,10 +931,9 @@ export async function callOpenRouter(
         // entire time. This branch used to return a terminal failure()
         // unconditionally, which is what let one dead model id at one
         // tier kill the whole call regardless of how many working tiers
-        // stood after it - the tier-escalation mechanism below only ever
-        // covered the two content-quality failure modes
-        // (truncation/degeneracy), never a plain HTTP failure at a
-        // fallback tier. Escalates straight to the next tier (skipping any
+        // stood after it - at the time, tier escalation covered only the
+        // content-quality failures (truncation/degeneracy), never a plain
+        // HTTP failure. Escalates straight to the next tier (skipping any
         // remaining attempts at this one, unlike the degenerate/truncation
         // path) since retrying the exact same broken model id would just
         // fail identically again - see HTTP_ERROR_ESCALATED_MARKER's own
@@ -1129,14 +1144,16 @@ export async function callOpenRouter(
 // Applied to a terminal failure only when it happened on the LAST
 // escalation tier (tierIndex === tierCount - 1) - i.e. every tier this
 // chain offers was genuinely tried and none of them produced a kept
-// result, regardless of which specific failure mode ended it (a plain
-// HTTP error, exhausted quota, a timeout, or truncation/degeneracy - see
-// the dedicated wording in the DEGENERATE_FINAL_MARKER branch above for
-// that last one specifically). A failure that happens on an EARLIER tier
-// (most commonly: the total time budget ran out before the chain even
-// reached the last tier) is a different, less complete situation and
-// keeps its own specific message instead of falsely claiming every tier
-// was exhausted.
+// result, regardless of which specific failure mode ended it (an HTTP
+// error, a rate limit or exhausted quota, the account out of credits, a
+// timeout or network error, or an empty response). Truncation and
+// degeneration never come through here: the DEGENERATE_FINAL_MARKER
+// branch above words that case itself. A failure that happens on an
+// EARLIER tier (the time budget running out before the chain reached the
+// last tier, say, or a failure no retry can fix, such as the account being
+// out of credits) is a different, less complete situation and keeps its
+// own specific message instead of falsely claiming every tier was
+// exhausted.
 function withTierContext(rawMessage: string, tierIndex: number, tierCount: number, attemptModel: string): string {
   if (tierIndex !== tierCount - 1) return rawMessage;
   return `Every model tier was tried (${tierCount} in total, ending with ${attemptModel}) and none produced a usable response. Last attempt: ${rawMessage}`;
@@ -1190,8 +1207,9 @@ async function describeErrorBody(response: Response): Promise<string> {
 
 // Exponential backoff with jitter, capped so a long backoff never eats the
 // remaining budget that an actual attempt needs. The jitter matters here:
-// the seven agents fire as concurrent requests on one account, and an
-// unjittered backoff makes them all retry in lockstep.
+// the agents in each phase (all four representatives, then all three
+// judges) run concurrently on one account, and an unjittered backoff
+// makes them all retry in lockstep.
 function backoff(attempt: number): Promise<void> {
   const base = Math.min(400 * Math.pow(2, attempt), 2000);
   const delayMs = base + Math.random() * 300;

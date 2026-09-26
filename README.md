@@ -53,7 +53,7 @@ Six tables in Supabase/Postgres. `supabase/schema.sql` is the authority on every
 
 **`case_definitions`** — one row per case, keyed by `case_code`. Holds the charge sheet: `title`, `accused`, `deceased`, `act_alleged`, `background`, `agreed_facts` (a JSON array of strings), `question` and `scope_note`. `schema.sql` seeds the only row, `T-001`, and the app reads the case from here at runtime rather than from any copy in the code.
 
-**`trials`** — one row per run: `id` (a UUID — the `:id` in every route above), `case_code`, `status`, `created_at` and `updated_at`. `status` is `created` until every judge has a final outcome — a ruling, or a failure the chain gave up on — and then `completed`, set by whichever judge finishes last.
+**`trials`** — one row per run: `id` (a UUID — the `:id` in every route above), `case_code`, `status`, `created_at` and `updated_at`. `status` is `created` until every judge has a final outcome logged — a ruling, a failure the chain gave up on, or an abort — and then `completed`, set by the judge endpoint that finds it so. A judge that notices its trial was aborted stops without setting it, so a trial aborted before any judge finished stays `created`.
 
 **`representative_arguments`** — one row per representative whose argument was kept: `trial_id`, `role`, `seat` (`defense` or `prosecution`), `argument_text` and `model_used`. There is at most one row per trial and role, so a representative that needed several attempts still counts once; this table and `judge_rulings` are what the sidebar's "N of 7" counts. Discarded attempts never land here — they live in `api_call_logs`.
 
@@ -74,11 +74,11 @@ One row per real model attempt, including attempts that were discarded in favour
 | Badge | Colour | What triggered it |
 | --- | --- | --- |
 | `success` | green | The attempt returned usable content and was kept. This is the text shown on that agent's card. |
-| `failed` | red | Either a real attempt that failed with no tier or time budget left (the agent's card reads "Call failed"), or the marker row the abort endpoint writes for a role that was still pending when the user stopped the trial — recognisable by a model of `n/a` and zero tokens, and the agent's card reads "Aborted" rather than "Call failed" for that one. |
+| `failed` | red | Either a real attempt that ended the call (the agent's card reads "Call failed") — every tier or the time budget used up, a failure no retry can fix such as the account running out of credits, or a judge reply with no `VERDICT` line — or the marker row the abort endpoint writes for a role that was still pending when the user stopped the trial — recognisable by a model of `n/a` and zero tokens, and the agent's card reads "Aborted" rather than "Call failed" for that one. |
 | `Truncated` | amber | `finish_reason === 'length'` — the model was still writing when it hit that tier's token cap. Retried or escalated; the caption says which. |
 | `Degenerated` | amber | A detector fired on text that finished *on its own*: a 40+ word run with no punctuation, or the same whole sentence 4+ times. Retried or escalated. |
-| `Truncated` | red | The same cap hit, but on the final tier with nothing left to fall back to. Nothing was saved. |
-| `Degenerated` | red | The same detector hit, on the final tier. Nothing was saved. |
+| `Truncated` | red | The same cap hit, with nothing left to fall back to: on the final tier, or with no time budget left for another. Nothing was saved. |
+| `Degenerated` | red | The same detector hit, with nothing left to fall back to. Nothing was saved. |
 | `Escalated` | amber | A plain HTTP failure from that tier's own model (e.g. a removed model id returning 404). Skips the tier's remaining attempts, since re-asking a model that just 404'd is pointless. |
 | `No response` | amber | A transient failure — timeout, HTTP 429, a 5xx, or a 200 carrying no content. Retried. Coming back in under 10 seconds *can* make the retry free — not counted against the tier's attempts — but only for the first few at each tier, and only with enough time budget left to try again; past that a fast failure costs an attempt like any other. |
 | `Aborted` | amber | The chain stopped itself between attempts because the trial was aborted while it was still running server-side. |
@@ -137,7 +137,7 @@ Every file tracked in the repository. `node_modules/` and `.netlify/` are genera
 ├── tests/                            npm test — no network, spends no quota
 │   ├── retry-logic.test.js           the escalation chain, from the real TypeScript
 │   ├── trial-status.test.js          when a trial is marked completed
-│   ├── render-cards.test.js          app.js: card rendering and failed requests
+│   ├── render-cards.test.js          app.js: cards, the call log, failed requests
 │   ├── shared-constants.test.js      values duplicated across files still agree
 │   ├── docs.test.js                  README, SPEC.md and CLAUDE.md agree with the code
 │   └── support/                      setup shared by the suites above
@@ -173,7 +173,7 @@ npm test                # five regression suites (see below)
 
 - `tests/retry-logic.test.js` — the escalation chain, driven against a mocked `fetch`.
 - `tests/trial-status.test.js` — when a trial is marked completed, against an in-memory stand-in for Supabase, including the real judge endpoint end to end.
-- `tests/render-cards.test.js` — `app.js`'s card rendering, and how it reports a request that fails outright.
+- `tests/render-cards.test.js` — `app.js`'s agent cards and call log, how it shortens model ids, and how it reports a request that fails outright.
 - `tests/shared-constants.test.js` — values that are deliberately duplicated across files still agree.
 - `tests/docs.test.js` — this README, `SPEC.md` and the requirement parts of `CLAUDE.md` still say what the code does. Every file, route, table, column, threshold, price and badge they describe is checked against its source, so changing one without the other fails the suite.
 
@@ -189,4 +189,4 @@ This project was built with Claude Code. `CLAUDE.md`, tracked in this repository
 
 ## Status
 
-Feature-complete and stable. The full pipeline (four representatives in parallel, three judges after, independent rulings never combined) has been verified across many real end-to-end trials against real models, both locally and against the live deployed site. The reliability chain — tier escalation, degenerate-output detection, and recovery from truncated or transient failures — has been exercised repeatedly against the real OpenRouter API, including on the deployed site: one production trial caught a genuinely degenerate response, retried it on the same model, hit the token cap, escalated a tier, and finished cleanly, without anything being staged to provoke it. An offline regression suite (`npm test`) drives the real shipped source for the same paths. All three anti-abuse layers are in place and active: the site-gate header and the site-wide call cap are evaluated on every single request and have each been exercised directly, while the third, per-IP rate limiting, is enforced by Netlify's own platform rather than by code in this repository. A long round of frontend polish (layout, live status display, call log transparency, a responsive card view for narrow screens, cross-browser scrollbar/interaction details) is also done. Treated as done pending any further issue noticed on inspection, not as a hard, permanent freeze.
+Feature-complete and stable. The full pipeline (four representatives in parallel, three judges after, independent rulings never combined) has been verified across many real end-to-end trials against real models, both locally and against the live deployed site. The reliability chain — tier escalation, degenerate-output detection, and recovery from truncated or transient failures — has been exercised repeatedly against the real OpenRouter API, including on the deployed site: one production trial caught a genuinely degenerate response, retried it on the same model, hit the token cap, escalated a tier, and finished cleanly, without anything being staged to provoke it. Five offline regression suites (`npm test`) drive the real shipped source for the same paths. All three anti-abuse layers are in place: the site-gate header is checked on every request that creates a trial or starts an agent call, and the site-wide call cap on every agent call — both are live, and each has been exercised directly. The third, per-IP rate limiting, is declared in each agent function's config and enforced by Netlify's own platform; it has never been tripped, so it is untested in production. A long round of frontend polish (layout, live status display, call log transparency, a responsive card view for narrow screens, cross-browser scrollbar/interaction details) is also done. Treated as done pending any further issue noticed on inspection, not as a hard, permanent freeze.

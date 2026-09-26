@@ -137,7 +137,8 @@ create index if not exists api_call_logs_trial_id_idx on api_call_logs (trial_id
 -- attempt is thrown away and the chain moves on to a still-in-flight
 -- next one). A stale leftover row from an earlier attempt (or an
 -- interrupted trial) is harmless - the frontend only ever reads this for
--- a role it doesn't already have a terminal (success/failed) result for.
+-- a role it doesn't already have a final result (a success, a failure or an
+-- abort) for.
 create table if not exists agent_progress (
   trial_id uuid not null references trials(id) on delete cascade,
   role text not null,

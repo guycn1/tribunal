@@ -14,8 +14,9 @@ import type { RepresentativeRole } from './lib/types';
 // 1000 previously let a real argument (the longest of its group, 1000
 // completion tokens - exactly the old cap) run out mid-sentence. Now
 // shares AGENT_MAX_TOKENS with judge-background.ts - see the comment on
-// that constant
-// in models.ts for why one shared value.
+// that constant in models.ts for why one shared value. This is tier 1's
+// cap only; later escalation tiers get more (see buildRetryTiers in
+// openrouter.ts).
 const MAX_TOKENS = AGENT_MAX_TOKENS;
 
 const rawHandler: Handler = async (event) => {
@@ -77,12 +78,11 @@ const rawHandler: Handler = async (event) => {
 
   // Every discarded attempt gets its own real call-log row too - whatever
   // discarded it (truncation/degeneration, a plain HTTP failure at that
-  // tier, a transient failure, or an abort caught between attempts) -
-  // written the
-  // moment callOpenRouter() decides to discard it (not batched after the
-  // whole chain finishes) - this is what lets a client polling GET
-  // /api/trials/:id see the escalation happening live, mid-call, instead
-  // of only learning about it once this role's result is already final.
+  // tier, or a transient failure) - written the moment callOpenRouter()
+  // decides to discard it (not batched after the whole chain finishes).
+  // That is what lets a client polling GET /api/trials/:id see the
+  // escalation happening live, mid-call, instead of only learning about it
+  // once this role's result is already final.
   const result = await callOpenRouter(
     getModelForRole(repRole),
     messages,
@@ -205,8 +205,8 @@ export const handler = safeHandler(rawHandler);
 // Netlify's free-tier synchronous function limit is 10 seconds (confirmed
 // against Netlify's own docs and support forum - not the ~30s this file
 // used to assume), while every real OpenRouter call measured on this
-// project has taken 8-18s+ per attempt. A standard invocation could not
-// reliably survive that gap regardless of any retry/timeout tuning inside
+// project at the time had taken 8-18s+ per attempt. A standard invocation
+// could not reliably survive that gap regardless of any retry/timeout tuning inside
 // callOpenRouter() - only a genuinely different execution model
 // (Background Functions, up to 15 minutes) closes it. The tradeoff: the
 // client no longer receives this handler's return value directly (Netlify
@@ -272,8 +272,9 @@ export const handler = safeHandler(rawHandler);
 // three anti-abuse layers - the global call cap in db.ts and the site gate
 // both still apply - not a break of anything.
 // No `: Config` type annotation here on purpose: the RateLimitConfig type
-// shipped by the installed @netlify/functions version (2.8.1) is missing
-// `windowLimit` entirely, even though it's a real, required field in
+// shipped by the installed @netlify/functions version (2.8.2, checked
+// 2026-09-26) is missing `windowLimit` entirely, even though it's a real,
+// required field in
 // Netlify's own build-time schema (confirmed directly against the zod
 // schema its bundler actually validates against, in
 // node_modules/netlify-cli's vendored zip-it-and-ship-it package) - a
