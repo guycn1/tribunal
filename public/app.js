@@ -1,19 +1,195 @@
+/**
+ * @file Browser front end for the Tribunal. Shows the fixed Case T-001
+ * charge sheet, runs a trial - triggering the seven agent calls as Netlify
+ * Background Functions and polling for their results - and displays each
+ * argument and ruling, the per-call log, and the run history. The three
+ * judges' rulings are always shown side by side and are never combined.
+ *
+ * This file is served as-is: no build step and no modules. It cannot import
+ * from the Netlify Functions, so the few values both sides must agree on are
+ * duplicated here and checked by tests/shared-constants.test.js. The types
+ * below mirror netlify/functions/lib/types.ts for the same reason. They
+ * document the JSON this page receives, for readers and editors - nothing
+ * type-checks this file (tsconfig.json covers netlify/functions only).
+ */
+
+/** @typedef {'jon_snow' | 'tyrion_lannister' | 'daenerys_targaryen' | 'grey_worm'} RepresentativeRole */
+/** @typedef {'barak' | 'elon' | 'shamgar'} JudgeRole */
+/** @typedef {RepresentativeRole | JudgeRole} AgentRole */
+/** @typedef {'defense' | 'prosecution'} Seat */
+/** @typedef {'justified' | 'not justified'} Verdict */
+
+/**
+ * The fixed case record, from /api/case and the trial endpoints.
+ * @typedef {object} CaseDefinition
+ * @property {string} caseCode
+ * @property {string} title
+ * @property {string} accused
+ * @property {string} deceased
+ * @property {string} actAlleged
+ * @property {string} background Paragraphs separated by a blank line
+ *   ("\n\n").
+ * @property {string[]} agreedFacts
+ * @property {string} question
+ * @property {string} scopeNote
+ */
+
+/**
+ * One api_call_logs row: a single attempt at a single agent call. Attempts
+ * that were discarded and retried get a row too.
+ * @typedef {object} ApiCallLog
+ * @property {string} agentRole
+ * @property {'representative' | 'judge'} callType
+ * @property {string} modelUsed The full OpenRouter model id.
+ * @property {number} promptTokens
+ * @property {number} completionTokens
+ * @property {number} totalTokens
+ * @property {number} cost In US dollars.
+ * @property {'success' | 'failed'} status
+ * @property {string | null} errorMessage May begin with one of the
+ *   *_MARKER prefixes below.
+ * @property {string} timestamp ISO 8601.
+ * @property {number | null} durationMs Null for rows logged before the
+ *   column existed.
+ */
+
+/**
+ * The attempt most recently started for one role (agent_progress), written
+ * server-side the moment each attempt begins.
+ * @typedef {object} AttemptProgress
+ * @property {string} model
+ * @property {number} tierIndex Zero-based position in the escalation chain.
+ * @property {number} attemptInTier One-based.
+ * @property {number} tierMaxAttempts
+ */
+
+/**
+ * The body of GET /api/trials/:id.
+ * @typedef {object} FullTrialResponse
+ * @property {{id: string, caseCode: string, status: 'created' | 'completed', createdAt: string, updatedAt: string}} trial
+ * @property {CaseDefinition} caseDef
+ * @property {Array<{role: RepresentativeRole, seat: Seat, argumentText: string, modelUsed: string, createdAt: string}>} representativeArguments
+ * @property {Array<{role: JudgeRole, verdict: Verdict, reasoningText: string, modelUsed: string, createdAt: string}>} judgeRulings
+ * @property {ApiCallLog[]} apiCallLogs Oldest first.
+ * @property {Object<string, AttemptProgress>} agentProgress Keyed by role.
+ */
+
+/**
+ * One trial in the run-history sidebar, from GET /api/trials.
+ * @typedef {object} TrialSummary
+ * @property {string} id
+ * @property {string} caseCode
+ * @property {'created' | 'completed'} status
+ * @property {string} createdAt
+ * @property {string} updatedAt
+ * @property {boolean} hadFailures Whether any attempt was ever logged as
+ *   failed, recovered or not. Deliberately not what the sidebar label is
+ *   based on - see TOTAL_EXPECTED_RESULTS.
+ * @property {boolean} wasAborted
+ * @property {number} resultCount How many of the seven expected results
+ *   were saved.
+ */
+
+/**
+ * What the page knows about one agent's call: the value kept per role in
+ * state.representatives and state.judges, and rendered as that role's card.
+ * Which optional fields are present depends on `status`.
+ * @typedef {object} AgentEntry
+ * @property {'loading' | 'success' | 'failed' | 'aborted' | 'timeout'} status
+ *   'timeout' means polling gave up waiting, not that the call is known to
+ *   have failed.
+ * @property {string} [argumentText] A representative's argument.
+ * @property {Seat} [seat] A representative's seat.
+ * @property {Verdict} [verdict] A judge's ruling.
+ * @property {string} [reasoningText] A judge's reasoning.
+ * @property {string} [modelUsed] The model that produced the kept result.
+ * @property {{prompt: number, completion: number, total: number}} [tokens]
+ *   Backfilled from the call log for a success - see isTruncated().
+ * @property {string} [error] The message shown on a failed, aborted or
+ *   timed-out card, with any marker prefix already stripped.
+ * @property {AttemptProgress} [currentAttempt] While loading, the attempt in
+ *   flight, once the server has reported one.
+ */
+
+/**
+ * What triggerAgent() learns from its POST. `accepted` means only that the
+ * platform took the request; the call's real outcome arrives later, through
+ * polling.
+ * @typedef {object} TriggerOutcome
+ * @property {boolean} accepted
+ * @property {AgentEntry} [result] Only when not accepted: the failed or
+ *   aborted entry to show for the role.
+ */
+
+/**
+ * deriveRoleStates()'s reading of one trial record.
+ * @typedef {object} DerivedRoleStates
+ * @property {Object<string, AgentEntry>} representatives Only roles with a
+ *   final outcome - success, failed or aborted.
+ * @property {Object<string, AgentEntry>} judges Likewise.
+ * @property {Object<string, AttemptProgress>} agentProgress The attempt most
+ *   recently started per role. Only meaningful for a role with no final
+ *   outcome yet - rows for finished roles are left in place.
+ */
+
+/**
+ * A freshly built agent card, from buildRepresentativeCard() or
+ * buildJudgeCard().
+ * @typedef {object} BuiltCard
+ * @property {HTMLDivElement} card
+ * @property {HTMLDivElement | null} scrollBody The scrolling text body, if
+ *   the card has one - the caller attaches its scroll fade once the card is
+ *   in the document.
+ */
+
+/**
+ * @typedef {object} AppState
+ * @property {string | null} trialId The trial on screen, live or reopened.
+ * @property {CaseDefinition | null} caseDef
+ * @property {Object<string, string> | null} modelInfo The starting model id
+ *   per role, from /api/case.
+ * @property {number | null} maxTokens The shared completion-token cap, from
+ *   /api/case - see isTruncated().
+ * @property {Object<string, AgentEntry>} representatives Keyed by role.
+ * @property {Object<string, AgentEntry>} judges Keyed by role.
+ * @property {ApiCallLog[]} callLog
+ * @property {TrialSummary[]} history
+ * @property {boolean} running A trial is being run from this page.
+ * @property {boolean} loadingTrial A trial is being opened from history.
+ * @property {AbortController | null} abortController Aborts the running
+ *   trial; null when none is running.
+ * @property {Promise<void> | null} trialPromise The live beginTrial() call,
+ *   so abortCurrentTrial() can await it.
+ */
+
+/**
+ * The four representative roles, in display order.
+ *
+ * @type {RepresentativeRole[]}
+ */
 const REPRESENTATIVE_ROLES = ['jon_snow', 'tyrion_lannister', 'daenerys_targaryen', 'grey_worm'];
+/**
+ * The three judge roles, in display order.
+ *
+ * @type {JudgeRole[]}
+ */
 const JUDGE_ROLES = ['barak', 'elon', 'shamgar'];
 
-// Must match ABORTED_BY_USER_MESSAGE in netlify/functions/lib/db.ts exactly
-// (asserted by tests/shared-constants.test.js)
-// - used to recognize an aborted call's log row when rebuilding history
-// (see loadTrial) so it renders with the distinct "Aborted" badge instead
-// of the generic "Call failed" one.
+/**
+ * Must match ABORTED_BY_USER_MESSAGE in netlify/functions/lib/db.ts exactly
+ * (asserted by tests/shared-constants.test.js)
+ * - used to recognize an aborted call's log row (see deriveRoleStates), so
+ * it renders with the distinct "Aborted" badge instead of the generic
+ * "Call failed" one.
+ */
 const ABORTED_BY_USER_MESSAGE = 'Aborted by user before this call could complete.';
 
 // The six marker constants below must match their exports in
-// netlify/functions/lib/openrouter.ts exactly - used by renderCallLog() to
-// tell a discarded-but-recovered attempt (the role went on to succeed or is
-// still trying a further tier) from a discarded-and-fatal one (this was the
-// last available tier and it failed too), and to pick the right badge for
-// each. There is no import to keep them in step - this file is served as
+// netlify/functions/lib/openrouter.ts exactly - used by deriveRoleStates()
+// and renderCallLog() to tell a discarded-but-recovered attempt (the role
+// went on to succeed or is still trying a further tier) from a
+// discarded-and-fatal one (the chain had nothing left to try), and by
+// renderCallLog() to pick the right badge for each. There is no import to keep them in step - this file is served as
 // plain static JS with no build step - so tests/shared-constants.test.js
 // asserts the two sets match instead. Add a marker there, add it here.
 //
@@ -23,40 +199,71 @@ const ABORTED_BY_USER_MESSAGE = 'Aborted by user before this call could complete
 // chosen from the reason text below rather than from the marker alone.
 // See the fuller note at the marker definitions in openrouter.ts for why
 // the names are kept as they are rather than corrected.
+/** A truncated or degenerate attempt that was retried on the same model. */
 const DEGENERATE_RETRIED_SAME_MODEL_MARKER = '[degenerate-retried-same-model]';
+/**
+ * A truncated or degenerate attempt that escalated to the next tier's
+ * model.
+ */
 const DEGENERATE_RETRIED_DIFF_MODEL_MARKER = '[degenerate-retried-diff-model]';
+/**
+ * A truncated or degenerate attempt with nothing left to try - the last
+ * tier, or out of time budget. Terminal.
+ */
 const DEGENERATE_FINAL_MARKER = '[degenerate-final]';
-// A fallback tier's model rejected the request outright (e.g. a removed
-// model id - see the `!response.ok` branch this marker comes from in
-// openrouter.ts) and the chain escalated straight to the next tier. Same
-// "not a terminal outcome" treatment as the two DEGENERATE_RETRIED_*
-// markers above.
+/**
+ * A tier's model rejected the request outright (e.g. a removed model id -
+ * see the `!response.ok` branch this marker comes from in openrouter.ts)
+ * and the chain escalated straight to the next tier. Same
+ * "not a terminal outcome" treatment as the two DEGENERATE_RETRIED_*
+ * markers above.
+ */
 const HTTP_ERROR_ESCALATED_MARKER = '[http-error-escalated]';
-// A transient failure (timeout, 429, 5xx, empty-content 200) that was
-// retried or escalated. Before these were logged at all, a call that kept
-// timing out left the card frozen with nothing in the log to explain it.
+/**
+ * A transient failure (timeout, 429, 5xx, empty-content 200) that was
+ * retried or escalated. Before these were logged at all, a call that kept
+ * timing out left the card frozen with nothing in the log to explain it.
+ */
 const TRANSIENT_RETRIED_MARKER = '[transient-retried]';
-// The chain stopped itself because the user aborted the trial while it was
-// still running server-side. Terminal, not a retry - but it means "stopped
-// on purpose", not "broke", so it renders as an abort rather than a
-// failure.
+/**
+ * The chain stopped itself because the user aborted the trial while it was
+ * still running server-side. Terminal, not a retry - but it means "stopped
+ * on purpose", not "broke", so it renders as an abort rather than a
+ * failure.
+ */
 const ABORTED_MID_CALL_MARKER = '[aborted-mid-call]';
 
-// Sent as the X-Site-Gate header on every call that creates a trial or
-// spends OpenRouter quota (see isSiteGateOk in
-// netlify/functions/lib/siteGate.ts). This is NOT a real secret and isn't
-// meant to be one - it's shipped in this public, unauthenticated file, so
-// anyone who looks can read it. Its only job is to reject automated
-// traffic that never loaded this page at all; a caller who did look
-// defeats it trivially. Must match the SITE_GATE_TOKEN environment
-// variable configured on the Netlify Functions side exactly, or every
-// gated call fails with 401 - if that env var is left unset there,
-// isSiteGateOk() fails open (allows everything through) rather than
-// locking out real users, so this constant being "wrong" server-side is a
-// silent no-op, not an outage.
+/**
+ * Sent as the X-Site-Gate header on every call that creates a trial or
+ * spends OpenRouter quota (see isSiteGateOk in
+ * netlify/functions/lib/siteGate.ts). This is NOT a real secret and isn't
+ * meant to be one - it's shipped in this public, unauthenticated file, so
+ * anyone who looks can read it. Its only job is to reject automated
+ * traffic that never loaded this page at all; a caller who did look
+ * defeats it trivially. Must match the SITE_GATE_TOKEN environment
+ * variable configured on the Netlify Functions side exactly, or every
+ * gated call fails with 401 - if that env var is left unset there,
+ * isSiteGateOk() fails open (allows everything through) rather than
+ * locking out real users, so this constant being "wrong" server-side is a
+ * silent no-op, not an outage.
+ */
 const SITE_GATE_TOKEN = 'g8YdtIo_-n2zLFDsgWqqfuQmVKaNsHQaQtruTybqlvY';
+/**
+ * Headers for every request that creates a trial or triggers an agent
+ * call.
+ */
 const SITE_GATE_HEADERS = { 'X-Site-Gate': SITE_GATE_TOKEN };
 
+/**
+ * Ends an alert() about a request that got no response at all - fetch()
+ * itself failed, so the server was never reached.
+ */
+const SERVER_UNREACHABLE_MESSAGE = 'the server could not be reached. Check your connection and try again.';
+
+/**
+ * Display name and seat for each representative.
+ * @type {Record<RepresentativeRole, {name: string, seat: Seat}>}
+ */
 const REPRESENTATIVE_META = {
   jon_snow: { name: 'Jon Snow', seat: 'defense' },
   tyrion_lannister: { name: 'Tyrion Lannister', seat: 'defense' },
@@ -64,12 +271,21 @@ const REPRESENTATIVE_META = {
   grey_worm: { name: 'Grey Worm', seat: 'prosecution' },
 };
 
+/**
+ * Card heading for each judge.
+ * @type {Record<JudgeRole, {name: string}>}
+ */
 const JUDGE_META = {
   barak: { name: 'Judge — Barak method' },
   elon: { name: 'Judge — Elon method' },
   shamgar: { name: 'Judge — Shamgar method' },
 };
 
+/**
+ * Everything the page is currently showing or doing. Mutated in place; the
+ * render functions read from it.
+ * @type {AppState}
+ */
 const state = {
   trialId: null,
   caseDef: null,
@@ -85,6 +301,11 @@ const state = {
   trialPromise: null, // the live beginTrial() call, so abortCurrentTrial() can await it
 };
 
+/**
+ * Every DOM element this script reads or writes, looked up once at load.
+ * All are static elements in index.html - only their contents are ever
+ * rebuilt.
+ */
 const el = {
   sidebar: document.getElementById('sidebar'),
   mainLoadingOverlay: document.getElementById('main-loading-overlay'),
@@ -119,10 +340,18 @@ el.abortBtn.addEventListener('click', () => {
   abortCurrentTrial();
 });
 
-// Explicit European format (DD/MM/YYYY, 24-hour) regardless of the
-// browser's own locale - bare toLocaleString() would otherwise follow
-// whatever the browser is configured to (commonly US-style M/D/YYYY,
-// 12-hour with AM/PM), which is not what's wanted here.
+/**
+ * Formats a date as "DD/MM/YYYY, HH:MM:SS".
+ *
+ * Explicit European format (DD/MM/YYYY, 24-hour) regardless of the
+ * browser's own locale - bare toLocaleString() would otherwise follow
+ * whatever the browser is configured to (commonly US-style M/D/YYYY,
+ * 12-hour with AM/PM), which is not what's wanted here.
+ *
+ * @param {string | number | Date} dateInput Anything the Date constructor
+ *   accepts.
+ * @returns {string}
+ */
 function formatDateTime(dateInput) {
   return new Date(dateInput).toLocaleString('en-GB', {
     day: '2-digit',
@@ -135,39 +364,54 @@ function formatDateTime(dateInput) {
   });
 }
 
-// The date and time deliberately go on their own lines, not just as a
-// narrow-viewport fallback - fitting "DD/MM/YYYY, HH:MM:SS" on one line
-// needs real column width, while the wider of the two fragments alone
-// ("DD/MM/YYYY,") needs much less, freeing width for other columns. Each
-// fragment is wrapped in its own non-wrapping span so the date and the
-// time are each protected from ever breaking internally - only the space
-// between them (the line break) is allowed to give.
+/**
+ * Formats a date as formatDateTime() does, as HTML with the date and the
+ * time on separate lines.
+ *
+ * The date and time deliberately go on their own lines, not just as a
+ * narrow-viewport fallback - fitting "DD/MM/YYYY, HH:MM:SS" on one line
+ * needs real column width, while the wider of the two fragments alone
+ * ("DD/MM/YYYY,") needs much less, freeing width for other columns. Each
+ * fragment is wrapped in its own non-wrapping span so the date and the
+ * time are each protected from ever breaking internally - only the space
+ * between them (the line break) is allowed to give.
+ *
+ * @param {string | number | Date} dateInput
+ * @returns {string} HTML.
+ */
 function formatDateTimeHtml(dateInput) {
   const [datePart, timePart] = formatDateTime(dateInput).split(', ');
   return `<span class="datetime-part">${datePart},</span><br /><span class="datetime-part">${timePart}</span>`;
 }
 
-// "mistralai/mistral-small-24b-instruct-2501" -> "mistral-small-24b-2501"
-// Strips any "provider/" prefix, a trailing ":free" suffix, and a standalone
-// "-instruct" segment, if present - display only, the full id is what's
-// actually sent to the backend/OpenRouter, and is still reachable from the
-// table (the <abbr title> on hover) and shown in full in the card layout
-// below 720px.
-//
-// All three are dropped for the same reason: none of them tell a reader of
-// this log anything the rest of the id doesn't. "instruct" distinguishes an
-// instruction-tuned model from its base variant, and every model this app
-// can use is instruction-tuned - it is as content-free here as the vendor
-// prefix. The date stamp ("-2501") is deliberately kept: it is the only
-// thing separating two pinned snapshots of the same model, which is exactly
-// what this column exists to report.
-//
-// These are generic rules rather than a per-model lookup table on purpose.
-// Every tier's model id is env-var-configurable (see models.ts), so a table
-// could never be relied on to cover whatever is actually running - it would
-// silently miss the one case it was added for. If some future id still reads
-// badly after these rules, an exceptions table consulted ahead of them is
-// the escape hatch, but there is no point building one for a set of one.
+/**
+ * Shortens an OpenRouter model id for display.
+ *
+ * "mistralai/mistral-small-24b-instruct-2501" -> "mistral-small-24b-2501"
+ * Strips any "provider/" prefix, a trailing ":free" suffix, and a standalone
+ * "-instruct" segment, if present - display only, the full id is what's
+ * actually sent to the backend/OpenRouter, and is still reachable from the
+ * table (the <abbr title> on hover) and shown in full in the card layout
+ * below 720px.
+ *
+ * All three are dropped for the same reason: none of them tell a reader of
+ * this log anything the rest of the id doesn't. "instruct" distinguishes an
+ * instruction-tuned model from its base variant, and every model this app
+ * can use is instruction-tuned - it is as content-free here as the vendor
+ * prefix. The date stamp ("-2501") is deliberately kept: it is the only
+ * thing separating two pinned snapshots of the same model, which is exactly
+ * what this column exists to report.
+ *
+ * These are generic rules rather than a per-model lookup table on purpose.
+ * Every tier's model id is env-var-configurable (see models.ts), so a table
+ * could never be relied on to cover whatever is actually running - it would
+ * silently miss the one case it was added for. If some future id still reads
+ * badly after these rules, an exceptions table consulted ahead of them is
+ * the escape hatch, but there is no point building one for a set of one.
+ *
+ * @param {string | null | undefined} modelId A full model id.
+ * @returns {string} The shortened id, or 'unknown model' when there is none.
+ */
 function shortModelName(modelId) {
   if (!modelId) return 'unknown model';
   return modelId
@@ -176,44 +420,70 @@ function shortModelName(modelId) {
     .replace(/-instruct(?=-|$)/, '');
 }
 
-// "1,072 in / 1,400 out" for the Tokens column's secondary line.
-//
-// The spaces inside each figure are non-breaking, and the slash is bound to
-// the first figure, so the only place this string can wrap is after the
-// slash. Left to ordinary spaces it wraps wherever it runs out of room,
-// which in the Tokens column's fixed width strands a lone "out" on a line
-// of its own ("1,072 in / 1,400" + "out"). Fixing it this way keeps the
-// column widths exactly as deterministic as they were - the colgroup
-// percentages and table-layout: fixed are untouched, since the problem was
-// never the column's width but where the text was permitted to break.
-// A run that still cannot fit is broken by the cell's overflow-wrap as a
-// last resort, so this can never overflow.
+/**
+ * Formats prompt and completion token counts for the Tokens column's
+ * secondary line.
+ *
+ * The result reads "1,072 in / 1,400 out".
+ *
+ * The spaces inside each figure are non-breaking, and the slash is bound to
+ * the first figure, so the only place this string can wrap is after the
+ * slash. Left to ordinary spaces it wraps wherever it runs out of room,
+ * which in the Tokens column's fixed width strands a lone "out" on a line
+ * of its own ("1,072 in / 1,400" + "out"). Fixing it this way keeps the
+ * column widths exactly as deterministic as they were - the colgroup
+ * percentages and table-layout: fixed are untouched, since the problem was
+ * never the column's width but where the text was permitted to break.
+ * A run that still cannot fit is broken by the cell's overflow-wrap as a
+ * last resort, so this can never overflow.
+ *
+ * @param {number} promptTokens
+ * @param {number} completionTokens
+ * @returns {string} HTML, using &nbsp; for every space but the one after the
+ *   slash.
+ */
 function formatTokenBreakdown(promptTokens, completionTokens) {
   return `${promptTokens.toLocaleString()}&nbsp;in&nbsp;/ ${completionTokens.toLocaleString()}&nbsp;out`;
 }
 
-// 1 -> "first", 2 -> "second", ... used for the "(first attempt)"/"(second
-// attempt)" suffix on a still-loading card's model line (see
-// buildAgentStatusBody) - only ever needs to cover however many attempts
-// buildRetryTiers() in openrouter.ts gives any one tier (currently max 2),
-// but written to degrade to a plain ordinal number rather than throw if
-// that ever changes.
+/** Words for ordinalWord(), indexed by the number they spell. */
 const ORDINAL_WORDS = ['zeroth', 'first', 'second', 'third', 'fourth', 'fifth'];
+/**
+ * Spells out a small ordinal: 1 -> "first", 2 -> "second", and so on.
+ *
+ * Used for the "(first attempt)"/"(second attempt)" suffix on a
+ * still-loading card's model line (see buildAgentStatusBody) - only ever
+ * needs to cover however many attempts buildRetryTiers() in openrouter.ts
+ * gives any one tier (currently max 2), but written to degrade to a plain
+ * ordinal number rather than throw if that ever changes.
+ *
+ * @param {number} n A one-based attempt number.
+ * @returns {string}
+ */
 function ordinalWord(n) {
   return ORDINAL_WORDS[n] || `${n}th`;
 }
 
-// Both spellings of the Type value are emitted, and the stylesheet shows
-// exactly one of them - see the .col-short/.col-full pair in styles.css.
-//
-// The single letter plus an <abbr> exists only because the table view has
-// to fit eight columns across; it is a concession to width, not a better
-// way to say "Representative". The card view below 720px has a whole row
-// per field and no such constraint, so it shows the real word with no
-// tooltip to hunt for - which also matters because a tooltip is close to
-// useless on the touch devices that get the card layout in the first
-// place. Rendering both and letting CSS choose keeps this a single render
-// path with no width checks in JS.
+/**
+ * Renders the call log's Type cell: a one-letter abbreviation for the
+ * table layout and the full word for the card layout.
+ *
+ * Both spellings of the Type value are emitted, and the stylesheet shows
+ * exactly one of them - see the .col-short/.col-full pair in styles.css.
+ *
+ * The single letter plus an <abbr> exists only because the table view has
+ * to fit eight columns across; it is a concession to width, not a better
+ * way to say "Representative". The card view below 720px has a whole row
+ * per field and no such constraint, so it shows the real word with no
+ * tooltip to hunt for - which also matters because a tooltip is close to
+ * useless on the touch devices that get the card layout in the first
+ * place. Rendering both and letting CSS choose keeps this a single render
+ * path with no width checks in JS.
+ *
+ * @param {string} callType 'representative' or 'judge'; any other value is
+ *   returned unchanged.
+ * @returns {string} HTML.
+ */
 function formatCallTypeHtml(callType) {
   const full = callType === 'representative' ? 'Representative' : callType === 'judge' ? 'Judge' : null;
   if (!full) return callType;
@@ -221,28 +491,33 @@ function formatCallTypeHtml(callType) {
   return `<abbr class="col-short" title="${full}">${short}</abbr><span class="col-full">${full}</span>`;
 }
 
-// True when a successful call's completion hit the shared token cap
-// (state.maxTokens, from /api/case) rather than finishing naturally - the
-// server already logs this distinctly via finish_reason (see openrouter.ts),
-// but that's only visible in the terminal. This used to be what surfaced
-// it in the UI; it no longer is, for anything newly generated - the server
-// now fails such a call outright, so it reaches the card as a real failure
-// rather than as a badge on a success. See the paragraph below: what
-// remains here is a reader for historical rows. Works for both a live entry (tokens included directly in the
-// success response) and a historical one loaded from a past trial (see
-// loadTrial(), which backfills tokens.completion from the matching
-// api_call_logs row for exactly this purpose).
-//
-// A response still truncated after every attempt the escalation chain
-// allows (four tiers, up to seven attempts - see buildRetryTiers in
-// openrouter.ts) is now returned by the server as a real failure, not a
-// "success" for this function to badge - so this can no longer fire for
-// any newly-generated result. It's kept, and checks a *multiple* of
-// state.maxTokens rather than an exact match, specifically for trials
-// recorded before that change: some real historical rows have a
-// completion of exactly 2 x maxTokens (both the original attempt and the
-// retry hit the cap, and the older code still saved that as a success) -
-// an exact `===` check would silently miss those on reopen.
+/**
+ * True when a successful call's completion hit the shared token cap
+ * (state.maxTokens, from /api/case) rather than finishing naturally - the
+ * server already logs this distinctly via finish_reason (see openrouter.ts),
+ * but that's only visible in the terminal. This used to be what surfaced
+ * it in the UI; it no longer is, for anything newly generated - the server
+ * now fails such a call outright, so it reaches the card as a real failure
+ * rather than as a badge on a success. See the paragraph below: what
+ * remains here is a reader for historical rows. It reads a live entry and
+ * one reopened from history alike, since both are built by
+ * deriveRoleStates(), which backfills tokens.completion from the matching
+ * api_call_logs row for exactly this purpose.
+ *
+ * A response still truncated after every attempt the escalation chain
+ * allows (four tiers, up to seven attempts - see buildRetryTiers in
+ * openrouter.ts) is now returned by the server as a real failure, not a
+ * "success" for this function to badge - so this can no longer fire for
+ * any newly-generated result. It's kept, and checks a *multiple* of
+ * state.maxTokens rather than an exact match, specifically for trials
+ * recorded before that change: some real historical rows have a
+ * completion of exactly 2 x maxTokens (both the original attempt and the
+ * retry hit the cap, and the older code still saved that as a success) -
+ * an exact `===` check would silently miss those on reopen.
+ *
+ * @param {AgentEntry | undefined} entry
+ * @returns {boolean}
+ */
 function isTruncated(entry) {
   return Boolean(
     entry &&
@@ -254,6 +529,20 @@ function isTruncated(entry) {
   );
 }
 
+/**
+ * Creates a new trial and runs it: the four representatives, then - unless
+ * the user aborts - the three judges, then a final refresh of the call log
+ * and the run history.
+ *
+ * Does nothing while a trial is already running or one is being opened from
+ * history. Progress is reported through `state` and the cards as it
+ * happens, not through the returned promise. Failing to create the trial,
+ * or to load its call log once it has run, is reported with alert().
+ *
+ * @returns {Promise<void>} Resolves once the run has fully unwound and the
+ *   controls are restored, which is what abortCurrentTrial() waits for.
+ *   Failed requests are reported to the user rather than rejecting it.
+ */
 async function beginTrial() {
   if (state.running || state.loadingTrial) return;
   state.running = true;
@@ -271,10 +560,20 @@ async function beginTrial() {
   el.sidebar.classList.add('loading-locked');
 
   try {
-    const res = await fetch('/api/trials', { method: 'POST', headers: SITE_GATE_HEADERS });
-    const data = await res.json();
-    if (!res.ok) {
-      alert(`Failed to create trial: ${data.error || res.status}`);
+    // A request that never reaches the server makes fetch() throw, and a
+    // platform error page (a 502, say) is not JSON. Both used to escape
+    // as an uncaught rejection, so the click looked as if it had done
+    // nothing - the error reached only the browser console.
+    let res;
+    try {
+      res = await fetch('/api/trials', { method: 'POST', headers: SITE_GATE_HEADERS });
+    } catch {
+      alert(`Failed to create trial: ${SERVER_UNREACHABLE_MESSAGE}`);
+      return;
+    }
+    const data = await res.json().catch(() => null);
+    if (!res.ok || !data) {
+      alert(`Failed to create trial: ${(data && data.error) || `unexpected response (HTTP ${res.status})`}`);
       return;
     }
 
@@ -324,8 +623,11 @@ async function beginTrial() {
     if (!controller.signal.aborted) {
       await runJudgesPhase(controller.signal);
     }
-    await refreshFullTrial();
+    const callLogLoaded = await refreshFullTrial();
     await refreshHistory();
+    if (!callLogLoaded) {
+      alert("This trial's call log could not be loaded. Reopen the trial from Run history to see it.");
+    }
   } finally {
     state.running = false;
     updateHistoryLockState();
@@ -340,33 +642,45 @@ async function beginTrial() {
   }
 }
 
-// Visual "you can't click these right now" cue for the whole run-history
-// list while a trial is running - clicking a history entry mid-run
-// already correctly does nothing (loadTrial()'s own state.running guard,
-// verified directly against the code - the only click handler a history
-// entry has), this just makes that fact visible instead of silent.
-// Toggled directly on state.running transitions (both in beginTrial())
-// rather than folded into renderHistory(), since that function only
-// actually runs on a fresh fetch/reload of the list - relying on it here
-// would leave the lock indicator not appearing until well after a trial
-// had already started, or not clearing until the next unrelated
-// re-render after one finishes.
+/**
+ * Greys out the run-history list while a trial is running, and restores
+ * it once the run ends.
+ *
+ * Visual "you can't click these right now" cue for the whole run-history
+ * list while a trial is running - clicking a history entry mid-run
+ * already correctly does nothing (loadTrial()'s own state.running guard,
+ * verified directly against the code - the only click handler a history
+ * entry has), this just makes that fact visible instead of silent.
+ * Toggled directly on state.running transitions (both in beginTrial())
+ * rather than folded into renderHistory(), since that function only
+ * actually runs on a fresh fetch/reload of the list - relying on it here
+ * would leave the lock indicator not appearing until well after a trial
+ * had already started, or not clearing until the next unrelated
+ * re-render after one finishes.
+ */
 function updateHistoryLockState() {
   el.historyList.classList.toggle('running-locked', state.running);
 }
 
-// Records which roles were still pending, gives immediate visual feedback
-// (doesn't wait on the network round trip below), and persists the abort as
-// a real, visible fact.
-//
-// Persisting is not just bookkeeping - it does two jobs, and telling the
-// in-flight calls to stop is the more important one. Aborting a fetch()
-// client-side cannot stop the Netlify invocation it was talking to, so the
-// persisted row is the only channel there is: each running call polls for
-// it between attempts and stops itself (isTrialAborted in db.ts). Second,
-// it makes the abort durable, so the sidebar reflects it on a later visit
-// and a stray success or failure logged after the fact can't make an
-// aborted run look like an ordinary one.
+/**
+ * Aborts the trial currently running from this page.
+ *
+ * Records which roles were still pending, gives immediate visual feedback
+ * (doesn't wait on the network round trip below), and persists the abort as
+ * a real, visible fact.
+ *
+ * Persisting is not just bookkeeping - it does two jobs, and telling the
+ * in-flight calls to stop is the more important one. Aborting a fetch()
+ * client-side cannot stop the Netlify invocation it was talking to, so the
+ * persisted row is the only channel there is: each running call polls for
+ * it between attempts and stops itself (isTrialAborted in db.ts). Second,
+ * it makes the abort durable, so the sidebar reflects it on a later visit
+ * and a stray success or failure logged after the fact can't make an
+ * aborted run look like an ordinary one.
+ *
+ * @returns {Promise<void>} Settles once beginTrial() has finished unwinding
+ *   and the loading overlay is cleared. Never rejects.
+ */
 async function abortCurrentTrial() {
   if (!state.abortController || !state.trialId) return;
 
@@ -418,56 +732,92 @@ async function abortCurrentTrial() {
   // (its finally block is what clears state.running, re-enables "Begin
   // new trial", and hides the Abort button) before dropping the overlay -
   // otherwise it would disappear while those controls are still visibly
-  // mid-transition for a moment longer. beginTrial() shouldn't reject
-  // (every real failure path inside it is already caught internally),
-  // but this is wrapped defensively anyway so a surprise rejection there
-  // can never leave the overlay stuck.
+  // mid-transition for a moment longer. beginTrial() reports its own
+  // failed requests rather than rejecting, so a rejection here would mean
+  // a bug - but even then it must never leave the overlay stuck.
   try {
     await state.trialPromise;
   } catch {
-    // See above - not expected, but must never block clearing the overlay.
+    // See above - must never block clearing the overlay.
   }
 
   el.mainLoadingOverlay.classList.add('hidden');
   el.sidebar.classList.remove('loading-locked');
 }
 
-// In one real run, all 4 representative calls fired at the exact same
-// instant and only the first came back with real content - the other 3
-// got an immediate 429. A start-time stagger alone (kickoffs 400ms apart)
-// did not fix this on its own in a later run: three of four still failed,
-// two of them not with a fast 429 this time but with a genuine no-response
-// timeout on their retry. A few hundred ms of head start barely matters
-// when each call's real generation takes 15-20s - four calls started even a
-// second apart still spend nearly all of that time overlapping in flight,
-// so a start-time stagger doesn't meaningfully reduce concurrent load on
-// the account. What the same run's judges phase showed instead: 3 calls
-// fired together with the same stagger all succeeded on attempt 1, no rate
-// limit at all. That contrast is the actual signal - this account handles
-// roughly 3 simultaneous in-flight calls cleanly but not 4. So the real fix
-// is a hard cap on how many calls are ever in flight at once
-// (MAX_CONCURRENT_CALLS below, via runWithConcurrencyLimit), not just a
-// stagger on when each one starts - the stagger is kept underneath it as a
-// cheap extra precaution against the pool's initial batch still landing in
-// the same instant, but it is not what does the real work here. This is
-// about OpenRouter's own account-level concurrency limit specifically, and
-// still applies regardless of the trigger/poll rewrite below - moving
-// the agent endpoints to Background Functions changes how this app
-// waits for a result, not how many calls the OpenRouter account can take
-// at once.
+// Why these two constants exist: in one real run, all 4 representative
+// calls fired at the exact same instant and only the first came back with
+// real content - the other 3 got an immediate 429. A start-time stagger
+// alone (kickoffs 400ms apart) did not fix it in a later run either: three
+// of four still failed, two of them with a genuine no-response timeout
+// rather than a fast 429. A few hundred ms of head start barely matters
+// when each call's real generation takes 15-20s. The same run's judges
+// phase - 3 calls, same stagger - all succeeded on attempt 1, which read at
+// the time as "this account takes 3 simultaneous calls cleanly but not 4,"
+// so a worker pool was added to cap how many were ever in flight at once.
+//
+// That cap no longer does that job, and hasn't since the agent endpoints
+// became Background Functions. runWithConcurrencyLimit wraps triggerAgent,
+// which returns the moment Netlify's automatic 202 arrives (~0.3-0.5s)
+// rather than when the generation finishes - so a slot frees almost
+// immediately and all 4 representatives end up genuinely in flight
+// together. Measured, not assumed: as of 2026-09-21, across the 41 trials
+// in this project's own api_call_logs that carry real duration data, 36 ran
+// all 4 representatives simultaneously (reconstructing each call's start as
+// its timestamp minus duration_ms) - including every one of the four trials
+// run against the live deployed site, each of which ran 4 of 4
+// representatives and 3 of 3 judges at once. What these constants
+// actually bound now is how many trigger POSTs overlap - which matters only
+// against Netlify's per-IP rate limiter, not OpenRouter's account-level
+// concurrency.
+//
+// Kept rather than removed or "restored," deliberately. The original
+// 3-vs-4 reading came from two runs on 2026-08-28 - on today's default
+// model, but while the agent calls were still synchronous functions - and
+// has since been overtaken by evidence: every clean run behind this project's reliability record was
+// actually made at 4 concurrent, not 3, so there is no demonstrated problem
+// left to solve. A bounded dispatch plus the stagger is still a sensible
+// thing to keep pointed at the per-IP limiter.
+/**
+ * Stagger between trigger POSTs within one phase: the role at index N is
+ * triggered N times this many ms after the phase starts, at the earliest.
+ */
 const CONCURRENT_CALL_STAGGER_MS = 400;
+/**
+ * How many trigger POSTs may be outstanding at once within one phase. Not a
+ * bound on concurrent OpenRouter calls - see the note above.
+ */
 const MAX_CONCURRENT_CALLS = 3;
 
-// Runs `worker` over `items` with at most `limit` invocations actually in
-// flight at once. A fixed pool of `limit` runners each pull the next item
-// as soon as they're free, so item N+1 only starts once one of the first
-// `limit` items has genuinely finished - not merely after its own stagger
-// delay - which is what actually bounds concurrent load on the account
-// regardless of how long any individual call takes. Every item still runs
-// without waiting on any *specific* other item, only on a free slot, so
-// this stays real concurrency, just bounded.
+/**
+ * Runs `worker` over `items` with at most `limit` calls to *worker*
+ * outstanding at once. A fixed pool of `limit` runners each pull the next
+ * item as soon as they're free, so item N+1 starts once one of the first
+ * `limit` workers has returned. Every item still runs without waiting on
+ * any *specific* other item, only on a free slot, so this stays real
+ * concurrency, just bounded.
+ *
+ * What that actually bounds depends entirely on what `worker` waits for.
+ * Both call sites pass triggerAgent, which returns at Netlify's 202 rather
+ * than at the end of the generation it kicked off - so this bounds
+ * overlapping trigger POSTs, not overlapping OpenRouter calls. See the
+ * comment on MAX_CONCURRENT_CALLS above for the measurement behind that.
+ *
+ * @template T
+ * @param {T[]} items
+ * @param {number} limit The most calls to `worker` outstanding at once.
+ * @param {(item: T, index: number) => Promise<void>} worker Called once per
+ *   item, with the item's index in `items`.
+ * @returns {Promise<void>} Resolves once every slot has finished. Never
+ *   rejects - a worker that throws ends only its own slot, and the remaining
+ *   items go to the other slots.
+ */
 async function runWithConcurrencyLimit(items, limit, worker) {
   let nextIndex = 0;
+  /**
+   * One pool slot: keeps taking the next unclaimed item until none remain.
+   * @returns {Promise<void>}
+   */
   async function runSlot() {
     while (nextIndex < items.length) {
       const index = nextIndex++;
@@ -478,9 +828,18 @@ async function runWithConcurrencyLimit(items, limit, worker) {
   await Promise.allSettled(slots);
 }
 
-// Abort-aware: rejects immediately (rather than waiting out the delay) if
-// the signal fires mid-wait, so Abort actually stops things promptly even
-// during a stagger or backoff pause, not just between HTTP requests.
+/**
+ * Waits for `ms` milliseconds.
+ *
+ * Abort-aware: rejects immediately (rather than waiting out the delay) if
+ * the signal fires mid-wait, so Abort actually stops things promptly even
+ * during a stagger or backoff pause, not just between HTTP requests.
+ *
+ * @param {number} ms
+ * @param {AbortSignal} [signal] Cancels the wait when aborted.
+ * @returns {Promise<void>} Rejects with an AbortError DOMException if the
+ *   signal is already aborted, or aborts before the time is up.
+ */
 function sleep(ms, signal) {
   return new Promise((resolve, reject) => {
     if (signal && signal.aborted) {
@@ -501,21 +860,32 @@ function sleep(ms, signal) {
   });
 }
 
-// the agent endpoints now run as Netlify Background Functions (see
-// config.background in each) - the fix for a verified, load-bearing
-// problem: Netlify's real free-tier synchronous function limit is 10
-// seconds, while every real OpenRouter call measured on this project has
-// taken 8-18s+ per attempt, before any retry. A standard invocation could
-// not reliably survive that gap no matter how the internal retry/timeout
-// budget was tuned. Background Functions get up to 15 minutes instead -
-// but the platform responds 202 immediately and runs the handler
-// asynchronously, so its real return value never reaches this fetch()
-// call the way a normal synchronous function's did. Calling a role now
-// has two separate steps: triggerAgent() fires the request and reports
-// only what's knowable synchronously (a network failure, or a
-// platform-level rejection like Netlify's own per-IP rate limit); the
-// real, eventual outcome is discovered afterward by polling
-// GET /api/trials/:id (see pollForRoles() and deriveRoleStates() below).
+/**
+ * Starts one agent call and reports whether the platform accepted it -
+ * never whether the call itself succeeded.
+ *
+ * The agent endpoints now run as Netlify Background Functions (see
+ * config.background in each) - the fix for a verified, load-bearing
+ * problem: Netlify's real free-tier synchronous function limit is 10
+ * seconds, while every real OpenRouter call measured on this project at
+ * the time had taken 8-18s+ per attempt, before any retry. A standard invocation could
+ * not reliably survive that gap no matter how the internal retry/timeout
+ * budget was tuned. Background Functions get up to 15 minutes instead -
+ * but the platform responds 202 immediately and runs the handler
+ * asynchronously, so its real return value never reaches this fetch()
+ * call the way a normal synchronous function's did. Calling a role now
+ * has two separate steps: triggerAgent() fires the request and reports
+ * only what's knowable synchronously (a network failure, or a
+ * platform-level rejection like Netlify's own per-IP rate limit); the
+ * real, eventual outcome is discovered afterward by polling
+ * GET /api/trials/:id (see pollForRoles() and deriveRoleStates() below).
+ *
+ * @param {string} url The role's endpoint, e.g.
+ *   /api/trials/:id/representatives/:role.
+ * @param {AbortSignal} signal
+ * @returns {Promise<TriggerOutcome>} Never rejects - a network error or an
+ *   abort comes back as a failed or aborted result instead.
+ */
 async function triggerAgent(url, signal) {
   let res;
   try {
@@ -559,12 +929,18 @@ async function triggerAgent(url, signal) {
   return { accepted: false, result: { status: 'failed', error: message } };
 }
 
-// True for a 'failed' log row that represents a discarded-but-recovered
-// attempt (openrouter.ts's onDiscardedAttempt callback writes these live,
-// mid-escalation - see representative-background.ts/judge-background.ts) -
-// NOT a terminal outcome for the role. The role is still genuinely running
-// server-side on a later tier when a row like this exists with no
-// success/final-failure row after it yet.
+/**
+ * True for a 'failed' log row that represents a discarded attempt that
+ * was retried or escalated (openrouter.ts's onDiscardedAttempt callback
+ * writes these live, mid-escalation - see
+ * representative-background.ts/judge-background.ts) - NOT a terminal
+ * outcome for the role. The role is still genuinely running
+ * server-side on a later attempt when a row like this exists with no
+ * success/final-failure row after it yet.
+ *
+ * @param {ApiCallLog} log
+ * @returns {boolean}
+ */
 function isRetriedMarkerLog(log) {
   return (
     typeof log.errorMessage === 'string' &&
@@ -575,15 +951,21 @@ function isRetriedMarkerLog(log) {
   );
 }
 
-// Strips a leading marker (plus the space after it) from an error message
-// before it's shown on an agent card - any of the six, not just the
-// DEGENERATE_* ones; the list below is the authority. Those markers exist
-// so renderCallLog() can tell attempt outcomes apart in the call log
-// table, but they're internal bookkeeping, not something a reader of the
-// card should ever see verbatim. The call log table is unaffected: it
-// reads state.callLog (the raw apiCallLogs rows) directly, never through
-// this function, so its own marker-based badge/caption logic still sees
-// the real, unstripped text.
+/**
+ * Strips a leading marker (plus the space after it) from an error message
+ * before it's shown on an agent card - any of the six, not just the
+ * DEGENERATE_* ones; the list below is the authority. Those markers exist
+ * so renderCallLog() can tell attempt outcomes apart in the call log
+ * table, but they're internal bookkeeping, not something a reader of the
+ * card should ever see verbatim. The call log table is unaffected: it
+ * reads state.callLog (the raw apiCallLogs rows) directly, never through
+ * this function, so its own marker-based badge/caption logic still sees
+ * the real, unstripped text.
+ *
+ * @param {string | null} message
+ * @returns {string | null} The message without its marker; unchanged when it
+ *   has none, or is not a string.
+ */
 function stripMarkerPrefix(message) {
   if (typeof message !== 'string') return message;
   for (const marker of [
@@ -599,28 +981,35 @@ function stripMarkerPrefix(message) {
   return message;
 }
 
-// Derives a {representatives, judges, agentProgress} status map from one
-// GET /api/trials/:id response - the single source of truth for "what has
-// actually happened so far in this trial," used identically whether
-// reopening a finished historical trial (loadTrial) or polling a live one
-// (pollForRoles), so the two call sites can't quietly drift into
-// disagreeing about what the same trial record means. apiCallLogs is
-// ordered ascending by timestamp (see getFullTrial in db.ts), so the last
-// matching row for a role is its most recent attempt.
-//
-// agentProgress (from db.ts's agent_progress table, via getFullTrial) is
-// deliberately separate from representatives/judges: it's live-in-flight
-// signal - the model/attempt actually running right now, overwritten in
-// place as the chain progresses - not a terminal state, and pollForRoles
-// treats any entry present in representatives/judges as "this role is
-// done." A discarded-attempt log row also isn't folded in here for the
-// same reason (a superseded, earlier design of this did fold it in,
-// which was one attempt behind reality - see the model-display fix this
-// replaces): agentProgress is written the moment an attempt *starts*, so
-// it's never behind the real current attempt the way inferring from a
-// *discarded* row necessarily is.
+/**
+ * Derives a {representatives, judges, agentProgress} status map from one
+ * GET /api/trials/:id response - the single source of truth for "what has
+ * actually happened so far in this trial," used identically whether
+ * reopening a finished historical trial (loadTrial) or polling a live one
+ * (pollForRoles), so the two call sites can't quietly drift into
+ * disagreeing about what the same trial record means. apiCallLogs is
+ * ordered ascending by timestamp (see getFullTrial in db.ts), so the last
+ * matching row for a role is its most recent attempt.
+ *
+ * agentProgress (from db.ts's agent_progress table, via getFullTrial) is
+ * deliberately separate from representatives/judges: it's live-in-flight
+ * signal - the model/attempt actually running right now, overwritten in
+ * place as the chain progresses - not a terminal state, and pollForRoles
+ * treats any entry present in representatives/judges as "this role is
+ * done." A discarded-attempt log row also isn't folded in here for the
+ * same reason (a superseded, earlier design of this did fold it in,
+ * which was one attempt behind reality - see the model-display fix this
+ * replaces): agentProgress is written the moment an attempt *starts*, so
+ * it's never behind the real current attempt the way inferring from a
+ * *discarded* row necessarily is.
+ *
+ * @param {FullTrialResponse} data
+ * @returns {DerivedRoleStates}
+ */
 function deriveRoleStates(data) {
+  /** @type {Object<string, AgentEntry>} */
   const representatives = {};
+  /** @type {Object<string, AgentEntry>} */
   const judges = {};
 
   for (const arg of data.representativeArguments || []) {
@@ -673,30 +1062,46 @@ function deriveRoleStates(data) {
   return { representatives, judges, agentProgress: data.agentProgress || {} };
 }
 
-// How long to keep polling a phase for a role that hasn't resolved yet
-// before giving up and showing it as unclear rather than waiting forever.
-// Comfortably above openrouter.ts's own TOTAL_BUDGET_MS (650s, sized for
-// the full 4-tier escalation chain - see openrouter.ts) plus real margin
-// for polling/network overhead. This drifted out of sync once before: the
-// server budget was raised from 120s to 650s to fit the escalation chain,
-// but this constant stayed at its old value (150s) - a real, observed
-// consequence was a role that genuinely succeeded server-side (verified
-// directly in the DB) still showing as unresolved on the client because
-// polling gave up first. A role that still hasn't resolved by the new
-// timeout either genuinely failed in a way this page can't see (the
-// disclosed site-gate/call-cap gap documented in
-// representative-background.ts/judge-background.ts - a rejection there is
-// no longer visible to the poller, only in Netlify's function logs) or is
-// a real anomaly worth surfacing
-// honestly rather than silently waiting past.
+/**
+ * How long to keep polling a phase for a role that hasn't resolved yet
+ * before giving up and showing it as unclear rather than waiting forever.
+ * Comfortably above openrouter.ts's own TOTAL_BUDGET_MS (650s, sized for
+ * the full 4-tier escalation chain - see openrouter.ts) plus real margin
+ * for polling/network overhead. This drifted out of sync once before: the
+ * server budget was raised from 120s to 650s to fit the escalation chain,
+ * but this constant stayed at its old value (150s) - a real, observed
+ * consequence was a role that genuinely succeeded server-side (verified
+ * directly in the DB) still showing as unresolved on the client because
+ * polling gave up first. A role that still hasn't resolved by the new
+ * timeout either genuinely failed in a way this page can't see (the
+ * disclosed site-gate/call-cap gap documented in
+ * representative-background.ts/judge-background.ts - a rejection there is
+ * no longer visible to the poller, only in Netlify's function logs) or is
+ * a real anomaly worth surfacing honestly rather than silently waiting
+ * past.
+ */
 const POLL_TIMEOUT_MS = 700000;
+/** Time between polls of GET /api/trials/:id, in ms. */
 const POLL_INTERVAL_MS = 2500;
 
-// Polls GET /api/trials/:id until every role in `pendingRoles` has
-// resolved (success/failed/aborted) or POLL_TIMEOUT_MS elapses, updating
-// `bucket` (state.representatives or state.judges) and calling `render`
-// incrementally as each role resolves, rather than waiting for the whole
-// batch together.
+/**
+ * Polls GET /api/trials/:id until every role in `pendingRoles` has
+ * resolved (success/failed/aborted) or POLL_TIMEOUT_MS elapses, updating
+ * `bucket` (state.representatives or state.judges) and calling `render`
+ * incrementally as each role resolves, rather than waiting for the whole
+ * batch together.
+ *
+ * @param {AgentRole[]} pendingRoles Roles whose calls were accepted and have
+ *   no outcome yet.
+ * @param {Object<string, AgentEntry>} bucket state.representatives or
+ *   state.judges, updated in place.
+ * @param {() => void} render Re-renders the phase's cards.
+ * @param {AbortSignal} signal Stops polling when aborted. The aborted state
+ *   itself is set by abortCurrentTrial(), not here.
+ * @returns {Promise<void>} Resolves once every role has an outcome, polling
+ *   times out (the roles still pending are marked 'timeout'), or the signal
+ *   aborts.
+ */
 async function pollForRoles(pendingRoles, bucket, render, signal) {
   const remaining = new Set(pendingRoles);
   const startedAt = Date.now();
@@ -760,12 +1165,23 @@ async function pollForRoles(pendingRoles, bucket, render, signal) {
   }
 }
 
+/**
+ * Triggers the four representative calls - staggered, through the bounded
+ * pool - then polls until each has an outcome.
+ *
+ * Expects beginTrial() to have already seeded and rendered the loading
+ * cards. A trigger the platform rejects is shown as failed straight away
+ * and is not polled for.
+ *
+ * @param {AbortSignal} signal
+ * @returns {Promise<void>}
+ */
 async function runRepresentativesPhase(signal) {
   // The initial "Arguing…" loading-card seed + render used to happen right
   // here, as this function's first synchronous action. It now happens in
-  // beginTrial() instead, before the scroll-to-bottom call - see the
-  // comment there for why. This is the only caller of this function, so
-  // nothing else depends on it seeding state.representatives itself.
+  // beginTrial() instead, before the section is scrolled into view - see
+  // the comment there for why. beginTrial() is the only caller, so nothing
+  // else depends on this function seeding state.representatives itself.
   const triggered = [];
   await runWithConcurrencyLimit(REPRESENTATIVE_ROLES, MAX_CONCURRENT_CALLS, async (role, index) => {
     try {
@@ -789,6 +1205,18 @@ async function runRepresentativesPhase(signal) {
   }
 }
 
+/**
+ * Reveals the Judges section with a loading card per judge, then triggers
+ * the three judge calls and polls for their outcomes, exactly as
+ * runRepresentativesPhase() does.
+ *
+ * Each judge's prompt is built server-side from whichever representative
+ * arguments were saved, which is why beginTrial() only starts this once
+ * the representatives phase has fully resolved.
+ *
+ * @param {AbortSignal} signal
+ * @returns {Promise<void>}
+ */
 async function runJudgesPhase(signal) {
   el.phaseJudges.classList.remove('hidden');
   for (const role of JUDGE_ROLES) {
@@ -819,15 +1247,40 @@ async function runJudgesPhase(signal) {
   }
 }
 
+/**
+ * Re-reads the current trial and re-renders the call log from it, so the
+ * log shows every attempt the server recorded during the run.
+ *
+ * @returns {Promise<boolean>} Whether the call log was loaded: false if the
+ *   request failed or returned an error status, and true with no request
+ *   at all when there is no current trial. Never rejects on a failed
+ *   request - the caller decides how to report it.
+ */
 async function refreshFullTrial() {
-  if (!state.trialId) return;
-  const res = await fetch(`/api/trials/${state.trialId}`);
-  if (!res.ok) return;
-  const data = await res.json();
+  if (!state.trialId) return true;
+  let data;
+  try {
+    const res = await fetch(`/api/trials/${state.trialId}`);
+    if (!res.ok) return false;
+    data = await res.json();
+  } catch {
+    return false;
+  }
+  // Outside the try on purpose: a rendering bug should surface as the bug
+  // it is, not be reported as a call log that failed to load.
   state.callLog = data.apiCallLogs || [];
   renderCallLog();
+  return true;
 }
 
+/**
+ * Loads the case sheet, each role's starting model and the shared token
+ * cap from /api/case, and renders the case sheet. Runs once at page load,
+ * before any trial exists. Does nothing if the request returns an error
+ * status.
+ *
+ * @returns {Promise<void>} Rejects on a network error.
+ */
 async function loadStaticCaseSheet() {
   const res = await fetch('/api/case');
   if (!res.ok) return;
@@ -838,6 +1291,12 @@ async function loadStaticCaseSheet() {
   renderCaseSheet();
 }
 
+/**
+ * Replaces the run-history list with a single status line.
+ *
+ * @param {string} message Inserted as HTML.
+ * @param {boolean} showSpinner
+ */
 function renderHistoryPlaceholder(message, showSpinner) {
   el.historyList.innerHTML = `
     <li class="history-loading">
@@ -857,9 +1316,19 @@ function renderHistoryPlaceholder(message, showSpinner) {
 // before showing an alarming error" treatment representative/judge calls
 // already get - just on a much shorter, lighter budget suited to a small
 // metadata fetch rather than a real generation.
+/** How many times to try GET /api/trials before showing an error. */
 const HISTORY_RETRY_ATTEMPTS = 3;
+/** Pause after a failed attempt, in ms, multiplied by the attempt number. */
 const HISTORY_RETRY_BACKOFF_MS = 700;
 
+/**
+ * Fetches the run history and re-renders the sidebar, retrying a failed
+ * fetch up to HISTORY_RETRY_ATTEMPTS times. If every attempt fails, a list
+ * already on screen is left as it was, and an empty one shows an error
+ * line instead.
+ *
+ * @returns {Promise<void>} Never rejects.
+ */
 async function refreshHistory() {
   // Only show the big "fetching" placeholder when there's genuinely
   // nothing to look at yet - this is what was looking frozen on a slow
@@ -891,18 +1360,41 @@ async function refreshHistory() {
   }
 }
 
+/**
+ * Opens a trial from the run history: fetches it, rebuilds every card and
+ * the call log from the stored record, and scrolls to the Representatives
+ * section.
+ *
+ * Does nothing while a trial is running or another is being opened. A
+ * trial that cannot be loaded - the server unreachable, or an error in
+ * reply - is reported with alert().
+ *
+ * @param {string} trialId
+ * @returns {Promise<void>} Resolves once the loading overlay and the
+ *   sidebar are restored. Failed requests are reported to the user rather
+ *   than rejecting it.
+ */
 async function loadTrial(trialId) {
   if (state.running || state.loadingTrial) return;
   state.loadingTrial = true;
   el.mainLoadingOverlay.classList.remove('hidden');
   el.sidebar.classList.add('loading-locked');
   try {
-    const res = await fetch(`/api/trials/${trialId}`);
-    if (!res.ok) {
+    // Same reasoning as trial creation in beginTrial(): a failure to reach
+    // the server, or a reply that isn't JSON, is reported rather than left
+    // to escape as an uncaught rejection that looks like an ignored click.
+    let res;
+    try {
+      res = await fetch(`/api/trials/${trialId}`);
+    } catch {
+      alert(`Could not load that trial: ${SERVER_UNREACHABLE_MESSAGE}`);
+      return;
+    }
+    const data = res.ok ? await res.json().catch(() => null) : null;
+    if (!data) {
       alert('Could not load that trial.');
       return;
     }
-    const data = await res.json();
 
     state.trialId = trialId;
     state.caseDef = data.caseDef;
@@ -930,12 +1422,10 @@ async function loadTrial(trialId) {
     // an empty or half-built page. A trial with zero representative
     // entries leaves .phaseRepresentatives hidden (display: none), where
     // scrollIntoView is already a harmless no-op - no extra guard needed
-    // for that case. block: 'start' here, not 'center' like the
-    // "Begin new trial" scroll below - a historical trial's arguments are
-    // already fully populated by the time this fires, and 'start' reads
-    // better than 'center' once there's real content to read starting
-    // from the top of the section, per the user's explicit comparison of
-    // both.
+    // for that case. block: 'start', the same as the "Begin new trial"
+    // scroll in beginTrial() - 'start' reads better than 'center' once
+    // there's real content to read from the top of the section, per the
+    // user's explicit comparison of both.
     el.phaseRepresentatives.scrollIntoView({ behavior: 'smooth', block: 'start' });
   } finally {
     state.loadingTrial = false;
@@ -944,6 +1434,10 @@ async function loadTrial(trialId) {
   }
 }
 
+/**
+ * Renders state.caseDef into the case-sheet section. Does nothing until
+ * the case definition has loaded.
+ */
 function renderCaseSheet() {
   const c = state.caseDef;
   if (!c) return;
@@ -975,29 +1469,50 @@ function renderCaseSheet() {
   el.caseScopeNote.textContent = c.scopeNote;
 }
 
-// Builds the shared "what's happening with this call right now" block used
-// by both representative and judge cards - kept as one function so the two
-// card types can't quietly drift into showing different information for
-// the same underlying states.
-// Prepended to every "still waiting on a response" status below - a purely
-// visual, CSS-animated indicator (see .spinner in styles.css) that there's
-// real, ongoing activity, distinct from the text-only states (aborted,
-// failed, success) where nothing is in flight anymore.
-//
-// A CSS animation restarts from 0% whenever its element is torn down and
-// recreated, which would otherwise make a spinner visibly snap back to the
-// start on each re-render instead of appearing to spin continuously. Fix:
-// a negative animation-delay keyed to the real wall clock tells the
-// browser "this animation has already been running for X ms," so a freshly
-// created element starts at exactly the angle a continuously running one
-// would already be at. Must match the animation's duration in styles.css
-// (currently 0.8s / 800ms).
+/**
+ * Duration of one spinner rotation, in ms. Must match the `spin` animation
+ * in styles.css - see spinnerHtml() for why, and
+ * tests/shared-constants.test.js, which asserts the two agree.
+ */
 const SPINNER_ANIMATION_MS = 800;
+/**
+ * Returns the markup for a spinner that looks continuous across
+ * re-renders.
+ *
+ * Prepended to every "still waiting on a response" status below - a purely
+ * visual, CSS-animated indicator (see .spinner in styles.css) that there's
+ * real, ongoing activity, distinct from the text-only states (aborted,
+ * failed, success) where nothing is in flight anymore.
+ *
+ * A CSS animation restarts from 0% whenever its element is torn down and
+ * recreated, which would otherwise make a spinner visibly snap back to the
+ * start on each re-render instead of appearing to spin continuously. Fix:
+ * a negative animation-delay keyed to the real wall clock tells the
+ * browser "this animation has already been running for X ms," so a freshly
+ * created element starts at exactly the angle a continuously running one
+ * would already be at. SPINNER_ANIMATION_MS must match the animation's
+ * duration in styles.css (currently 0.8s / 800ms).
+ *
+ * @returns {string} HTML for one spinner element.
+ */
 function spinnerHtml() {
   const offset = -(Date.now() % SPINNER_ANIMATION_MS);
   return `<span class="spinner" style="animation-delay: ${offset}ms"></span>`;
 }
 
+/**
+ * Builds the shared "what's happening with this call right now" block used
+ * by both representative and judge cards - kept as one function so the two
+ * card types can't quietly drift into showing different information for
+ * the same underlying states.
+ *
+ * @param {AgentEntry | undefined} entry
+ * @param {AgentRole} role Used to look up the starting model while no
+ *   attempt has been reported yet.
+ * @param {string} verb Shown while loading - 'Arguing' or 'Deliberating'.
+ * @returns {HTMLDivElement | null} The status block, or null for a
+ *   successful entry, whose content the caller renders itself.
+ */
 function buildAgentStatusBody(entry, role, verb) {
   const body = document.createElement('div');
 
@@ -1006,8 +1521,8 @@ function buildAgentStatusBody(entry, role, verb) {
   // it begins (see beginTrial), before this ever renders. The only way
   // this function sees a missing entry is loadTrial() viewing a completed,
   // historical trial whose call log has nothing to show for this role at
-  // all (no logged attempt of any kind - loadTrial backfills a proper
-  // 'failed' entry from the call log whenever one exists, below). Showing
+  // all (no logged attempt of any kind - deriveRoleStates() backfills a
+  // proper 'failed' entry from the call log whenever one exists). Showing
   // the spinner here would claim this dead trial is still working.
   if (!entry) {
     body.className = 'card-body dim';
@@ -1071,8 +1586,8 @@ function buildAgentStatusBody(entry, role, verb) {
   // still be running server-side (Background Functions get up to 15
   // minutes) - polling just stopped waiting on this page. Worded to say
   // that honestly rather than implying the call itself is known to have
-  // failed, since it may not have. See pollForRoles() in the trigger/poll
-  // rewrite for what actually produces this status.
+  // failed, since it may not have. See pollForRoles() for what actually
+  // produces this status.
   if (entry.status === 'timeout') {
     const wrap = document.createElement('div');
     const badge = document.createElement('span');
@@ -1089,9 +1604,17 @@ function buildAgentStatusBody(entry, role, verb) {
   return null; // success - caller renders its own content
 }
 
-// Shared by both card types, appended after their normal success content -
-// see isTruncated() for what actually triggers this and why it needs to be
-// derivable for both a live entry and one loaded from history.
+/**
+ * Adds a "Truncated" badge and note to a card whose result hit the token
+ * cap. Does nothing otherwise.
+ *
+ * Shared by both card types, appended after their normal success content -
+ * see isTruncated() for what actually triggers this and why it needs to be
+ * derivable for both a live entry and one loaded from history.
+ *
+ * @param {HTMLElement} card
+ * @param {AgentEntry} entry
+ */
 function appendTruncationNotice(card, entry) {
   if (!isTruncated(entry)) return;
   const badge = document.createElement('span');
@@ -1104,22 +1627,29 @@ function appendTruncationNotice(card, entry) {
   card.appendChild(note);
 }
 
-// Toggles a bottom fade (see .card-body-scroll-wrap in styles.css) on a
-// scrollable card body whenever there's real text hidden below the
-// visible area, and hides it once scrolled to the actual bottom - a
-// clearer "there's more" signal than a bare scrollbar track alone,
-// decided on explicitly (2026-09-03) over an in-place "Read full
-// response..." expand (would fight the fixed card-grid row heights this
-// same scroll region exists to keep consistent) or a modal (real added
-// complexity - backdrop, focus handling - for a benefit judged not worth
-// it here). The fade lives on bodyEl's parent (a plain sibling wrapper,
-// not a child of the scrolling element itself) specifically so it stays
-// visually pinned at the bottom of the visible box - an absolutely
-// positioned child of the SCROLLING element would scroll away along with
-// the text instead.
+/**
+ * Toggles a bottom fade (see .card-body-scroll-wrap in styles.css) on a
+ * scrollable card body whenever there's real text hidden below the
+ * visible area, and hides it once scrolled to the actual bottom - a
+ * clearer "there's more" signal than a bare scrollbar track alone,
+ * decided on explicitly (2026-09-03) over an in-place "Read full
+ * response..." expand (would fight the fixed card-grid row heights this
+ * same scroll region exists to keep consistent) or a modal (real added
+ * complexity - backdrop, focus handling - for a benefit judged not worth
+ * it here). The fade lives on bodyEl's parent (a plain sibling wrapper,
+ * not a child of the scrolling element itself) specifically so it stays
+ * visually pinned at the bottom of the visible box - an absolutely
+ * positioned child of the SCROLLING element would scroll away along with
+ * the text instead.
+ *
+ * @param {HTMLElement} bodyEl The scrolling text body. Its parent is the
+ *   element that receives the has-more-below class, and it must already be
+ *   in the document - see reconcileAgentCards().
+ */
 function attachScrollFade(bodyEl) {
   const wrapEl = bodyEl.parentElement;
   const SCROLL_END_EPSILON = 2; // sub-pixel/rounding tolerance
+  /** Shows the fade only while there is text below the visible area. */
   function update() {
     const hasMore = bodyEl.scrollHeight - bodyEl.scrollTop - bodyEl.clientHeight > SCROLL_END_EPSILON;
     wrapEl.classList.toggle('has-more-below', hasMore);
@@ -1128,41 +1658,58 @@ function attachScrollFade(bodyEl) {
   update();
 }
 
-// Real browsers don't support a CSS transition/animation on
-// ::-webkit-scrollbar-thumb or Firefox's scrollbar-color at all - a
-// transition on either is silently ignored, which is why an earlier
-// version of this used a fixed hover-intent delay instead (wait, then
-// snap) to keep an incidental pointer pass from flashing the scrollbar
-// bright. That read as sluggish on a deliberate hover (real user
-// report, 2026-09-04): motion didn't start until the delay had already
-// elapsed. This drives the fade itself in JS instead - a plain
-// rAF loop writes progressively interpolated values into a CSS custom
-// property (--scrollbar-thumb-opacity, read by the color-mix() calls in
-// styles.css) every frame. Each individual frame is just an ordinary,
-// instant custom-property change, which every browser already handles
-// fine (that's exactly the mechanism the old .scrollbar-hover class swap
-// used) - repeating it ~13 times over SCROLLBAR_FADE_MS produces a real
-// smooth fade without needing the browser to animate the scrollbar
-// itself. This incidentally fixes the original flash problem better
-// than the delay did, with no artificial dead time: a quick pass only
-// reaches a small partial brightening before reversing back toward
-// rest, rather than either waiting through a delay or snapping to full
-// brightness instantly. animateTo() reverses smoothly from wherever the
-// fade currently is if the target flips mid-animation (e.g. the pointer
-// leaves while still fading in), not by restarting from rest.
-//
-// A bonus not asked for: this also gives Firefox the actual fade effect
-// for the first time - its scrollbar-color has no thumb-scoped
-// pseudo-classes for a genuine :hover-driven CSS rule to key off, but a
-// plain custom-property value it's already reading recalculates on
-// every write exactly like Chromium does, so the same JS loop works
-// identically there. The dragging tier is untouched - real
-// ::-webkit-scrollbar-thumb:active, snapping instantly, unaffected by
-// any of this - direct-manipulation feedback to a physical mouse press
-// arguably should stay instant, not fade in.
+/** Scrollbar thumb opacity at rest, as a percentage. */
 const SCROLLBAR_REST_OPACITY = 15;
+/**
+ * Scrollbar thumb opacity while the pointer is over its container, as a
+ * percentage.
+ */
 const SCROLLBAR_HOVER_OPACITY = 30;
+/** How long a fade between those two takes, in ms. */
 const SCROLLBAR_FADE_MS = 220;
+/**
+ * Fades a scrollbar thumb brighter while the pointer is over its
+ * container, and back to rest when it leaves.
+ *
+ * Real browsers don't support a CSS transition/animation on
+ * ::-webkit-scrollbar-thumb or Firefox's scrollbar-color at all - a
+ * transition on either is silently ignored, which is why an earlier
+ * version of this used a fixed hover-intent delay instead (wait, then
+ * snap) to keep an incidental pointer pass from flashing the scrollbar
+ * bright. That read as sluggish on a deliberate hover (real user
+ * report, 2026-09-04): motion didn't start until the delay had already
+ * elapsed. This drives the fade itself in JS instead - a plain
+ * rAF loop writes progressively interpolated values into a CSS custom
+ * property (--scrollbar-thumb-opacity, read by the color-mix() calls in
+ * styles.css) every frame. Each individual frame is just an ordinary,
+ * instant custom-property change, which every browser already handles
+ * fine (that's exactly the mechanism the old .scrollbar-hover class swap
+ * used) - repeating it ~13 times over SCROLLBAR_FADE_MS produces a real
+ * smooth fade without needing the browser to animate the scrollbar
+ * itself. This incidentally fixes the original flash problem better
+ * than the delay did, with no artificial dead time: a quick pass only
+ * reaches a small partial brightening before reversing back toward
+ * rest, rather than either waiting through a delay or snapping to full
+ * brightness instantly. animateTo() reverses smoothly from wherever the
+ * fade currently is if the target flips mid-animation (e.g. the pointer
+ * leaves while still fading in), not by restarting from rest.
+ *
+ * A bonus not asked for: this also gives Firefox the actual fade effect
+ * for the first time - its scrollbar-color has no thumb-scoped
+ * pseudo-classes for a genuine :hover-driven CSS rule to key off, but a
+ * plain custom-property value it's already reading recalculates on
+ * every write exactly like Chromium does, so the same JS loop works
+ * identically there. The dragging tier is separate and untouched by any of
+ * this - a ::-webkit-scrollbar-thumb:active rule, snapping instantly, since
+ * direct-manipulation feedback to a physical mouse press arguably should
+ * stay instant, not fade in. It does not render in current Chrome, Edge or
+ * Firefox, though - see the scrollbar comments in styles.css.
+ *
+ * @param {HTMLElement} el The element to watch for the pointer. The opacity
+ *   is written to its --scrollbar-thumb-opacity custom property, which a
+ *   scroll container inside it inherits. (Shadows the module-level `el`
+ *   within this function.)
+ */
 function attachScrollbarFade(el) {
   let current = SCROLLBAR_REST_OPACITY;
   let target = SCROLLBAR_REST_OPACITY;
@@ -1170,12 +1717,21 @@ function attachScrollbarFade(el) {
   let fadeStartedAt = null;
   let rafId = null;
 
+  /**
+   * Applies one opacity value.
+   * @param {number} opacity A percentage.
+   */
   function paint(opacity) {
     current = opacity;
     el.style.setProperty('--scrollbar-thumb-opacity', `${opacity}%`);
   }
   paint(current);
 
+  /**
+   * One animation frame: moves linearly from fadeFrom toward target, and
+   * schedules the next frame until the fade is complete.
+   * @param {DOMHighResTimeStamp} now
+   */
   function tick(now) {
     if (fadeStartedAt === null) fadeStartedAt = now;
     const t = Math.min(1, (now - fadeStartedAt) / SCROLLBAR_FADE_MS);
@@ -1183,6 +1739,12 @@ function attachScrollbarFade(el) {
     rafId = t < 1 ? requestAnimationFrame(tick) : null;
   }
 
+  /**
+   * Starts a fade toward newTarget from wherever the current one has got to,
+   * so a reversal mid-fade doesn't jump. A no-op if that is already the
+   * target.
+   * @param {number} newTarget A percentage.
+   */
   function animateTo(newTarget) {
     if (newTarget === target) return;
     target = newTarget;
@@ -1208,18 +1770,24 @@ function attachScrollbarFade(el) {
 // load at all, not just a visual glitch.
 attachScrollbarFade(el.historyList);
 
-// A compact description of exactly the state a card was rendered from.
-// Two cards with the same signature would render byte-identically, so a
-// card whose signature hasn't changed can be left on screen untouched.
-//
-// Deliberately built from state rather than from the generated HTML: the
-// loading card's spinner embeds a wall-clock-derived animation-delay (see
-// spinnerHtml) that differs on every single render, so comparing markup
-// would never match and would defeat the whole point.
-//
-// state.trialId is included so that starting or opening a different trial
-// always rebuilds every card, rather than relying on the new trial's
-// per-role state happening to differ from the old one's.
+/**
+ * Returns a compact description of exactly the state a card was rendered
+ * from. Two cards with the same signature would render byte-identically,
+ * so a card whose signature hasn't changed can be left on screen untouched.
+ *
+ * Deliberately built from state rather than from the generated HTML: the
+ * loading card's spinner embeds a wall-clock-derived animation-delay (see
+ * spinnerHtml) that differs on every single render, so comparing markup
+ * would never match and would defeat the whole point.
+ *
+ * state.trialId is included so that starting or opening a different trial
+ * always rebuilds every card, rather than relying on the new trial's
+ * per-role state happening to differ from the old one's.
+ *
+ * @param {AgentEntry | undefined} entry
+ * @param {AgentRole} role
+ * @returns {string}
+ */
 function agentCardSignature(entry, role) {
   const trial = state.trialId || '';
   if (!entry) return `${trial}|none`;
@@ -1246,20 +1814,27 @@ function agentCardSignature(entry, role) {
   return [trial, entry.status, entry.error || ''].join('|');
 }
 
-// Replaces only the cards whose rendered state actually changed, leaving
-// every other card's DOM node exactly where it is.
-//
-// This fixes a real, long-standing annoyance: the render functions used to
-// start with `container.innerHTML = ''` and rebuild every card in the
-// phase, so a poll tick that advanced ONE agent's model/attempt line tore
-// down and recreated all of its siblings too - including cards already
-// showing a finished argument, which visibly flashed. Nothing about one
-// agent escalating requires touching another agent's card.
-//
-// Keeping untouched nodes alive also fixes two quieter side effects of the
-// old approach: a card's scroll position inside a long argument no longer
-// resets mid-read, and its already-attached fade/scrollbar listeners are
-// not repeatedly torn off and re-added.
+/**
+ * Replaces only the cards whose rendered state actually changed, leaving
+ * every other card's DOM node exactly where it is.
+ *
+ * This fixes a real, long-standing annoyance: the render functions used to
+ * start with `container.innerHTML = ''` and rebuild every card in the
+ * phase, so a poll tick that advanced ONE agent's model/attempt line tore
+ * down and recreated all of its siblings too - including cards already
+ * showing a finished argument, which visibly flashed. Nothing about one
+ * agent escalating requires touching another agent's card.
+ *
+ * Keeping untouched nodes alive also fixes two quieter side effects of the
+ * old approach: a card's scroll position inside a long argument no longer
+ * resets mid-read, and its already-attached fade/scrollbar listeners are
+ * not repeatedly torn off and re-added.
+ *
+ * @param {HTMLElement} container The phase's card grid.
+ * @param {AgentRole[]} roles In display order - one card per role.
+ * @param {(role: AgentRole) => (AgentEntry | undefined)} entryFor
+ * @param {(role: AgentRole, entry: AgentEntry | undefined) => BuiltCard} buildCard
+ */
 function reconcileAgentCards(container, roles, entryFor, buildCard) {
   roles.forEach((role, index) => {
     const entry = entryFor(role);
@@ -1288,6 +1863,14 @@ function reconcileAgentCards(container, roles, entryFor, buildCard) {
   }
 }
 
+/**
+ * Builds one representative's card: name and seat, then either the
+ * argument or the call's current status.
+ *
+ * @param {RepresentativeRole} role
+ * @param {AgentEntry | undefined} entry
+ * @returns {BuiltCard}
+ */
 function buildRepresentativeCard(role, entry) {
   const meta = REPRESENTATIVE_META[role];
   const card = document.createElement('div');
@@ -1326,22 +1909,31 @@ function buildRepresentativeCard(role, entry) {
   return { card, scrollBody };
 }
 
+/**
+ * Brings the representative cards up to date with state.representatives,
+ * rebuilding only the cards whose state changed.
+ */
 function renderRepresentatives() {
   reconcileAgentCards(el.representativeCards, REPRESENTATIVE_ROLES, (role) => state.representatives[role], buildRepresentativeCard);
 }
 
-// All three judges in a given trial always see the exact same set of
-// available/unavailable representative arguments - runJudgesPhase() only
-// ever starts after runRepresentativesPhase() has fully resolved every
-// role (success, failure, or abort), so there's no scenario where one
-// judge ruled with 3/4 arguments and another ruled with 4/4 in the same
-// run. That's what makes a single banner above all three cards correct,
-// rather than needing a per-judge-card note or any new stored data - this
-// reads directly off state.representatives, which by the time judges are
-// ever shown (live or historical) already reflects exactly what every
-// judge's own prompt contained (see buildJudgeMessages in prompts.ts,
-// which marks a missing seat "[argument unavailable]" rather than
-// fabricating or silently omitting it).
+/**
+ * Shows the banner above the judges' cards when any representative
+ * argument is missing, naming which, and hides it otherwise.
+ *
+ * All three judges in a given trial always see the exact same set of
+ * available/unavailable representative arguments - runJudgesPhase() only
+ * ever starts after runRepresentativesPhase() has fully resolved every
+ * role (success, failure, or abort), so there's no scenario where one
+ * judge ruled with 3/4 arguments and another ruled with 4/4 in the same
+ * run. That's what makes a single banner above all three cards correct,
+ * rather than needing a per-judge-card note or any new stored data - this
+ * reads directly off state.representatives, which by the time judges are
+ * ever shown (live or historical) already reflects exactly what every
+ * judge's own prompt contained (see buildJudgeMessages in prompts.ts,
+ * which marks a missing seat "[argument unavailable]" rather than
+ * fabricating or silently omitting it).
+ */
 function updateJudgesCaveat() {
   const missing = REPRESENTATIVE_ROLES.filter(
     (role) => !(state.representatives[role] && state.representatives[role].status === 'success')
@@ -1359,6 +1951,14 @@ function updateJudgesCaveat() {
   el.judgesCaveat.classList.remove('hidden');
 }
 
+/**
+ * Builds one judge's card: name, then either the verdict and reasoning or
+ * the call's current status.
+ *
+ * @param {JudgeRole} role
+ * @param {AgentEntry | undefined} entry
+ * @returns {BuiltCard}
+ */
 function buildJudgeCard(role, entry) {
   const meta = JUDGE_META[role];
   const card = document.createElement('div');
@@ -1399,45 +1999,76 @@ function buildJudgeCard(role, entry) {
   return { card, scrollBody };
 }
 
+/**
+ * Brings the judge cards and the missing-arguments banner up to date with
+ * state.
+ */
 function renderJudges() {
   reconcileAgentCards(el.judgeCards, JUDGE_ROLES, (role) => state.judges[role], buildJudgeCard);
   updateJudgesCaveat();
 }
 
-// Shown in cents rather than dollars - real per-call cost on a paid model
-// is a small fraction of a cent, and "$0.0001" (four decimal places, to
-// stay meaningful rather than rounding down to indistinguishable-from-
-// zero) was both visually noisy and, at the call log's column widths,
-// prone to wrapping mid-number. Two decimal places of a cent is the same
-// real precision as four decimal places of a dollar (the database itself
-// still stores full, unrounded precision regardless of what's shown
-// here) in two fewer characters.
+/**
+ * Formats a dollar cost in cents, to two decimal places: 0.000162 ->
+ * "0.02¢".
+ *
+ * Shown in cents rather than dollars - real per-call cost on a paid model
+ * is a small fraction of a cent, and "$0.0001" (four decimal places, to
+ * stay meaningful rather than rounding down to indistinguishable-from-
+ * zero) was both visually noisy and, at the call log's column widths,
+ * prone to wrapping mid-number. Two decimal places of a cent is the same
+ * real precision as four decimal places of a dollar (the database itself
+ * still stores full, unrounded precision regardless of what's shown
+ * here) in two fewer characters.
+ *
+ * @param {number} cost In US dollars.
+ * @returns {string}
+ */
 function formatCost(cost) {
   return `${(Number(cost) * 100).toFixed(2)}¢`;
 }
 
-// "Grey Worm" instead of "grey_worm" - REPRESENTATIVE_META already has the
-// proper display name for the four representatives; judges are single
-// words, so plain capitalization gives "Barak"/"Elon"/"Shamgar" directly
-// (deliberately not JUDGE_META's name, which is "Judge — Barak method" -
-// too long for this column and redundant with the Type column showing
-// "J" already). Also means text wraps at the space in a name like
-// "Daenerys Targaryen" instead of breaking mid-word inside
-// "daenerys_targaryen".
+/**
+ * Returns a role's display name for the call log's Agent column.
+ *
+ * "Grey Worm" instead of "grey_worm" - REPRESENTATIVE_META already has the
+ * proper display name for the four representatives; judges are single
+ * words, so plain capitalization gives "Barak"/"Elon"/"Shamgar" directly
+ * (deliberately not JUDGE_META's name, which is "Judge — Barak method" -
+ * too long for this column and redundant with the Type column showing
+ * "J" already). Also means text wraps at the space in a name like
+ * "Daenerys Targaryen" instead of breaking mid-word inside
+ * "daenerys_targaryen".
+ *
+ * @param {string} role
+ * @returns {string}
+ */
 function formatAgentName(role) {
   if (REPRESENTATIVE_META[role]) return REPRESENTATIVE_META[role].name;
   return role.charAt(0).toUpperCase() + role.slice(1);
 }
 
-// null specifically for rows logged before the duration_ms column
-// existed (see ApiCallLogRecord in types.ts) - shown as a plain dash
-// rather than a fabricated 0, which would misleadingly read as an
-// instant response.
+/**
+ * Formats a duration as "12,345 ms", or a dash when none was recorded.
+ *
+ * null specifically for rows logged before the duration_ms column
+ * existed (see ApiCallLogRecord in types.ts) - shown as a plain dash
+ * rather than a fabricated 0, which would misleadingly read as an
+ * instant response.
+ *
+ * @param {number | null | undefined} durationMs
+ * @returns {string}
+ */
 function formatDuration(durationMs) {
   if (durationMs === null || durationMs === undefined) return '—';
   return `${Math.round(durationMs).toLocaleString()} ms`;
 }
 
+/**
+ * Rebuilds the call log table from state.callLog - one row per logged
+ * attempt, discarded retries included - followed by its totals row, or
+ * hides the section while the log is empty.
+ */
 function renderCallLog() {
   if (state.callLog.length === 0) {
     el.phaseLog.classList.add('hidden');
@@ -1461,8 +2092,8 @@ function renderCallLog() {
     const isRetriedDiffModel = err.startsWith(DEGENERATE_RETRIED_DIFF_MODEL_MARKER);
     const isDegenerateRetried = isRetriedSameModel || isRetriedDiffModel;
     const isDegenerateFinal = err.startsWith(DEGENERATE_FINAL_MARKER);
-    // A fallback tier's model rejected the request outright (e.g. a
-    // removed model id) and the chain escalated to the next tier - see
+    // A tier's model rejected the request outright (e.g. a removed model
+    // id) and the chain escalated to the next tier - see
     // HTTP_ERROR_ESCALATED_MARKER's own comment above. Always an
     // escalation to a different model, never a same-model retry (unlike
     // the degenerate/truncation case), since retrying the exact same
@@ -1491,9 +2122,8 @@ function renderCallLog() {
 
     // A response still truncated after every attempt the escalation chain
     // allows is now a real failure (openrouter.ts), correctly shown via
-    // the status column
-    // below - this badge only still fires for historical rows recorded
-    // before that change, where the log genuinely says 'success' with a
+    // the status column below - this badge only still fires for historical
+    // rows recorded before that change, where the log genuinely says 'success' with a
     // completion that's an exact multiple of the cap (1x from an older,
     // single-attempt truncation, or 2x from a retry that also truncated
     // before this fix existed). Same reasoning and formula as isTruncated().
@@ -1544,11 +2174,12 @@ function renderCallLog() {
         </div>
       `;
     } else if (isDegenerateFinal) {
-      // Red, not yellow - this is the LAST fallback tier failing too, with
-      // nothing left to fall back to. As fatal as a 404/429/500. (Last,
-      // not priciest: tier 4 is actually cheaper per call than tier 3 -
-      // see the pricing note in openrouter.ts. What makes this red is that
-      // the chain is out of options, not what the attempt cost.)
+      // Red, not yellow - the chain has nothing left to fall back to: the
+      // last tier failed too, or the time budget ran out before another
+      // tier could be tried. As fatal as a 404/429/500. (Last, not
+      // priciest: tier 4 is actually cheaper per call than tier 3 - see
+      // the pricing note in openrouter.ts. What makes this red is that the
+      // chain is out of options, not what the attempt cost.)
       statusCellHtml = `<span class="badge badge-fail">${hitTokenCap ? 'Truncated' : 'Degenerated'}</span>`;
     } else {
       const statusBadge = entry.status === 'success' ? 'badge-ok' : 'badge-fail';
@@ -1579,17 +2210,21 @@ function renderCallLog() {
   renderCallLogTotals();
 }
 
-// Sums every real logged attempt shown above - including discarded
-// retries/escalations, not just the kept final row per role, since those
-// discarded attempts are genuinely-spent cost/tokens too (see
-// onDiscardedAttempt in openrouter.ts). Duration is summed the same way,
-// which reports total compute time across every attempt, not wall-clock
-// elapsed time for the trial - representatives/judges within a phase run
-// concurrently, so those two numbers are expected to differ; the label
-// below says "compute time" specifically to avoid implying otherwise.
-// Rows logged before the duration_ms column existed have a null value
-// (see formatDuration) and are simply skipped in this sum rather than
-// treated as 0, so an old trial's total doesn't silently understate.
+/**
+ * Renders the call log's totals row.
+ *
+ * Sums every real logged attempt shown above - including discarded
+ * retries/escalations, not just the kept final row per role, since those
+ * discarded attempts are genuinely-spent cost/tokens too (see
+ * onDiscardedAttempt in openrouter.ts). Duration is summed the same way,
+ * which reports total compute time across every attempt, not wall-clock
+ * elapsed time for the trial - representatives/judges within a phase run
+ * concurrently, so those two numbers are expected to differ; the label
+ * below says "compute time" specifically to avoid implying otherwise.
+ * Rows logged before the duration_ms column existed have a null value
+ * (see formatDuration) and are simply skipped in this sum rather than
+ * treated as 0, so an old trial's total doesn't silently understate.
+ */
 function renderCallLogTotals() {
   let totalPromptTokens = 0;
   let totalCompletionTokens = 0;
@@ -1631,34 +2266,51 @@ function renderCallLogTotals() {
   el.callLogFoot.appendChild(tr);
 }
 
-// Stale until this fix: this used to assume TOTAL_BUDGET_MS (openrouter.ts)
-// was ~26s and that representatives all run in one fully-concurrent group.
-// Neither is true any more - TOTAL_BUDGET_MS is 650000ms (real margin for
-// the full 4-tier escalation chain), and representatives are dispatched
-// through a worker pool capped at MAX_CONCURRENT_CALLS (3), not run all 4
-// at once - see runWithConcurrencyLimit() below. Worst case: the 4th
-// representative doesn't even start until one of the first 3 finishes, so
-// the representatives phase alone can take up to ~2x TOTAL_BUDGET_MS
-// (~1300s) before the judges phase (all 3 concurrent, up to another
-// ~650s) even begins - roughly 1950s (32.5 min) end to end in the genuine
-// worst case, not the few minutes the old comment assumed. Set with real
-// margin above that (not just enough to scrape by, consistent with every
-// other budget in this app), so a trial that's actually still working -
-// however slowly - doesn't get mislabeled "Interrupted" in the history
-// sidebar before it's had a real chance to finish.
+/**
+ * How old a trial that never completed must be before the sidebar calls
+ * it "Interrupted" rather than "In progress".
+ *
+ * This once assumed TOTAL_BUDGET_MS (openrouter.ts) was ~26s, and so that a
+ * whole trial finishes in a few minutes. TOTAL_BUDGET_MS is 650000ms now -
+ * real margin for the full 4-tier escalation chain - so the genuine worst
+ * case is the representatives phase running its budget out in full, then
+ * the judges phase running out its own: ~1300s, roughly 22 minutes end to
+ * end. Both phases run all of their roles concurrently; an earlier revision
+ * of this comment put the worst case at ~32.5 min by treating the
+ * representatives as a 3-slot pool that makes the 4th wait for a free slot,
+ * which is not what happens - see the comment on MAX_CONCURRENT_CALLS
+ * above. Kept at 40 minutes: real margin above that (not just enough to
+ * scrape by, consistent with every other budget in this app), so a trial
+ * that's actually still working - however slowly - doesn't get mislabeled
+ * "Interrupted" in the history sidebar before it's had a real chance to
+ * finish.
+ */
 const INTERRUPTED_THRESHOLD_MS = 40 * 60 * 1000;
 
-// What the sidebar's status label is based on: whether the trial's final,
-// persisted results are actually incomplete - NOT whether any individual
-// call ever logged a failure along the way. A transient failure that the
-// server-side retry recovers from within its own budget is a real, logged
-// attempt that simply isn't the final outcome - a label driven by
-// hadFailures would flag a run like that as tainted even though the
-// result is complete and correct. The call log table still
-// shows every real attempt, success or failure, in full; this only changes
-// what the one-line sidebar summary reports.
+/**
+ * How many results a complete trial has: one per representative and one
+ * per judge.
+ *
+ * What the sidebar's status label is based on: whether the trial's final,
+ * persisted results are actually incomplete - NOT whether any individual
+ * call ever logged a failure along the way. A transient failure that the
+ * server-side retry recovers from within its own budget is a real, logged
+ * attempt that simply isn't the final outcome - a label driven by
+ * hadFailures would flag a run like that as tainted even though the
+ * result is complete and correct. The call log table still
+ * shows every real attempt, success or failure, in full; this only changes
+ * what the one-line sidebar summary reports.
+ */
 const TOTAL_EXPECTED_RESULTS = REPRESENTATIVE_ROLES.length + JUDGE_ROLES.length;
 
+/**
+ * Returns the status shown for a trial in the run-history sidebar - one of
+ * "Completed", "Completed — missing N of 7", "Aborted", "Aborted (N of 7
+ * completed)", "Interrupted" or "In progress…".
+ *
+ * @param {TrialSummary} trial
+ * @returns {string}
+ */
 function trialStatusLabel(trial) {
   const missing = TOTAL_EXPECTED_RESULTS - (trial.resultCount ?? 0);
   if (trial.wasAborted) {
@@ -1674,6 +2326,13 @@ function trialStatusLabel(trial) {
   return 'In progress…';
 }
 
+/**
+ * Returns the badge class for the status trialStatusLabel() gives the
+ * same trial.
+ *
+ * @param {TrialSummary} trial
+ * @returns {string}
+ */
 function trialStatusClass(trial) {
   const missing = TOTAL_EXPECTED_RESULTS - (trial.resultCount ?? 0);
   if (trial.wasAborted) {
@@ -1689,6 +2348,10 @@ function trialStatusClass(trial) {
   return 'badge-progress';
 }
 
+/**
+ * Rebuilds the run-history sidebar from state.history, marking the trial
+ * currently shown as active.
+ */
 function renderHistory() {
   el.historyList.innerHTML = '';
   // innerHTML above doesn't touch classList, so running-locked would

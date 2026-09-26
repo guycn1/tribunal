@@ -191,14 +191,22 @@ body {
      icon's rectangular bounding box. */
   /* Two layers with genuinely different jobs, which is why they are tuned
      separately rather than as one number:
-       5px  - hugs the octocat's silhouette. This is the one that edge-lights
-              the mark and makes the ICON itself look brighter, even though
-              it is drawn outside the glyph rather than on it.
-       13px - the diffuse surround. Reads as the glow around the mark and
+       10px - the inner layer, closest to the octocat's silhouette. This is
+              the one that edge-lights the mark and makes the ICON itself
+              look brighter, even though it is drawn outside the glyph
+              rather than on it.
+       20px - the diffuse surround. Reads as the glow around the mark and
               barely touches how bright the mark itself appears.
-     The 5px layer is therefore cut harder than the 13px one here (60 -> 38
-     against 35 -> 22): the complaint this addresses was the mark reading
-     too hot, not the surround being too wide. */
+     The inner layer's alpha was cut harder than the outer one's (60 -> 38
+     against 35 -> 22): the complaint that addressed was the mark reading
+     too hot, not the surround being too wide. Both radii were later
+     doubled, from 5px and 13px, at unchanged alpha - the same light spread
+     wider, so it reads as a soft aura rather than a bright rim. The resting
+     filter above uses the same radii, so only the alpha animates.
+     The 20px layer reaches 3px past the sidebar's edge (.sidebar is
+     overflow: hidden and the icon sits 17px in) and is clipped there. That
+     was checked and is invisible - it is the last few percent of the
+     falloff - but it is worth knowing before widening either layer. */
   filter: drop-shadow(0 0 10px color-mix(in srgb, var(--text) 38%, transparent))
     drop-shadow(0 0 20px color-mix(in srgb, var(--text) 22%, transparent));
 }
@@ -241,7 +249,8 @@ body {
   transition: border-color 0.2s ease;
 }
 
-/* White rather than the theme's gold accent (backlog item 2) - .active
+/* White rather than the theme's gold accent (item 2 of CLAUDE.md's
+   sidebar/scrollbar/card polish backlog) - .active
    (below) has two classes vs. this rule's one, so it naturally wins on
    specificity alone when an entry is both the active one and currently
    hovered, without needing a combined :hover.active selector. */
@@ -312,10 +321,11 @@ body {
   overflow-x: hidden;
 }
 
-/* Shown while a history entry's trial data is being fetched (see
-   loadTrial() in app.js) - covers .main only, not the sidebar, since the
-   sidebar stays independently readable/clickable (or not - see
-   pointer-events below) during that fetch. position:fixed rather than
+/* Shown while a history entry's trial data is being fetched (loadTrial()
+   in app.js), while a new trial is being created (beginTrial()) and while
+   an abort settles (abortCurrentTrial()) - covers .main only, not the
+   sidebar, since the sidebar stays independently readable (though not
+   clickable - see pointer-events below) meanwhile. position:fixed rather than
    absolute so it stays covering the visible viewport regardless of how
    tall .main's own content is or how far the page is scrolled.
    The `left` below is deliberately the exact same clamp() as .sidebar's
@@ -618,14 +628,6 @@ body {
   color: var(--text-dim);
 }
 
-/* Only the actual argument/ruling text (renderRepresentatives/renderJudges
-   in app.js) gets this, not the short status/dim text buildAgentStatusBody
-   renders while a call is loading or failed - real arguments/rulings run
-   long enough (up to ~600 words) to make card heights wildly inconsistent
-   across a grid otherwise, forcing a lot of scrolling just to reach the
-   call log below. A capped height with its own scrollbar keeps every card
-   a predictable size while still showing a real, readable chunk of text
-   before scrolling is needed. */
 /* Positioning anchor for the bottom fade below - see attachScrollFade()
    in app.js for why this needs to be a plain (non-scrolling) wrapper
    rather than putting the fade directly inside .card-body-scroll. */
@@ -678,6 +680,14 @@ body {
   opacity: 1;
 }
 
+/* Only the actual argument/ruling text (buildRepresentativeCard/
+   buildJudgeCard in app.js) gets this, not the short status/dim text
+   buildAgentStatusBody renders while a call is loading or failed - real
+   arguments/rulings run long enough (up to ~600 words) to make card heights
+   wildly inconsistent across a grid otherwise, forcing a lot of scrolling
+   just to reach the call log below. A capped height with its own scrollbar
+   keeps every card a predictable size while still showing a real, readable
+   chunk of text before scrolling is needed. */
 .card-body-scroll {
   max-height: 340px;
   overflow-y: auto;
@@ -708,22 +718,24 @@ body {
    individual frame is just an ordinary instant custom-property change,
    which every browser already handles fine - repeated every frame for
    ~SCROLLBAR_FADE_MS, that produces a real smooth fade despite no
-   browser ever animating anything itself. The 15%/30% literals below are
-   only the fallback for the (practically unreachable) case the custom
+   browser ever animating anything itself. The 15% literal below is only
+   the fallback for the (practically unreachable) case the custom
    property was never set - the real values live in app.js's
-   SCROLLBAR_REST_OPACITY/SCROLLBAR_HOVER_OPACITY and must be kept in
-   sync with them by hand, since CSS can't read a JS constant.
+   SCROLLBAR_REST_OPACITY/SCROLLBAR_HOVER_OPACITY, and this one must be
+   kept in sync with the rest value by hand, since CSS can't read a JS
+   constant.
 
-   The dragging tier is unrelated to any of the above: real
-   ::-webkit-scrollbar-thumb:active (see the fallback block further
+   The dragging tier is unrelated to any of the above: a
+   ::-webkit-scrollbar-thumb:active rule (see the fallback block further
    down), snapping instantly rather than fading - direct feedback to a
    physical mouse press, deliberately not softened the way the ambient
-   hover cue is. Chromium/WebKit-only in practice: Firefox does not
-   apply styling (colors, border-radius) from a ::-webkit-scrollbar-*
-   rule regardless of whether it recognizes the selector at all - see
-   the full history in the comment on that fallback block below,
-   including why gating it behind @supports was tried and reverted the
-   same day.
+   hover cue is. In practice it does not render in any current browser
+   this was checked in. Firefox does not apply styling from a
+   ::-webkit-scrollbar-* rule at all, and current Chrome and Edge ignore
+   every such rule on an element that also sets the standard
+   scrollbar-width, as both elements here do - see the fallback block
+   below. So what actually shows everywhere tested is two tiers, rest and
+   hover.
 
    The custom-property fade mechanism above (--scrollbar-thumb-opacity)
    is unrelated to any of this and unaffected by it - Firefox
@@ -736,15 +748,26 @@ body {
    gets the full fade too, not just an instant two-state jump) - at
    least on Firefox versions/settings where scrollbar-color is actually
    honored at all; see the fallback block below for the current, real
-   caveat to that on Firefox specifically. */
+   caveat to that on Firefox specifically. It is also what Chrome and Edge
+   render: the thin width and the thumb colour come from these two
+   standard properties, not from the fallback block. */
 .history-list,
 .card-body-scroll {
   scrollbar-width: thin;
   scrollbar-color: color-mix(in srgb, var(--text) var(--scrollbar-thumb-opacity, 15%), transparent) transparent;
 }
 
-/* Chrome/Edge/Safari fallback for browsers that don't support the
-   standard scrollbar-width/scrollbar-color properties above. History,
+/* Fallback for browsers that support ::-webkit-scrollbar but not the
+   standard scrollbar-width/scrollbar-color properties above - and only
+   those. Measured 2026-09-26 in headless Edge 153 and Chrome 154: on an
+   element that sets scrollbar-width, Chromium ignores every
+   ::-webkit-scrollbar rule for it (a 30px webkit width measured 10px, the
+   same as scrollbar-width: thin on its own). Both elements here set it, so
+   in current Chrome and Edge nothing in this block applies - not the 8px
+   width, not the thumb colour, not the :active tier. Safari was not
+   tested. Where the comment below speaks of this block giving Chrome/Edge
+   their 8px sizing and dragging tier, that belief was never true of a
+   Chromium that supports the standard properties. History,
    worth reading before touching this again (2026-09-04): a non-zero
    width here was found to have an undocumented-to-us side effect in
    Firefox 153/154 - per Firefox's own 153 release notes, "rules with
@@ -869,11 +892,12 @@ body {
   color: var(--aborted);
 }
 
-/* Backlog item 8: a soft-edged separator above the "Model: ..."/
-   "Answered by: ..." line - .model-chain is the shared class for both
-   (the still-loading model line in buildAgentStatusBody() and the
-   post-success "Answered by:" line in renderRepresentatives()/
-   renderJudges()), so one rule covers both cases. A plain border-top
+/* Item 8 of CLAUDE.md's sidebar/scrollbar/card polish backlog: a
+   soft-edged separator above the "Model: ..."/"Answered by: ..." line -
+   .model-chain is the shared class for both (the still-loading model line
+   in buildAgentStatusBody() and the post-success "Answered by:" line in
+   buildRepresentativeCard()/buildJudgeCard()), so one rule covers both
+   cases. A plain border-top
    would read as a harsh, abrupt cutoff against the surrounding
    prose - ::before with a gradient background instead tapers to
    transparent at both ends, positioned in the gap padding-top opens up
@@ -928,9 +952,10 @@ body {
   animation: spin 0.8s linear infinite;
 }
 
-/* Used for the run-history placeholder, a single element created once per
-   fetch rather than recreated on a tick - so it doesn't need the
-   animation-delay trick app.js uses for the per-card spinners. */
+/* Used for the run-history placeholder and the main loading overlay -
+   elements created once per fetch, or once in index.html, rather than
+   recreated on every card update - so they don't need the animation-delay
+   trick app.js uses for the per-card spinners. */
 .spinner.spinner-lg {
   width: 28px;
   height: 28px;
@@ -1047,14 +1072,13 @@ table.call-log tfoot tr.call-log-total-row td {
 /* A discarded attempt that was recovered by a retry or escalation. Three
    kinds qualify, all matched in renderCallLog() in app.js: truncated or
    degenerate content (DEGENERATE_RETRIED_*_MARKER), a plain HTTP failure
-   at a fallback tier (HTTP_ERROR_ESCALATED_MARKER), and a transient
-   failure that was retried (TRANSIENT_RETRIED_MARKER). An abort caught
-   mid-call is deliberately NOT dimmed - it is a deliberate stop, not a
-   recovered failure. Dimmed to signal the failure wasn't fatal, distinct
-   from a
-   [degenerate-final] row (the last available tier failing too), which
-   deliberately stays at full opacity since that outcome genuinely is
-   fatal. */
+   that escalated to the next tier (HTTP_ERROR_ESCALATED_MARKER), and a
+   transient failure that was retried (TRANSIENT_RETRIED_MARKER). An abort
+   caught mid-call is deliberately NOT dimmed - it is a deliberate stop,
+   not a recovered failure. Dimmed to signal the failure wasn't fatal,
+   distinct from a [degenerate-final] row (nothing left to try - the last
+   tier failing too, or no time budget for another), which deliberately
+   stays at full opacity since that outcome genuinely is fatal. */
 table.call-log tbody tr.row-degenerated-retried {
   opacity: 0.53;
 }
@@ -1212,7 +1236,8 @@ table.call-log .col-full {
     border-right: none;
     border-bottom: 1px solid var(--card-row-divider);
     /* Left padding is the label gutter. "Duration" is the longest label and
-       needs ~60px at this size; 92px leaves real margin plus a gap. */
+       needs about 53px at this size (measured - see the label rule below);
+       92px leaves real margin plus a gap. */
     padding: 6px 10px 6px 92px;
     min-height: 1.2em;
   }
@@ -1252,7 +1277,8 @@ table.call-log .col-full {
     /* Just under the value it labels (0.74rem), so the label still reads as
        subordinate - but that is carried by the dim colour, the uppercase and
        the letter-spacing, not by being conspicuously tiny. It was 0.66rem
-       from the day this layout was written until now, which rendered at
+       from the day this layout was written until it was raised to this,
+       which rendered at
        10.56px then and 9.50px once :root dropped to 90%: the same
        declaration, a pixel smaller, and at this size a pixel is ten per
        cent. This restores roughly the original appearance without opting

@@ -8,18 +8,26 @@ This document is the functional/requirements spec, sourced from the ASE Book "Ca
 
 **Accused:** Jon Snow · **Deceased:** Daenerys Targaryen · **Act alleged:** Jon intentionally killed Daenerys by stabbing her during a private meeting in the throne room after the fall of King's Landing.
 
-**Background.** Jon Snow grows up believing he is Eddard Stark's illegitimate son; he becomes King in the North, then learns he is actually Rhaegar Targaryen and Lyanna Stark's lawful son — a stronger hereditary claim to the throne than Daenerys's, though he doesn't want to rule. Daenerys is the exiled Targaryen heir, who gains dragons, frees enslaved people, and builds an army, becoming both liberator and increasingly absolute ruler. She and Jon become allies and lovers fighting the Night King; after that war, she turns to the Iron Throne, and Jon's hidden parentage feeds her fear of betrayal. Daenerys attacks King's Landing; the city surrenders, but she burns it anyway, and promises the campaign of "liberation" will continue. Tyrion resigns as Hand in protest and is imprisoned, warning Jon that Daenerys will treat Jon's sisters as enemies too. Jon asks her to show mercy and share judgment with others; she refuses. He stabs her during an embrace.
+This section is the case exactly as the app serves it — word for word the record seeded into the database by `supabase/schema.sql`. The stipulated facts in particular are quoted, not paraphrased: they are what both sides accept, and a restatement can shift what was agreed.
+
+**Background.**
+
+The story takes place mainly in Westeros. Jon Snow grows up believing he is the illegitimate son of Lord Eddard Stark; he becomes a military commander, then King in the North, and later learns he is the lawful son of Rhaegar Targaryen and Lyanna Stark — giving him a stronger hereditary claim to the throne than Daenerys, though he does not want to rule.
+
+Daenerys Targaryen is the exiled heir of the dynasty that once ruled Westeros. She survives abuse, gains three dragons, frees enslaved people, and builds an army — becoming both liberator and increasingly absolute ruler. Jon and Daenerys become allies and lovers while fighting the Night King. After defeating the dead, Daenerys turns to the Iron Throne; Jon's hidden parentage weakens her political claim and feeds her fear of betrayal.
+
+Daenerys attacks King's Landing. The city surrenders, but Daenerys burns streets and civilians from her dragon, Drogon. Jon witnesses the destruction. Grey Worm, her commander, joins the killing on the ground. Daenerys promises further campaigns of "liberation." Tyrion Lannister, her chief adviser, resigns in protest and is imprisoned, warning Jon that Daenerys will kill anyone who threatens her rule, including Jon's sisters. Jon asks Daenerys to show mercy and share moral judgment with others. She refuses. During an embrace, he stabs her to death. Her soldiers arrest him.
 
 **Stipulated facts (both sides accept these):**
-- King's Landing had surrendered — bells rang, resistance had ceased — before Daenerys used Drogon against streets and civilians at vast scale.
-- Daenerys told her forces the "liberation" campaign would continue beyond King's Landing; Jon saw the city and heard the speech.
-- Tyrion was imprisoned for protesting and warned Jon that Daenerys would treat his sisters, and anyone else seen as an obstacle, as enemies.
-- Jon asked Daenerys to forgive Tyrion and share moral judgment with others; she refused.
-- Daenerys was unarmed and not attacking Jon when he killed her. He used their intimacy to get close. He had not convened a council, attempted detention, or sought a public surrender of power.
+- King's Landing had surrendered: bells rang, organized resistance had ceased. Daenerys then used Drogon against streets and civilians, causing destruction on a vast scale.
+- After the victory, Daenerys told her assembled forces the campaign of "liberation" would continue beyond King's Landing. Jon had seen the city and heard the speech.
+- Tyrion Lannister renounced his office as Hand and was imprisoned. He warned Jon that Daenerys would treat Jon's sisters, and anyone else she regarded as an obstacle, as enemies.
+- Jon asked Daenerys to forgive Tyrion and show mercy. She refused to let others choose what was good and presented her own judgment as decisive.
+- Daenerys was unarmed and was not attacking Jon when he killed her. Jon used their intimacy to get close enough to strike. He had not convened a council, attempted detention, or sought a public surrender of power.
 
 **Question for judgment:** *Was Jon Snow's intentional killing of Daenerys Targaryen justified as the necessary defense of others and of the realm, given what he knew, the scale of the threatened harm, the absence or presence of safer alternatives, and his lack of formal authority?*
 
-**Scope:** justified / not justified, with reasons — no sentence, no combined verdict.
+**Scope:** The Tribunal decides justified / not justified and gives reasons. It does not impose a sentence, and it does not combine the three judges' opinions into one verdict.
 
 ## 2. The seven agents
 
@@ -52,4 +60,4 @@ This document is the functional/requirements spec, sourced from the ASE Book "Ca
 
 ---
 
-How this repo actually satisfies the above — the specific model(s) used, cost/reliability engineering, anti-abuse measures, exact schema, and every decision behind them — is documented in `README.md` (current state) and `CLAUDE.md` (full running log), not repeated here.
+How this repo actually satisfies the above — the specific model(s) used, cost/reliability engineering, anti-abuse measures, the database (defined in `supabase/schema.sql`, and mapped in `README.md`), and every decision behind them — is documented in `README.md` (current state) and `CLAUDE.md` (full running log), not repeated here.

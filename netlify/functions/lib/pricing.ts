@@ -2,10 +2,10 @@
 // own quoting unit) and converted down to a per-call cost in calculateCost.
 //
 // A model id ending in ":free" always costs $0, regardless of this table.
-// Add an entry here if a paid model is ever configured via DEFAULT_MODEL or
-// a MODEL_<ROLE> override; an unlisted paid model logs a cost of 0 rather
-// than throwing, since an unknown price should never block a real call from
-// being logged.
+// Add an entry here for any paid model configured through DEFAULT_MODEL, a
+// MODEL_<ROLE> override or one of the fallback-tier variables (see
+// models.ts); an unlisted paid model logs a cost of 0 rather than throwing,
+// since an unknown price should never block a real call from being logged.
 // Each entry carries its own source below. All were checked directly
 // against the listed price rather than assumed - re-verify any of them if
 // a model's pricing page ever shows a different number, since OpenRouter
@@ -22,8 +22,7 @@ const PRICING_PER_MILLION_TOKENS: Record<string, { prompt: number; completion: n
   'mistralai/mistral-large-2512': { prompt: 0.5, completion: 1.5 },
   // Tier 2 of the escalation chain (see getTruncationFallbackModel in
   // models.ts) - only ever billed on the minority of calls where the
-  // default model used both of its own attempts without producing a
-  // usable result.
+  // default model failed to produce a usable result.
   // Source: https://openrouter.ai/api/v1/models/anthropic/claude-haiku-4.5/endpoints
   // (checked directly against the live per-token price, not assumed -
   // consistent across all 8 routed providers/regions at the time of
@@ -31,8 +30,8 @@ const PRICING_PER_MILLION_TOKENS: Record<string, { prompt: number; completion: n
   'anthropic/claude-haiku-4.5': { prompt: 1.0, completion: 5.0 },
   // Third and fourth escalation tiers (see getTopTierFallbackModel /
   // getLastResortFallbackModel in models.ts) - reached only after every
-  // earlier tier has already exhausted its own attempts, so real usage
-  // stays rare despite the materially higher per-token price.
+  // earlier tier has already failed, so real usage stays rare despite the
+  // materially higher per-token price.
   // Source: https://openrouter.ai/openai
   'openai/gpt-5.6-sol': { prompt: 2, completion: 10 },
   // Source: https://openrouter.ai/google

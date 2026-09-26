@@ -8,11 +8,13 @@ import { ALL_AGENT_ROLES, getModelForRole, AGENT_MAX_TOKENS } from './lib/models
 // agent calls made — lets the frontend show the charge sheet immediately on
 // page load, before a visitor has decided to run a trial at all.
 //
-// Also returns the real model configured per role and the shared token
-// cap, so the frontend can show which model is actually in play and detect
-// a truncated response (completion_tokens === maxTokens) without
-// hardcoding a copy of models.ts that could silently drift out of sync -
-// this is itself just a config read, no OpenRouter call involved.
+// Also returns the starting model configured per role and tier 1's shared
+// token cap, so the frontend can show which model a call starts on (a live
+// card then follows the chain through agent_progress) and flag a
+// historical row truncated at the cap (a completion that is a multiple of
+// maxTokens - see isTruncated() in app.js) without hardcoding a copy of
+// models.ts that could silently drift out of sync - this is itself just a
+// config read, no OpenRouter call involved.
 const rawHandler: Handler = async (event) => {
   if (event.httpMethod !== 'GET') {
     return json(405, { error: 'Method not allowed' });

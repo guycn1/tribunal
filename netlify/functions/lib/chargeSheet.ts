@@ -10,11 +10,13 @@ const CASE_CODE = 'T-001';
 // and no code constant anywhere restates it.
 //
 // The repository does hold the same text twice more, deliberately and in a
-// different role: CLAUDE.md Part 1 and SPEC.md section 1 are the brief the
-// seed was written from, not runtime copies. Nothing reads them, but they
-// are worth knowing about before editing the case - changing it properly
-// means changing the seed and both of those, and only the seed has any
-// effect on what the app actually serves.
+// different role: CLAUDE.md Part 1 is the brief the seed was written from,
+// and SPEC.md section 1 quotes it. Neither is a runtime copy and nothing
+// reads them, but they are worth knowing about before editing the case -
+// changing it properly means changing the seed and both of those, and only
+// the seed has any effect on what the app actually serves.
+// tests/docs.test.js checks that both match the seed word for word, so a
+// change to one alone fails `npm test`.
 export async function getChargeSheet(): Promise<CaseDefinition> {
   const supabase = getSupabaseClient();
   const { data, error } = await supabase

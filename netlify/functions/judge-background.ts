@@ -28,9 +28,10 @@ import type { JudgeRole, RepresentativeRole } from './lib/types';
 // completion under it.
 //
 // Asked for, not observed: in practice representatives are the ones that
-// overrun. Counted across every row in api_call_logs, judges have hit the
-// cap 2 times in 363 calls (0.6%), representatives 67 times in 897 (7.5%)
-// - representatives run out of room about thirteen times as often as the
+// overrun. Counted across every row in api_call_logs as of 2026-09-21,
+// judges had hit the cap 2 times in 363 calls (0.6%), representatives 67
+// times in 897 (7.5%) - representatives run out of room about thirteen
+// times as often as the
 // role with the longer word target. Whatever drives that, it is not the
 // stated targets, so do not reason about the cap from the targets alone.
 //
@@ -55,9 +56,8 @@ const rawHandler: Handler = async (event) => {
   const judgeRole = role as JudgeRole;
 
   // See the matching comment in representative-background.ts - both checks
-  // run before
-  // any Supabase trial lookup or OpenRouter call, and (now that this runs
-  // as a Background Function - see config.background below) neither
+  // run before any Supabase trial lookup or OpenRouter call, and (as this
+  // runs as a Background Function - see config.background below) neither
   // rejection reaches the polling frontend directly, only Netlify's
   // function logs, for the same disclosed reasons as
   // representative-background.ts.
@@ -92,12 +92,11 @@ const rawHandler: Handler = async (event) => {
 
   // Every discarded attempt gets its own real call-log row too - whatever
   // discarded it (truncation/degeneration, a plain HTTP failure at that
-  // tier, a transient failure, or an abort caught between attempts) -
-  // written the
-  // moment callOpenRouter() decides to discard it (not batched after the
-  // whole chain finishes) - this is what lets a client polling GET
-  // /api/trials/:id see the escalation happening live, mid-call, instead
-  // of only learning about it once this role's result is already final.
+  // tier, or a transient failure) - written the moment callOpenRouter()
+  // decides to discard it (not batched after the whole chain finishes).
+  // That is what lets a client polling GET /api/trials/:id see the
+  // escalation happening live, mid-call, instead of only learning about it
+  // once this role's result is already final.
   const result = await callOpenRouter(
     getModelForRole(judgeRole),
     messages,
@@ -133,10 +132,8 @@ const rawHandler: Handler = async (event) => {
     () => isTrialAborted(id)
   );
 
-  // Same reasoning as representative-background.ts: never write a ruling
-  // for a trial the user already aborted. This was a real, observed
-  // problem (2026-09-20) - two judge calls finished 30s and 1m32s after
-  // the abort and wrote real rulings into an aborted trial.
+  // Parsed before logging, because a reply with no VERDICT line is logged
+  // as a failure even though the call itself succeeded.
   const parsed = result.status === 'success' && result.content ? parseJudgeOutput(result.content) : null;
   const callFailed = result.status === 'failed' || !result.content;
   const unparseable = !callFailed && !parsed;
@@ -171,10 +168,22 @@ const rawHandler: Handler = async (event) => {
     return json(200, { role: judgeRole, status: 'aborted' });
   }
 
+  if (parsed) {
+    await upsertJudgeRuling({
+      trialId: id,
+      role: judgeRole,
+      verdict: parsed.verdict,
+      reasoningText: parsed.reasoningText,
+      modelUsed: result.model,
+    });
+  }
+
   // A judge call that fails outright or comes back unparseable still ends
   // this judge's slot for the run rather than leaving the trial stuck — the
-  // trial is marked completed once all three have been attempted, whatever
-  // the outcome, and this judge simply has no ruling recorded.
+  // trial is marked completed once every judge has a final outcome,
+  // whatever it was, and this judge simply has no ruling recorded. Checked
+  // only after the ruling above is saved, so a trial can never read as
+  // completed while its last ruling is still unwritten.
   await markTrialCompletedIfJudgingDone(id);
 
   if (!parsed) {
@@ -186,14 +195,6 @@ const rawHandler: Handler = async (event) => {
         : 'Model response did not include a parseable VERDICT line.',
     });
   }
-
-  await upsertJudgeRuling({
-    trialId: id,
-    role: judgeRole,
-    verdict: parsed.verdict,
-    reasoningText: parsed.reasoningText,
-    modelUsed: result.model,
-  });
 
   return json(200, {
     role: judgeRole,

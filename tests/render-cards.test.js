@@ -1,27 +1,45 @@
-// Regression tests for the agent-card render path in public/app.js.
-//
-// Run with `npm test`. No framework and no browser: app.js's real source is
-// executed against a minimal DOM stub, and the functions under test are
-// handed back out of that scope, so these assert the actual shipped file
-// rather than a copy of it.
-//
-// What this exists to protect:
-//   1. The page must still execute top-to-bottom without throwing. app.js
-//      has shipped a temporal-dead-zone crash before (a const read before
-//      its declaration line), and a syntax-only check cannot catch that -
-//      only really running the top-level code can.
-//   2. Updating one agent's card must not disturb any other agent's card.
-//      The render functions used to begin with `innerHTML = ''` and rebuild
-//      every card in the phase, so a single agent escalating made all of
-//      its siblings visibly flash - including cards already showing a
-//      finished argument.
+/**
+ * @file Regression tests for public/app.js: its agent-card and call-log
+ * render paths, how it shortens model ids, and how it reports a request
+ * that fails outright.
+ *
+ * Run with `npm test`. No framework and no browser: app.js's real source is
+ * executed against a minimal DOM stub, and the functions under test are
+ * handed back out of that scope, so these assert the actual shipped file
+ * rather than a copy of it.
+ *
+ * What this exists to protect:
+ *   1. The page must still execute top-to-bottom without throwing. app.js
+ *      has shipped a temporal-dead-zone crash before (a const read before
+ *      its declaration line), and a syntax-only check cannot catch that -
+ *      only really running the top-level code can.
+ *   2. Updating one agent's card must not disturb any other agent's card.
+ *      The render functions used to begin with `innerHTML = ''` and rebuild
+ *      every card in the phase, so a single agent escalating made all of
+ *      its siblings visibly flash - including cards already showing a
+ *      finished argument.
+ *   3. A request that fails outright must reach the user. Creating a trial,
+ *      opening one from history, and the call-log refresh after a run all
+ *      used to let a network failure escape as an uncaught rejection, so a
+ *      click appeared to do nothing and the error reached only the console.
+ *   4. The call log must say what actually happened: a capped response is
+ *      "Truncated" and an incoherent one "Degenerated", every cell carries
+ *      its column name for the narrow card layout, and a model id is
+ *      shortened by rule without losing the date stamp.
+ */
 
-const fs = require('node:fs');
-const path = require('node:path');
-
-const SRC = fs.readFileSync(path.join(__dirname, '..', 'public', 'app.js'), 'utf8');
+const { installDom, loadApp } = require('./support/load-app');
 
 let failures = 0;
+/**
+ * Records and prints one assertion. A failure is counted rather than thrown,
+ * so every check in the file runs and reports.
+ *
+ * @param {string} name
+ * @param {unknown} condition Truthy to pass.
+ * @param {unknown} [detail] Printed after a failure, to show what was
+ *   actually found.
+ */
 function check(name, condition, detail) {
   if (condition) console.log(`  PASS  ${name}`);
   else {
@@ -30,90 +48,13 @@ function check(name, condition, detail) {
   }
 }
 
-// --- the smallest DOM that app.js's card path actually touches ------------
-function makeElement(tag = 'div') {
-  const kids = [];
-  const el = {
-    tagName: String(tag).toUpperCase(),
-    kids,
-    dataset: {},
-    style: { setProperty() {}, removeProperty() {}, getPropertyValue: () => '' },
-    className: '',
-    textContent: '',
-    scrollTop: 0,
-    scrollHeight: 0,
-    clientHeight: 0,
-    hidden: false,
-    parentElement: null,
-    classList: { add() {}, remove() {}, toggle() {}, contains: () => false },
-    addEventListener() {},
-    removeEventListener() {},
-    getBoundingClientRect: () => ({ top: 0, bottom: 0, left: 0, right: 0, width: 0, height: 0 }),
-    scrollIntoView() {},
-    appendChild(child) { kids.push(child); child.parentElement = el; return child; },
-    removeChild(child) {
-      const i = kids.indexOf(child);
-      if (i >= 0) kids.splice(i, 1);
-      return child;
-    },
-    replaceChild(next, old) {
-      const i = kids.indexOf(old);
-      if (i >= 0) kids[i] = next;
-      next.parentElement = el;
-      return old;
-    },
-    querySelector: () => null,
-    querySelectorAll: () => [],
-  };
-  // Assigning innerHTML replaces an element's children in a real DOM. The
-  // stub does not parse the markup, but it must still clear them, or a
-  // render that starts with `container.innerHTML = ''` would silently
-  // accumulate rows across calls and every assertion would read a stale one.
-  let html = '';
-  Object.defineProperty(el, 'innerHTML', {
-    get: () => html,
-    set(value) { html = String(value); kids.length = 0; },
-  });
-  Object.defineProperty(el, 'children', { get: () => kids });
-  Object.defineProperty(el, 'lastElementChild', { get: () => kids[kids.length - 1] || null });
-  Object.defineProperty(el, 'firstElementChild', { get: () => kids[0] || null });
-  return el;
-}
-
-const byId = new Map();
-global.document = {
-  getElementById: (id) => {
-    if (!byId.has(id)) byId.set(id, makeElement());
-    return byId.get(id);
-  },
-  createElement: (tag) => makeElement(tag),
-  querySelector: () => makeElement(),
-  querySelectorAll: () => [],
-  addEventListener() {},
-  body: makeElement(),
-  documentElement: makeElement(),
-  readyState: 'complete',
-};
-global.window = {
-  addEventListener() {},
-  requestAnimationFrame: () => 0,
-  cancelAnimationFrame() {},
-  scrollTo() {},
-  matchMedia: () => ({ matches: false, addEventListener() {} }),
-  location: { href: 'http://localhost/' },
-};
-global.requestAnimationFrame = () => 0;
-global.cancelAnimationFrame = () => {};
-global.fetch = async () => ({ ok: true, status: 200, json: async () => ({}) });
-global.alert = () => {};
-global.AbortController = class { constructor() { this.signal = { aborted: false, addEventListener() {} }; } abort() {} };
-global.DOMException = class extends Error {};
+installDom();
 
 console.log('\n=== app.js executes cleanly (catches a TDZ-class load crash) ===');
 let app;
 try {
   // Hand back exactly the pieces under test from app.js's own top-level scope.
-  app = new Function(`${SRC}\n;return { state, el, renderRepresentatives, renderJudges, renderCallLog, agentCardSignature, shortModelName, REPRESENTATIVE_ROLES, JUDGE_ROLES };`)();
+  app = loadApp(['state', 'el', 'renderRepresentatives', 'renderJudges', 'renderCallLog', 'agentCardSignature', 'shortModelName', 'REPRESENTATIVE_ROLES', 'JUDGE_ROLES', 'beginTrial', 'loadTrial']);
   check('top-level code ran with no error', true);
 } catch (error) {
   check('top-level code ran with no error', false, error.message);
@@ -188,6 +129,14 @@ console.log('\n=== Call log distinguishes a truncation from a degeneration ===')
 // failures: one ran into the token cap, the other produced incoherent text.
 // Labelling a capped response "Degenerated" was simply inaccurate.
 const { renderCallLog } = app;
+/**
+ * Renders a one-row call log for a representative whose only logged attempt
+ * carries `errorMessage`, and returns that row's markup.
+ *
+ * @param {string} errorMessage
+ * @param {'success' | 'failed'} [status='failed']
+ * @returns {string} The row's markup, or '' if no row was rendered.
+ */
 function statusTextFor(errorMessage, status = 'failed') {
   state.callLog = [{
     agentRole: 'grey_worm', callType: 'representative',
@@ -285,11 +234,156 @@ const { shortModelName } = app;
   ['some-model-2501', 'some-model-2501'],
   [undefined, 'unknown model'],
 ].forEach(([full, expected]) => {
-  const got = shortModelName(full);
+  // Caught, so a shortener that throws fails this one check instead of
+  // taking the rest of the suite down with it.
+  let got;
+  try { got = shortModelName(full); } catch (error) { got = `threw: ${error.message}`; }
   check(`${full} -> ${expected}`, got === expected, got);
 });
 // A name that merely contains the letters is not a segment and must survive.
 check('"instructor" is not stripped', shortModelName('vendor/model-instructor-v2') === 'model-instructor-v2', shortModelName('vendor/model-instructor-v2'));
 
-console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} check(s) failed.`);
-process.exit(failures === 0 ? 0 : 1);
+/**
+ * A stub fetch Response carrying a JSON body.
+ * @param {number} status
+ * @param {unknown} body
+ * @returns {{ok: boolean, status: number, json: () => Promise<unknown>}}
+ */
+function jsonReply(status, body) {
+  return { ok: status >= 200 && status < 300, status, json: async () => body };
+}
+
+/**
+ * The checks that need to await app.js's own async flows. Kept apart from
+ * the synchronous render checks above, which must not wait on anything.
+ * @returns {Promise<void>}
+ */
+async function requestFailureChecks() {
+  const { beginTrial, loadTrial, JUDGE_ROLES } = app;
+  const alerts = [];
+  global.alert = (message) => alerts.push(String(message));
+  // fetch() rejects, rather than resolving with an error status, when the
+  // server is never reached - offline, DNS, connection refused.
+  const unreachable = async () => { throw new TypeError('Failed to fetch'); };
+
+  /** Puts the page back as index.html starts it, with nothing running. */
+  function resetToIdle() {
+    state.running = false;
+    state.loadingTrial = false;
+    state.abortController = null;
+    el.newTrialBtn.disabled = false;
+    el.abortBtn.classList.add('hidden');
+    el.mainLoadingOverlay.classList.add('hidden');
+    el.sidebar.classList.remove('loading-locked');
+  }
+
+  /**
+   * Whether the page is idle again: nothing running, both buttons back to
+   * normal, and the loading overlay and sidebar lock gone.
+   * @returns {boolean}
+   */
+  function isIdle() {
+    return (
+      state.running === false &&
+      state.loadingTrial === false &&
+      state.abortController === null &&
+      el.newTrialBtn.disabled === false &&
+      el.abortBtn.classList.contains('hidden') &&
+      el.mainLoadingOverlay.classList.contains('hidden') &&
+      !el.sidebar.classList.contains('loading-locked')
+    );
+  }
+
+  /**
+   * Runs one flow under a given fetch stub, from an idle page, and reports
+   * whether it rejected - the failure mode being guarded against. Starting
+   * each flow idle keeps one broken flow from cascading into failures in
+   * every flow after it, which would hide which one actually broke.
+   * @param {() => Promise<void>} flow
+   * @param {typeof global.fetch} fetchStub
+   * @returns {Promise<unknown>} What it rejected with, or null.
+   */
+  async function run(flow, fetchStub) {
+    resetToIdle();
+    alerts.length = 0;
+    global.fetch = fetchStub;
+    try {
+      await flow();
+      return null;
+    } catch (error) {
+      return error;
+    }
+  }
+
+  console.log('\n=== Creating a trial: a failed request is reported, not swallowed ===');
+  let rejection = await run(beginTrial, unreachable);
+  check('an unreachable server does not reject', rejection === null, String(rejection));
+  check('the user is told the server could not be reached', alerts.length === 1 && /could not be reached/.test(alerts[0]), JSON.stringify(alerts));
+  check('the controls, overlay and sidebar are restored', isIdle());
+
+  rejection = await run(beginTrial, async () => ({ ok: false, status: 502, json: async () => { throw new SyntaxError('Unexpected token <'); } }));
+  check('a non-JSON error page does not reject', rejection === null, String(rejection));
+  check('the user is told the status', alerts.length === 1 && /HTTP 502/.test(alerts[0]), JSON.stringify(alerts));
+
+  rejection = await run(beginTrial, async () => jsonReply(401, { error: 'Missing or invalid site gate header.' }));
+  check("a JSON error still shows the server's own message", alerts.length === 1 && alerts[0].includes('Missing or invalid site gate header.'), JSON.stringify(alerts));
+
+  console.log('\n=== Opening a trial from history: a failed request is reported ===');
+  rejection = await run(() => loadTrial('some-trial'), unreachable);
+  check('an unreachable server does not reject', rejection === null, String(rejection));
+  check('the user is told the server could not be reached', alerts.length === 1 && /could not be reached/.test(alerts[0]), JSON.stringify(alerts));
+  check('the loading overlay and sidebar are released', isIdle());
+
+  rejection = await run(() => loadTrial('some-trial'), async () => ({ ok: true, status: 200, json: async () => { throw new SyntaxError('Unexpected end of JSON input'); } }));
+  check('an unreadable reply does not reject', rejection === null, String(rejection));
+  check('it is reported as a trial that could not be loaded', alerts.length === 1 && alerts[0] === 'Could not load that trial.', JSON.stringify(alerts));
+
+  console.log('\n=== A run whose final call-log refresh fails ===');
+  // A whole trial, end to end, on a virtual clock. sleep() and the pollers
+  // wait through setTimeout, and the pollers give up by Date.now(), so both
+  // are driven here. Making the waits instant without advancing the clock
+  // would turn a poll that never resolves into a real 700-second spin -
+  // a hung suite rather than a failed check.
+  const realSetTimeout = global.setTimeout;
+  const realNow = Date.now;
+  let virtualMs = 0;
+  Date.now = () => realNow() + virtualMs;
+  global.setTimeout = (fn, ms = 0) => { virtualMs += ms; setImmediate(fn); return 0; };
+  const caseDef = { title: 'T-001', accused: 'a', deceased: 'd', actAlleged: 'x', background: 'p', agreedFacts: [], question: 'q', scopeNote: 's' };
+  const record = {
+    trial: { id: 'run-1' }, caseDef, agentProgress: {}, apiCallLogs: [],
+    representativeArguments: REPRESENTATIVE_ROLES.map((role) => ({ role, seat: 'defense', argumentText: 'An argument.', modelUsed: 'm' })),
+    judgeRulings: JUDGE_ROLES.map((role) => ({ role, verdict: 'justified', reasoningText: 'Reasons.', modelUsed: 'm' })),
+  };
+  let trialReads = 0;
+  let historyReads = 0;
+  rejection = await run(beginTrial, async (url, options = {}) => {
+    const method = options.method || 'GET';
+    if (method === 'POST') return url === '/api/trials' ? jsonReply(201, { trial: { id: 'run-1' }, caseDef }) : jsonReply(202, {});
+    if (url === '/api/trials') { historyReads++; return jsonReply(200, { trials: [] }); }
+    // One poll resolves every representative, the next every judge; the
+    // read after that is the call-log refresh, which is the one that fails.
+    if (url === '/api/trials/run-1' && ++trialReads <= 2) return jsonReply(200, record);
+    if (url === '/api/trials/run-1') throw new TypeError('Failed to fetch');
+    throw new Error(`unexpected request: ${method} ${url}`);
+  });
+  global.setTimeout = realSetTimeout;
+  Date.now = realNow;
+  check('the run does not reject', rejection === null, String(rejection));
+  check('the refresh really was the request that failed', trialReads === 3, String(trialReads));
+  check('the missing call log is reported', alerts.length === 1 && /call log could not be loaded/.test(alerts[0]), JSON.stringify(alerts));
+  check('the run history is still refreshed after it', historyReads === 1, String(historyReads));
+  check('every result from the run stays on screen', [...Object.values(state.representatives), ...Object.values(state.judges)].every((e) => e.status === 'success') && Object.keys(state.judges).length === JUDGE_ROLES.length);
+  check('the controls, overlay and sidebar are restored', isIdle());
+}
+
+requestFailureChecks().then(
+  () => {
+    console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} check(s) failed.`);
+    process.exit(failures === 0 ? 0 : 1);
+  },
+  (error) => {
+    console.log('SUITE ERROR:', error);
+    process.exit(1);
+  }
+);

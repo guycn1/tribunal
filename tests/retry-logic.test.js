@@ -1,48 +1,32 @@
-// Regression tests for callOpenRouter()'s retry/escalation logic.
-//
-// Run with `npm test`. No framework, no dependencies, no network: the real
-// shipped TypeScript is compiled with the project's own tsc and exercised
-// against a mocked global.fetch, so these assert the actual source rather
-// than a hand-copied imitation of it.
-//
-// This file exists because this specific logic has now produced several
-// subtle, expensive bugs that only showed up in real use - an escalation
-// chain that silently never escalated, a timeout ceiling that ignored
-// prompt size, a degeneration check blind to its most common signature, a
-// fractional millisecond that would have crashed half of all real calls,
-// and a fast-429 storm that escalated to a costlier tier within five seconds.
-// Each one below is a test, so none of them can quietly come back.
+/**
+ * @file Regression tests for callOpenRouter()'s retry/escalation logic.
+ *
+ * Run with `npm test`. No framework, no dependencies, no network: the real
+ * shipped TypeScript is compiled with the project's own tsc and exercised
+ * against a mocked global.fetch, so these assert the actual source rather
+ * than a hand-copied imitation of it.
+ *
+ * This file exists because this specific logic has now produced several
+ * subtle, expensive bugs that only showed up in real use - an escalation
+ * chain that silently never escalated, a timeout ceiling that ignored
+ * prompt size, a degeneration check blind to its most common signature, a
+ * fractional millisecond that would have crashed half of all real calls,
+ * a fast-429 storm that escalated to a costlier tier within five seconds,
+ * and a backoff pause timed as part of the attempt before it. Each one
+ * below is a test, so none of them can quietly come back.
+ */
 
-const { execFileSync } = require('node:child_process');
-const fs = require('node:fs');
-const os = require('node:os');
-const path = require('node:path');
+const { compileBackend } = require('./support/compile-backend');
 
-const ROOT = path.join(__dirname, '..');
-const OUT = fs.mkdtempSync(path.join(os.tmpdir(), 'tribunal-tests-'));
-
-// Run tsc's own JS entrypoint with this Node binary rather than the
-// node_modules/.bin shim: on Windows that shim is a .cmd, which
-// execFileSync cannot spawn without a shell.
-const tsc = path.join(ROOT, 'node_modules', 'typescript', 'bin', 'tsc');
-execFileSync(
-  process.execPath,
-  [
-    tsc,
-    path.join('netlify', 'functions', 'lib', 'openrouter.ts'),
-    path.join('netlify', 'functions', 'lib', 'pricing.ts'),
-    path.join('netlify', 'functions', 'lib', 'models.ts'),
-    '--target', 'ES2020', '--module', 'commonjs', '--moduleResolution', 'node',
-    '--esModuleInterop', '--skipLibCheck', '--outDir', OUT,
-  ],
-  { cwd: ROOT, stdio: 'inherit' }
-);
-
+const backend = compileBackend(['lib/openrouter.ts']);
 process.env.OPENROUTER_API_KEY = 'test-key';
-const { callOpenRouter } = require(path.join(OUT, 'openrouter.js'));
+const { callOpenRouter } = backend.load('lib/openrouter.js');
 
+/** Tier 1 of the escalation chain - the default, and cheapest, model. */
 const DEFAULT = 'mistralai/mistral-small-24b-instruct-2501';
+/** Tier 2 - the first fallback. */
 const TIER2 = 'anthropic/claude-haiku-4.5';
+/** Tier 3 - the second fallback. */
 const TIER3 = 'openai/gpt-5.6-sol';
 
 // Quiet the real console.log/warn chatter from the module under test; a
@@ -52,9 +36,19 @@ const realWarn = console.warn;
 const captured = [];
 console.log = (...a) => captured.push(a.join(' '));
 console.warn = (...a) => captured.push(a.join(' '));
+/** Prints to the real console, which the capture above no longer reaches. */
 const say = (...a) => realLog(...a);
 
 let failures = 0;
+/**
+ * Records and prints one assertion. A failure is counted rather than thrown,
+ * so every check in the file runs and reports.
+ *
+ * @param {string} name
+ * @param {unknown} condition Truthy to pass.
+ * @param {unknown} [detail] Printed after a failure, to show what was
+ *   actually found.
+ */
 function check(name, condition, detail) {
   if (condition) say(`  PASS  ${name}`);
   else {
@@ -62,12 +56,38 @@ function check(name, condition, detail) {
     say(`  FAIL  ${name}${detail !== undefined ? ` :: ${detail}` : ''}`);
   }
 }
+/**
+ * Runs one named scenario, clearing the captured console output first so the
+ * scenario's log lines are its own.
+ *
+ * @param {string} name
+ * @param {() => Promise<void>} fn
+ * @returns {Promise<void>}
+ */
 async function test(name, fn) {
   say(`\n=== ${name} ===`);
   captured.length = 0;
   await fn();
 }
 
+/**
+ * The parts of a fetch Response that callOpenRouter() reads.
+ * @typedef {object} MockResponse
+ * @property {boolean} ok
+ * @property {number} status
+ * @property {Map<string, string>} headers
+ * @property {() => Promise<object>} [json]
+ * @property {() => Promise<string>} [text]
+ */
+/**
+ * Builds a successful chat-completion response from OpenRouter.
+ *
+ * @param {string} model
+ * @param {string} content
+ * @param {string} [finishReason='stop'] 'length' simulates a truncation.
+ * @param {number} [completionTokens=400]
+ * @returns {MockResponse}
+ */
 function reply(model, content, finishReason = 'stop', completionTokens = 400) {
   return {
     ok: true, status: 200, headers: new Map(),
@@ -78,15 +98,37 @@ function reply(model, content, finishReason = 'stop', completionTokens = 400) {
     }),
   };
 }
+/**
+ * An HTTP 429 - OpenRouter rate-limiting the request.
+ * @returns {MockResponse}
+ */
 const rateLimited = () => ({ ok: false, status: 429, headers: new Map(), text: async () => '{}' });
+/**
+ * An HTTP 404 in the shape OpenRouter returns for a model id it no longer
+ * serves.
+ * @param {string} model
+ * @returns {MockResponse}
+ */
 const notFound = (model) => ({ ok: false, status: 404, headers: new Map(), text: async () => JSON.stringify({ error: { message: `No endpoints found for ${model}.` } }) });
+/**
+ * Throws the error AbortSignal.timeout() produces when an attempt outlives
+ * its ceiling.
+ * @throws {Error} Always, named 'TimeoutError'.
+ * @returns {never}
+ */
 function throwTimeout() {
   const e = new Error('The operation was aborted due to timeout');
   e.name = 'TimeoutError';
   throw e;
 }
+/** A short, well-formed argument that no degeneration check should flag. */
 const CLEAN = 'The bells had already rung when she turned the dragon on the city. That is the fact this tribunal cannot reason past.';
 
+/**
+ * Runs every scenario in order, then restores the console, deletes the
+ * compiled output, and exits non-zero if any check failed.
+ * @returns {Promise<void>}
+ */
 async function main() {
   // ------------------------------------------------------------------ 1
   await test('A sentence repeated many times is caught as degeneration', async () => {
@@ -164,6 +206,11 @@ async function main() {
     check('succeeded once the burst cleared', r.status === 'success', r.status);
     check('the 429s are still logged', (r.discardedAttempts || []).length === 2, String((r.discardedAttempts || []).length));
     check('logged as not counted against the tier', (r.discardedAttempts || []).every((d) => /not counted against it/.test(d.errorMessage)), (r.discardedAttempts || [])[0]?.errorMessage);
+    // These 429s come back instantly, so each logged duration should be close
+    // to zero. The backoff pause after one is at least 800ms, and it used to
+    // be timed as part of the attempt - which also made a failure need to
+    // return in about 8s, not 10, to count as fast.
+    check('each logged duration is the attempt alone, not the pause after it', (r.discardedAttempts || []).every((d) => d.durationMs < 400), (r.discardedAttempts || []).map((d) => d.durationMs).join(', '));
   });
 
   // ------------------------------------------------------------------ 5
@@ -206,7 +253,9 @@ async function main() {
       captured.length = 0;
       await callOpenRouter(DEFAULT, [{ role: 'user', content: 'x'.repeat(chars) }], 1400, `${label}:t`);
       const line = captured.find((l) => l.includes(`${label}:t`) && l.includes('timeout='));
-      timeouts.push(Number(line.match(/timeout=(\d+)ms/)[1]));
+      // [\d.]+, not \d+: a fractional timeout is exactly what the integer
+      // check below exists to catch, so it must parse rather than crash.
+      timeouts.push(Number(line.match(/timeout=([\d.]+)ms/)[1]));
     }
     const [rep, judge, odd] = timeouts;
     check('a judge prompt gets a larger ceiling than a representative', judge > rep + 5000, `${rep} vs ${judge}`);
@@ -235,7 +284,7 @@ async function main() {
 
   console.log = realLog;
   console.warn = realWarn;
-  fs.rmSync(OUT, { recursive: true, force: true });
+  backend.cleanup();
   say(failures === 0 ? '\nAll checks passed.' : `\n${failures} check(s) failed.`);
   process.exit(failures === 0 ? 0 : 1);
 }
