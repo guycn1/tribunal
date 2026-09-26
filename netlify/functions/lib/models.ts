@@ -74,7 +74,7 @@ export function getModelForRole(role: string): string {
 // piece of writing. That was the reason for the choice, and it has since
 // been measured on this workload rather than left as an expectation.
 //
-// 23 calls to this model on this project as of 2026-09-26, all clean: 7
+// 23 calls to this model on this project as of 2026-09-27, all clean: 7
 // served through the app during real trials, and 16 in a targeted batch
 // that drove the real
 // callOpenRouter() with the real Grey Worm and Daenerys prompts at this
@@ -128,7 +128,7 @@ export function getTruncationFallbackModel(): string {
 // not just a shared-size one. Their capability ranking relative to each
 // other and to tier 2 is an assumption, not a measurement.
 //
-// What has been measured, from api_call_logs as of 2026-09-26:
+// What has been measured, from api_call_logs as of 2026-09-27:
 // openai/gpt-5.6-sol has served 13 calls here, all kept, none discarded.
 // google/gemini-2.5-pro
 // has served 9 - 6 kept and 3 failed, all three the same HTTP 400

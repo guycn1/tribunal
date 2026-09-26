@@ -16,10 +16,9 @@
 // Fails OPEN (allows the request through) when SITE_GATE_TOKEN isn't
 // configured, rather than closed: an env var that didn't get set must
 // never be able to lock a legitimate visitor out of an otherwise-working
-// site. Set
-// SITE_GATE_TOKEN in Netlify's production environment to the exact same
-// value as the SITE_GATE_TOKEN constant in public/app.js for this layer
-// to actually do anything - until then it's a harmless no-op, and the
+// site. The layer does something only where SITE_GATE_TOKEN is set to the
+// exact value of the SITE_GATE_TOKEN constant in public/app.js (Netlify's
+// production environment has it); unset, it is a harmless no-op, and the
 // other two layers are unaffected either way.
 export function isSiteGateOk(headers: Record<string, string | undefined>): boolean {
   const expected = process.env.SITE_GATE_TOKEN;

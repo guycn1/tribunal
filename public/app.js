@@ -242,7 +242,9 @@ const ABORTED_MID_CALL_MARKER = '[aborted-mid-call]';
  * traffic that never loaded this page at all; a caller who did look
  * defeats it trivially. Must match the SITE_GATE_TOKEN environment
  * variable configured on the Netlify Functions side exactly, or every
- * gated call fails with 401 - if that env var is left unset there,
+ * gated request is rejected (creating a trial with a 401; an agent call
+ * silently, visible only in Netlify's function logs) - if that env var is
+ * left unset there,
  * isSiteGateOk() fails open (allows everything through) rather than
  * locking out real users, so this constant being "wrong" server-side is a
  * silent no-op, not an outage.
@@ -772,11 +774,11 @@ async function abortCurrentTrial() {
 // concurrency.
 //
 // Kept rather than removed or "restored," deliberately. The original
-// 3-vs-4 reading came from two runs on 2026-08-28 - on today's default
+// 3-vs-4 reading came from two runs on 2026-08-28 - on the current default
 // model, but while the agent calls were still synchronous functions - and
-// has since been overtaken by evidence: every clean run behind this project's reliability record was
-// actually made at 4 concurrent, not 3, so there is no demonstrated problem
-// left to solve. A bounded dispatch plus the stagger is still a sensible
+// has since been overtaken by evidence: every clean run behind this
+// project's reliability record was actually made at 4 concurrent, not 3,
+// so there is no demonstrated problem left to solve. A bounded dispatch plus the stagger is still a sensible
 // thing to keep pointed at the per-IP limiter.
 /**
  * Stagger between trigger POSTs within one phase: the role at index N is
@@ -997,11 +999,11 @@ function stripMarkerPrefix(message) {
  * place as the chain progresses - not a terminal state, and pollForRoles
  * treats any entry present in representatives/judges as "this role is
  * done." A discarded-attempt log row also isn't folded in here for the
- * same reason (a superseded, earlier design of this did fold it in,
- * which was one attempt behind reality - see the model-display fix this
- * replaces): agentProgress is written the moment an attempt *starts*, so
- * it's never behind the real current attempt the way inferring from a
- * *discarded* row necessarily is.
+ * same reason (for a day, 2026-09-03, the live model line did come from
+ * those rows, and was one attempt behind reality as a result):
+ * agentProgress is written the moment an attempt *starts*, so it's never
+ * behind the real current attempt the way inferring from a *discarded* row
+ * necessarily is.
  *
  * @param {FullTrialResponse} data
  * @returns {DerivedRoleStates}
@@ -2084,10 +2086,11 @@ function renderCallLog() {
     // same tier or escalated to the next one) gets its own row, tagged
     // with one of the two "retried" markers - see the DEGENERATE_*_MARKER
     // comment above. A row tagged with the "final" marker instead means
-    // this was the last available tier and it was *also*
-    // truncated/degenerate - a genuinely fatal outcome, not a recovered
-    // one, so it's styled distinctly (red, full opacity, no retry
-    // caption) rather than folded into the same "still recovering" look.
+    // the chain had nothing left to try - the last tier, or no time budget
+    // for another - and this attempt was *also* truncated/degenerate: a
+    // genuinely fatal outcome, not a recovered one, so it's styled
+    // distinctly (red, full opacity, no retry caption) rather than folded
+    // into the same "still recovering" look.
     const isRetriedSameModel = err.startsWith(DEGENERATE_RETRIED_SAME_MODEL_MARKER);
     const isRetriedDiffModel = err.startsWith(DEGENERATE_RETRIED_DIFF_MODEL_MARKER);
     const isDegenerateRetried = isRetriedSameModel || isRetriedDiffModel;
@@ -2275,11 +2278,10 @@ function renderCallLogTotals() {
  * real margin for the full 4-tier escalation chain - so the genuine worst
  * case is the representatives phase running its budget out in full, then
  * the judges phase running out its own: ~1300s, roughly 22 minutes end to
- * end. Both phases run all of their roles concurrently; an earlier revision
- * of this comment put the worst case at ~32.5 min by treating the
- * representatives as a 3-slot pool that makes the 4th wait for a free slot,
- * which is not what happens - see the comment on MAX_CONCURRENT_CALLS
- * above. Kept at 40 minutes: real margin above that (not just enough to
+ * end. Both phases run all of their roles concurrently - the
+ * representatives are not a 3-slot pool that makes the 4th wait for a free
+ * slot, which would push the worst case to ~32.5 min (see the comment on
+ * MAX_CONCURRENT_CALLS above). Kept at 40 minutes: real margin above that (not just enough to
  * scrape by, consistent with every other budget in this app), so a trial
  * that's actually still working - however slowly - doesn't get mislabeled
  * "Interrupted" in the history sidebar before it's had a real chance to

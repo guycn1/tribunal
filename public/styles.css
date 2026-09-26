@@ -416,10 +416,10 @@ body {
    .btn:hover:not(:disabled) rule (border-color: var(--accent-dim), the
    gold accent) otherwise wins on specificity over .btn-danger's own
    resting border-color: var(--fail), so without this the Abort button's
-   border would turn gold on hover instead of staying red. :active
-   included too (not just :hover) so a press without a preceding hover
-   - keyboard activation, touch - gets the same red border rather than
-   falling back to the shared gold rule there too. */
+   border would turn gold on hover instead of staying red. :active and
+   :focus included too (not just :hover) so a press or keyboard focus
+   without a preceding hover - keyboard activation, touch - gets the same
+   red border rather than falling back to the shared gold rule there too. */
 .btn-danger:hover:not(:disabled),
 .btn-danger:active:not(:disabled),
 .btn-danger:focus:not(:disabled) {
@@ -695,8 +695,8 @@ body {
 }
 
 /* Shared scrollbar treatment for the two scrollable regions on this page
-   (agent-card bodies, and .history-list below) - same weight, same
-   3-tier white-opacity behavior, in every browser. .history-list
+   (agent-card bodies, and .history-list below) - the same weight and the
+   same white-opacity tiers for both. .history-list
    previously had NO scrollbar styling at all, which is exactly why
    Chrome/Edge fell back to their bulky native default there (wide enough
    to visually collide with a history card's own border - a real,
@@ -765,10 +765,8 @@ body {
    same as scrollbar-width: thin on its own). Both elements here set it, so
    in current Chrome and Edge nothing in this block applies - not the 8px
    width, not the thumb colour, not the :active tier. Safari was not
-   tested. Where the comment below speaks of this block giving Chrome/Edge
-   their 8px sizing and dragging tier, that belief was never true of a
-   Chromium that supports the standard properties. History,
-   worth reading before touching this again (2026-09-04): a non-zero
+   tested. History, worth reading before touching this again
+   (2026-09-04): a non-zero
    width here was found to have an undocumented-to-us side effect in
    Firefox 153/154 - per Firefox's own 153 release notes, "rules with
    non-zero width/height disable overlay scrollbars for the affected
@@ -784,13 +782,14 @@ body {
    whole block behind @supports not (scrollbar-width: thin) was ALSO
    reverted, once that same test proved the gate could not possibly be
    helping Firefox either way (Firefox shows identical behavior gated
-   or not) while carrying a real, unverified risk of also excluding
-   modern Chrome/Edge from these rules (they support scrollbar-width
-   too), which would have silently cost them their explicit 8px sizing
-   and the :active/dragging tier for zero corresponding benefit.
-   Restored to plain and unconditional, exactly as it was before any of
-   that - the only version confirmed, by the user directly, to render
-   correctly in both Chrome and Edge.
+   or not) while, it was then believed, risking modern Chrome/Edge's
+   explicit 8px sizing and :active/dragging tier (they support
+   scrollbar-width too, so the gate excluded them as well). That risk
+   never existed - per the 2026-09-26 measurement above, Chromium ignores
+   this block anyway wherever scrollbar-width is set - but the revert
+   stands on the first ground alone. Restored to plain and unconditional,
+   exactly as it was before any of that; the user confirmed that version
+   renders correctly in both Chrome and Edge.
 
    Bottom line: there is no CSS available to this project (or any
    website) that restores Firefox's classic scrollbar rendering here -

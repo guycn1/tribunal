@@ -10,8 +10,8 @@
  * from its TypeScript, app.js against a stub DOM), not by reading its text.
  *
  * CLAUDE.md's running status log is deliberately not checked: it records
- * what was true when each entry was written, and is not meant to change
- * afterwards.
+ * what was true when each entry was written, as history rather than as a
+ * claim about the current code.
  */
 
 const fs = require('node:fs');
@@ -440,13 +440,50 @@ async function main() {
     check(`a ${n}-word run is caught`, !(await acceptedFirstTime(`${words(n)}.`)));
     check(`a ${n - 1}-word run is not`, await acceptedFirstTime(`${words(n - 1)}.`));
   }
-  const repeatClaims = [...README.matchAll(/the same whole sentence (?:repeated )?(\d+)\+ times/g)].map((m) => Number(m[1]));
+  // The four verbatim-repetition rules. Each stated threshold is run just
+  // above and just below, with copies kept apart by distinct filler
+  // sentences so that no other rule fires.
+  /**
+   * Every number README states for one rule, wherever it states it.
+   * @param {RegExp} re
+   * @returns {number[]}
+   */
+  const claimed = (re) => [...README.matchAll(re)].map((m) => Number(m[1]));
+  /** A distinct 8-word filler sentence. @param {number} i */
+  const filler = (i) => `Point number ${i} stands on its own terms here.`;
+  /** A sentence of exactly `count` words. @param {number} count */
+  const sentenceOf = (count) => Array.from({ length: count }, (_, i) => `term${i}`).join(' ') + '.';
+  const SHORT = 'He had no lawful authority to act.';
+
+  check('twice in a row is stated as a rule', /the same whole sentence twice in a row/.test(README));
+  check('a sentence twice in a row is caught', !(await acceptedFirstTime(`${filler(1)} ${SHORT} ${SHORT} ${filler(2)}`)));
+  check('and the same sentence twice apart is not', await acceptedFirstTime(`${SHORT} ${filler(1)} ${SHORT}`));
+
+  const longClaims = claimed(/a sentence of (\d+)\+ words twice/g);
+  check('the long-sentence threshold is stated, the same everywhere', longClaims.length > 0 && longClaims.every((n) => n === longClaims[0]), longClaims.join(', '));
+  if (longClaims.length) {
+    const n = longClaims[0];
+    const twiceApart = (words) => `${sentenceOf(words)} ${filler(1)} ${sentenceOf(words)}`;
+    check(`a ${n}-word sentence twice is caught`, !(await acceptedFirstTime(twiceApart(n))));
+    check(`a ${n - 1}-word sentence twice is not`, await acceptedFirstTime(twiceApart(n - 1)));
+  }
+
+  const repeatClaims = claimed(/any sentence (\d+)\+ times/g);
   check('the repeated-sentence threshold is stated, the same everywhere', repeatClaims.length > 0 && repeatClaims.every((n) => n === repeatClaims[0]), repeatClaims.join(', '));
   if (repeatClaims.length) {
     const n = repeatClaims[0];
-    const repeated = (count) => 'The record is plain on this point. ' + 'He had no lawful authority to do it. '.repeat(count);
-    check(`a sentence repeated ${n} times is caught`, !(await acceptedFirstTime(repeated(n))));
-    check(`one repeated ${n - 1} times is not`, await acceptedFirstTime(repeated(n - 1)));
+    const apart = (count) => Array.from({ length: count }, (_, i) => `${SHORT} ${filler(i)}`).join(' ');
+    check(`a sentence repeated ${n} times is caught`, !(await acceptedFirstTime(apart(n))));
+    check(`one repeated ${n - 1} times is not`, await acceptedFirstTime(apart(n - 1)));
+  }
+
+  const passageClaims = claimed(/a passage of (\d+)\+ sentences repeated word for word/g);
+  check('the repeated-passage length is stated, the same everywhere', passageClaims.length > 0 && passageClaims.every((n) => n === passageClaims[0]), passageClaims.join(', '));
+  if (passageClaims.length) {
+    const n = passageClaims[0];
+    const passageTwice = (count) => { const p = Array.from({ length: count }, (_, i) => filler(i)).join(' '); return `${p} ${filler(99)} ${p}`; };
+    check(`a ${n}-sentence passage repeated is caught`, !(await acceptedFirstTime(passageTwice(n))));
+    check(`a ${n - 1}-sentence passage repeated is not`, await acceptedFirstTime(passageTwice(n - 1)));
   }
   const fastClaims = [...README.matchAll(/under (\d+) seconds/g)].map((m) => Number(m[1]));
   check('the fast-failure threshold is stated, the same everywhere', fastClaims.length > 0 && fastClaims.every((n) => n === fastClaims[0]), fastClaims.join(', '));

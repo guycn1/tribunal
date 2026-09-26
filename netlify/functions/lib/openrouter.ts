@@ -10,13 +10,12 @@ const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 // against its tier - see FAST_FAILURE_THRESHOLD_MS - while one where each
 // try genuinely takes most of its ceiling uses up its tier's attempts.
 //
-// representative-background.ts/judge-background.ts now run as Netlify
+// representative-background.ts/judge-background.ts run as Netlify
 // Background Functions (config.background = true), not standard
-// synchronous invocations - the
-// real, verified reason this whole file used to budget against a tight
-// ~26s ceiling. That number was calibrated against a *standard* Netlify
-// Function invocation limit that turned out to be wrong for what this
-// project actually runs on: the real free-tier synchronous limit is 10
+// synchronous invocations. Before that move this file budgeted against a
+// tight ~26s ceiling, calibrated against a *standard* Netlify Function
+// invocation limit that turned out to be wrong for what this project
+// actually runs on: the real free-tier synchronous limit is 10
 // seconds (verified directly against Netlify's own docs and support
 // forum, not assumed), which every real completion measured on this
 // project (consistently 8-18s+ per call) would have been at serious risk
@@ -91,15 +90,14 @@ const MAX_FAST_TRANSIENT_RETRIES_PER_TIER = 4;
 // successful call in api_call_logs as of 2026-09-21: a judge prompt runs a
 // median of 3896 tokens (mean 3943, p90 4483), a representative's 1028
 // (mean 1166, p90 2068) - so a judge carries something like 3.8x a
-// representative's prompt, not the "roughly 4.5x" this comment used to
-// claim. The old formula gave both the identical 43000ms. Real measured
-// judge completions on the default model in that incident: 26.9s, 33.9s,
-// and 43.2s - the last of those at that very ceiling (a logged duration
-// can read slightly over it, since it also covers the progress write made
-// just before the request starts), with several sibling attempts timing
-// out outright just past it. A ceiling that half the real distribution
-// overruns isn't a safety limit, it's a coin flip, so prompt size now
-// feeds it directly.
+// representative's prompt. The old formula gave both the identical 43000ms.
+// Real measured judge completions on the default model in that incident:
+// 26.9s, 33.9s, and 43.2s - the last of those at that very ceiling (a
+// logged duration can read slightly over it, since it also covers the
+// progress write made just before the request starts), with several sibling
+// attempts timing out outright just past it. A ceiling that half the real
+// distribution overruns isn't a safety limit, it's a coin flip, so prompt
+// size now feeds it directly.
 //
 // Sum of attempt ceilings across the whole escalation chain: a judge at
 // 4550 prompt tokens (the incident's judges - above p90, so a deliberately
@@ -107,15 +105,15 @@ const MAX_FAST_TRANSIENT_RETRIES_PER_TIER = 4;
 // median) to 587.0s, both just inside the 650s budget. Those two figures
 // are what the budget was sized against.
 //
-// It is NOT inside the budget by construction, which this comment used to
-// claim. The ceiling scales with prompt size and real prompts have a long
-// tail - the largest judge prompt in the log (as of 2026-09-21) is 11318
-// tokens, which sums to 767s, over budget by nearly two minutes. Even p90
-// (4483) only reaches 647.5s, so the tail has to be genuinely unusual
-// before this bites, and it bites safely when it does: remainingMs()
-// clamps the last attempt and the loop reports honestly that the budget
-// ran out before a further tier could be tried. The effect of an outsized
-// prompt is fewer tiers actually reached, not a silent overrun.
+// It is NOT inside the budget by construction. The ceiling scales with
+// prompt size and real prompts have a long tail - the largest judge prompt
+// in the log (as of 2026-09-21) is 11318 tokens, which sums to 767s, over
+// budget by nearly two minutes. Even p90 (4483) only reaches 647.5s, so the
+// tail has to be genuinely unusual before this bites, and it bites safely
+// when it does: remainingMs() clamps the last attempt and the loop reports
+// honestly that the budget ran out before a further tier could be tried.
+// The effect of an outsized prompt is fewer tiers actually reached, not a
+// silent overrun.
 //
 // The result is also clamped: never under 30000ms, and never over the
 // whole budget less MIN_REMAINING_TO_ATTEMPT_MS.
@@ -291,69 +289,183 @@ function detectDegenerateRun(content: string): { degenerate: boolean; runLength:
 // frequency_penalty/presence_penalty work, and it had been shipping
 // undetected the whole time since.
 //
-// Threshold calibrated against that same real corpus rather than guessed,
-// the same way DEGENERATE_RUN_THRESHOLD was: at 4+ verbatim repeats,
-// inspection of every borderline case (4x through 8x, read in full with
-// surrounding context) found genuine degeneration in each - consecutive
-// identical sentences closing out a text, or the model looping the same
-// paragraph-sized block over and over. Deliberate rhetorical repetition
-// does NOT trip this: real anaphora repeats an opening phrase and then
-// continues differently ("I ask you to consider the scale..." / "I ask you
-// to consider the evidence..."), which produces different whole sentences
-// and is therefore invisible here - unlike the earlier, abandoned 5-word
-// phrase heuristic, which flagged exactly that pattern as a false
-// positive. Only genuinely verbatim whole-sentence repetition counts.
-// Sentences under 5 words are ignored outright, so a short refrain ("Thank
-// you.", "I agree.") can never trip it either.
+// It flags a text on any of four verbatim-repetition patterns:
+//   1. the same sentence twice in a row;
+//   2. a long sentence (15+ words) twice anywhere in the text;
+//   3. any sentence 3+ times anywhere in the text;
+//   4. a passage of 3+ consecutive sentences (12+ words) that appears again
+//      later, word for word.
+// Only sentences of 5+ words count for 1-3, so a short refrain ("Thank
+// you.", "I agree.") can never trip them. The longer a sentence, the less
+// likely a verbatim restatement of it is deliberate, hence 2 copies for a
+// long one against 3 for a short one.
+//
+// Calibrated against the real corpus, and deliberately tuned to miss as
+// little as possible: a degenerate text saved and shown as a successful
+// argument is far worse than a sound one discarded and retried, which
+// costs a cheap same-model attempt or, at worst, an escalation.
+// - The first version (2026-09-20) flagged only 4+ copies anywhere, after
+//   every 4x-8x case in the corpus read as genuine degeneration. Below 4
+//   was never examined, and a 3-copy loop got through in trial e4a20a68
+//   (2026-09-26 22:25 UTC): daenerys_targaryen's closing sentence three
+//   times back to back, a fourth copy differing by one word.
+// - Re-measured on 2026-09-27 across 830 stored texts. Every text holding
+//   a 5+ word sentence twice in a row was read, and each is a loop - an
+//   identical sentence restated with nothing between, never a stylistic
+//   choice (11 texts). A repeated 3+ sentence passage is the model
+//   re-emitting a paragraph (48 texts, among them 5 of the 70 saved since
+//   the first version shipped - a 3-5 sentence block pasted again later,
+//   twice directly after itself). A sentence 3 times spread across a text
+//   is usually a refrain ("He acted to save lives.") rather than a loop,
+//   and some are sound ("This test is not met." closing each of Barak's
+//   tests) - flagged anyway, on the priority above. A 15+ word sentence
+//   twice is at 20+ words a whole thought pasted again (a 41-word one in
+//   an Elon ruling); at 15-19 words mostly a refrain ("He had only the
+//   knowledge of what must be done and the courage to do it.") and
+//   occasionally a structural line ("We will grant this point for the sake
+//   of argument and proceed to the next test.") - flagged, on the same
+//   priority. Run over the same 830 texts, the four rules flag 149 (18%,
+//   and 12 of the 70 saved since the first version shipped), against 30
+//   for the first version.
+// Deliberate rhetorical repetition does NOT trip this: real anaphora
+// repeats an opening phrase and then continues differently ("I ask you to
+// consider the scale..." / "I ask you to consider the evidence..."), which
+// produces different whole sentences and is therefore invisible here -
+// unlike the earlier, abandoned 5-word phrase heuristic, which flagged
+// exactly that pattern as a false positive. Only verbatim whole-sentence
+// repetition counts.
+//
+// What it does not catch: near-verbatim looping, where each copy differs
+// by a word or two ("Jon Snow's actions" / "his actions"). Matching that
+// would take a fuzzy comparison with its own calibration against the
+// anaphora risk, and has not been built.
 //
 // It works on real output, not just on the corpus it was calibrated
-// against: counted from api_call_logs as of 2026-09-26, this check has
-// caught seven natural live cases, all on the tier-1 default model, at 4
-// to 8 verbatim repeats each - five in local testing on the day it
-// shipped (tyrion_lannister twice, grey_worm three times), then two on the
-// deployed site the next day: grey_worm again, at exactly the 4-repeat
-// threshold, and later a judge, the first catch on a judge (shamgar, 5
-// repeats). The first production catch is worth knowing what it cost to
-// miss: the response had finish_reason=stop at 604 tokens, so without
-// this check it would have been saved and shown as a perfectly ordinary
-// successful argument.
+// against. It has caught at least eleven natural live cases, all on the
+// tier-1 default model (counted from api_call_logs on 2026-09-27). The
+// first seven, under the original 4-copy rule, repeated a sentence 4 to 8
+// times: five in local testing on the day it shipped (tyrion_lannister
+// twice, grey_worm three times), then two on the deployed site the next
+// day - grey_worm again, at 4 repeats, and later the first catch on a
+// judge (shamgar, 5 repeats). The first production catch shows what a
+// miss costs: the response had finish_reason=stop at 604 tokens, so
+// without this check it would have been saved and shown as a perfectly
+// ordinary successful argument. Four more came late on 2026-09-26 (UTC):
+// barak (a sentence 4 times), grey_worm (a 17-word sentence 4 times), and
+// daenerys_targaryen and elon (an 18-word and a 40-word sentence, twice
+// each) - those last two caught only by the widened rules.
 // The older run-on check above has caught two, both grey_worm, both on the
 // tier-2 model of the time, at 180 and 84 words - far past the 40-word
 // line, and the 84-word one was read in full and confirmed degenerate.
 //
-// On false positives, the honest answer is that they are mostly not
-// auditable here, and this should not be reported as if it were a clean
-// precision record. A discarded attempt's content is never stored (see
-// the note further down on why the offending text is quoted into the
-// reason), so for the catches predating that quoting there is no way to
-// check either way. Where a sample does exist, it shows a full sentence
-// repeated verbatim, which deliberate anaphora cannot produce - it varies
-// the continuation, so the whole sentences differ. That is the reason to
-// think precision is good; it is not a measurement of it.
-const REPEATED_SENTENCE_THRESHOLD = 4;
+// On false positives: the thresholds above knowingly accept some (a
+// refrain, a structural line), in exchange for missing as little as
+// possible, and this should not be reported as a clean precision record.
+// Since 2026-09-27 every discarded reply is stored in full
+// (api_call_logs.response_text), so a catch can be read and judged after
+// the fact; before that only the 60-character quote in the reason
+// survived, and for the earliest catches not even that. Where a sample
+// exists, it shows a full sentence repeated verbatim, which deliberate
+// anaphora cannot produce - it varies the continuation, so the whole
+// sentences differ. That is the reason to think anaphora is safe from it;
+// it is not a measurement of precision.
+const REPEATED_SENTENCE_THRESHOLD = 3;
+const CONSECUTIVE_REPEAT_THRESHOLD = 2;
+const LONG_SENTENCE_WORDS = 15;
+const LONG_SENTENCE_REPEAT_THRESHOLD = 2;
 const MIN_WORDS_FOR_REPEAT_CHECK = 5;
+const REPEATED_PASSAGE_SENTENCES = 3;
+const MIN_WORDS_FOR_REPEATED_PASSAGE = 12;
 
 function normalizeSentenceForRepeatCheck(sentence: string): string {
   return sentence.trim().toLowerCase().replace(/\s+/g, ' ').replace(/[^\w\s]/g, '');
 }
 
-function detectRepeatedSentences(content: string): { degenerate: boolean; count: number; sample: string } {
-  const counts = new Map<string, number>();
-  for (const raw of content.split(/[.!?]+/)) {
-    const normalized = normalizeSentenceForRepeatCheck(raw);
-    if (normalized.split(' ').filter(Boolean).length < MIN_WORDS_FOR_REPEAT_CHECK) continue;
-    counts.set(normalized, (counts.get(normalized) ?? 0) + 1);
-  }
+function wordCount(normalized: string): number {
+  return normalized.split(' ').filter(Boolean).length;
+}
 
-  let count = 0;
-  let sample = '';
-  for (const [sentence, n] of counts) {
-    if (n > count) {
-      count = n;
-      sample = sentence;
+/**
+ * The first verbatim-repetition pattern found, as the reason text a
+ * discarded attempt is logged with: the repeated text quoted, and where
+ * its copies sit ("sentences 3 and 31 of 32"), so the call log alone shows
+ * a closing restatement apart from a loop. The whole reply is stored too
+ * (DiscardedAttempt.responseText). The in-a-row check comes first because
+ * it names a loop most precisely.
+ */
+function detectRepeatedSentences(content: string): { degenerate: boolean; reason: string } {
+  const sentences = content.split(/[.!?]+/).map(normalizeSentenceForRepeatCheck).filter((s) => wordCount(s) > 0);
+  const total = sentences.length;
+  const quote = (s: string) => `("${s.slice(0, 60)}...")`;
+  // 0-based indexes in, "sentences 3, 17 and 31 of 32" out.
+  const where = (indexes: number[]) => {
+    const labels = indexes.map((i) => String(i + 1));
+    const list = labels.length > 1 ? `${labels.slice(0, -1).join(', ')} and ${labels[labels.length - 1]}` : labels[0];
+    return `(sentences ${list} of ${total})`;
+  };
+  const span = (from: number, length: number) => `${from + 1}-${from + length}`;
+  const aOrAn = (n: number) => (n === 11 || n === 18 || String(n).startsWith('8') ? 'an' : 'a');
+
+  let run = 1;
+  let longestRun = 1;
+  let runEnd = 0;
+  for (let i = 1; i < total; i++) {
+    run = sentences[i] === sentences[i - 1] && wordCount(sentences[i]) >= MIN_WORDS_FOR_REPEAT_CHECK ? run + 1 : 1;
+    if (run > longestRun) {
+      longestRun = run;
+      runEnd = i;
     }
   }
-  return { degenerate: count >= REPEATED_SENTENCE_THRESHOLD, count, sample };
+  if (longestRun >= CONSECUTIVE_REPEAT_THRESHOLD) {
+    const from = runEnd - longestRun + 1;
+    return {
+      degenerate: true,
+      reason: `repeated the same sentence ${longestRun} times in a row (sentences ${span(from, longestRun)} of ${total}) ${quote(sentences[runEnd])}`,
+    };
+  }
+
+  const positions = new Map<string, number[]>();
+  sentences.forEach((s, i) => {
+    if (wordCount(s) < MIN_WORDS_FOR_REPEAT_CHECK) return;
+    positions.set(s, [...(positions.get(s) ?? []), i]);
+  });
+  for (const [sentence, at] of positions) {
+    const words = wordCount(sentence);
+    if (words >= LONG_SENTENCE_WORDS && at.length >= LONG_SENTENCE_REPEAT_THRESHOLD) {
+      return { degenerate: true, reason: `repeated ${aOrAn(words)} ${words}-word sentence ${at.length} times ${where(at)} ${quote(sentence)}` };
+    }
+  }
+  let most: [string, number[]] = ['', []];
+  for (const entry of positions) {
+    if (entry[1].length > most[1].length) most = entry;
+  }
+  if (most[1].length >= REPEATED_SENTENCE_THRESHOLD) {
+    return { degenerate: true, reason: `repeated the same sentence ${most[1].length} times ${where(most[1])} ${quote(most[0])}` };
+  }
+
+  // A window of consecutive sentences seen again later, without the two
+  // copies overlapping, then widened to the full length of the repeat.
+  const firstSeen = new Map<string, number>();
+  const n = REPEATED_PASSAGE_SENTENCES;
+  for (let i = 0; i + n <= total; i++) {
+    const window = sentences.slice(i, i + n);
+    if (wordCount(window.join(' ')) < MIN_WORDS_FOR_REPEATED_PASSAGE) continue;
+    const key = window.join('|');
+    const earlier = firstSeen.get(key);
+    if (earlier === undefined) {
+      firstSeen.set(key, i);
+      continue;
+    }
+    if (earlier + n > i) continue;
+    let length = n;
+    while (i + length < total && earlier + length < i && sentences[earlier + length] === sentences[i + length]) length++;
+    return {
+      degenerate: true,
+      reason: `repeated a ${length}-sentence passage word for word (sentences ${span(earlier, length)} and ${span(i, length)} of ${total}) ${quote(sentences[i])}`,
+    };
+  }
+
+  return { degenerate: false, reason: '' };
 }
 
 // Sent on every attempt after the first, whatever caused the retry - a
@@ -476,6 +588,11 @@ export interface DiscardedAttempt {
   cost: number;
   errorMessage: string;
   durationMs: number;
+  // The model's reply, word for word, when this attempt got one (a
+  // truncated or degenerate response). Stored in the call log for audit
+  // and never shown on the page; absent for a timeout, an HTTP error or
+  // any other attempt that returned no text.
+  responseText?: string;
 }
 
 export interface OpenRouterResult {
@@ -499,6 +616,11 @@ export interface OpenRouterResult {
   // abort is not in here: it ends the chain, so it is this result itself.
   // Empty on the common path (no retry or escalation needed).
   discardedAttempts?: DiscardedAttempt[];
+  // The final attempt's reply, word for word, whenever it returned text -
+  // on success (where it equals `content`) and on a failure that rejected
+  // the text, such as a response still degenerate at the last tier. For
+  // the call log, like DiscardedAttempt.responseText.
+  responseText?: string;
 }
 
 // label identifies the caller in the log lines below (e.g.
@@ -521,11 +643,12 @@ export async function callOpenRouter(
   // function, so every discarded attempt only became visible once the
   // entire chain had already finished.
   //
-  // Note what this does NOT do, since it used to claim otherwise: it is
-  // not what shows a live card "currently trying X". A discarded attempt
-  // is by definition over, so this is always one step behind whatever is
-  // actually in flight. onAttemptStart below is what covers that, and the
-  // two exist separately for exactly this reason.
+  // Note what this does NOT do: it is not what shows a live card
+  // "currently trying X". A discarded attempt is by definition over, so
+  // this is always one step behind whatever is actually in flight. For a
+  // day (2026-09-03) the card's model line did come from these rows, and
+  // lagged one attempt behind as a result. onAttemptStart below is what
+  // covers that now, and the two exist separately for exactly this reason.
   //
   // Optional and fire-and-forget-tolerant (awaited if it returns a
   // promise, but a rejection here should never break the actual retry
@@ -645,6 +768,7 @@ export async function callOpenRouter(
     reason: string;
     usage?: { promptTokens: number; completionTokens: number; totalTokens: number };
     cost?: number;
+    responseText?: string;
     skipRestOfTier?: boolean;
     // Set only for genuinely transient failures: a 429, a 5xx, an
     // empty-content/upstream-error 200, and the fetch-level catch (a
@@ -680,6 +804,7 @@ export async function callOpenRouter(
         cost: opts.cost ?? 0,
         errorMessage: `${opts.marker} ${opts.reason} after ${attemptDurationMs}ms - re-tried with the same model (fast failure ${fastRetriesAtTier}/${MAX_FAST_TRANSIENT_RETRIES_PER_TIER} at this tier, not counted against it).`,
         durationMs: attemptDurationMs,
+        responseText: opts.responseText,
       };
       discardedAttempts.push(discarded);
       if (onDiscardedAttempt) {
@@ -715,6 +840,7 @@ export async function callOpenRouter(
         cost: opts.cost ?? 0,
         errorMessage: `${marker} ${opts.reason} - ${sameModel ? 're-tried with the same model' : `escalated to ${nextModel}`}.`,
         durationMs: Date.now() - lastAttemptStartedAt,
+        responseText: opts.responseText,
       };
       discardedAttempts.push(discarded);
       if (onDiscardedAttempt) {
@@ -774,7 +900,8 @@ export async function callOpenRouter(
       try {
         await onAttemptStart({ model: attemptModel, tierIndex, attemptInTier: attemptsAtTier + 1, tierMaxAttempts: tier.maxAttempts });
       } catch (err) {
-        // Same tolerance as onDiscardedAttempt below - a failure to record
+        // Same tolerance as onDiscardedAttempt (in
+        // recordFailedAttemptAndAdvance above) - a failure to record
         // "this attempt started" must never block or fail the actual call.
         console.warn(`[openrouter] ${label}: onAttemptStart callback failed, continuing anyway: ${err instanceof Error ? err.message : String(err)}`);
       }
@@ -1020,20 +1147,20 @@ export async function callOpenRouter(
             `[openrouter] ${label}: DEGENERATE - response finished on its own (finish_reason=${finishReason}) but contains a ${degenerateCheck.runLength}-word run with no punctuation ("${degenerateCheck.sample}...") - treating as a failure rather than trusting a technically-complete but incoherent result.`
           );
           // The offending text is quoted into the persisted reason, not just
-          // the console line, for a specific reason: a discarded attempt's
-          // content is never stored anywhere, so without a sample there is
-          // no way to audit a degeneration discard after the fact and tell a
-          // genuine catch from a false positive. The count alone ("repeated
-          // the same sentence 5 times") is unfalsifiable once the text is
-          // gone. Kept short so the call log stays readable.
+          // the console line, so the call log itself shows what tripped the
+          // check - a count alone ("repeated the same sentence 5 times")
+          // says nothing about whether the catch was genuine. The whole
+          // reply is stored alongside it (responseText below, the call log's
+          // response_text) for a full read. Kept short so the call log
+          // stays readable.
           reason = `collapsed into a ${degenerateCheck.runLength}-word run with no punctuation ("${degenerateCheck.sample.slice(0, 60)}...")`;
         } else {
           console.warn(
-            `[openrouter] ${label}: DEGENERATE - response finished on its own (finish_reason=${finishReason}) but repeats the same sentence ${repeatCheck!.count} times ("${repeatCheck!.sample.slice(0, 80)}...") - treating as a failure rather than trusting a technically-complete but looping result.`
+            `[openrouter] ${label}: DEGENERATE - response finished on its own (finish_reason=${finishReason}) but ${repeatCheck!.reason} - treating as a failure rather than trusting a technically-complete but looping result.`
           );
-          // Same reasoning as the run-on case above - the repeated sentence
-          // itself is what makes this checkable later.
-          reason = `repeated the same sentence ${repeatCheck!.count} times ("${repeatCheck!.sample.slice(0, 60)}...")`;
+          // Same reasoning as the run-on case above: the quote, and where
+          // the copies sit, show at a glance what tripped the check.
+          reason = repeatCheck!.reason;
         }
 
         const next = await recordFailedAttemptAndAdvance({
@@ -1043,6 +1170,7 @@ export async function callOpenRouter(
           reason: `This attempt ${reason}`,
           usage: { promptTokens, completionTokens, totalTokens },
           cost: calculateCost(servingModel, promptTokens, completionTokens),
+          responseText: content,
         });
         if (next.canContinue) continue;
         // Still bad (truncated or degenerate) after using every attempt at
@@ -1082,12 +1210,14 @@ export async function callOpenRouter(
           errorMessage,
           discardedAttempts,
           durationMs: Date.now() - lastAttemptStartedAt,
+          responseText: content,
         };
       }
 
       return {
         status: 'success',
         content,
+        responseText: content,
         model: servingModel,
         promptTokens,
         completionTokens,
