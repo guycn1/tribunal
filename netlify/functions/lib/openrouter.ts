@@ -91,15 +91,14 @@ const MAX_FAST_TRANSIENT_RETRIES_PER_TIER = 4;
 // successful call in api_call_logs as of 2026-09-21: a judge prompt runs a
 // median of 3896 tokens (mean 3943, p90 4483), a representative's 1028
 // (mean 1166, p90 2068) - so a judge carries something like 3.8x a
-// representative's prompt, not the "roughly 4.5x" this comment used to
-// claim. The old formula gave both the identical 43000ms. Real measured
-// judge completions on the default model in that incident: 26.9s, 33.9s,
-// and 43.2s - the last of those at that very ceiling (a logged duration
-// can read slightly over it, since it also covers the progress write made
-// just before the request starts), with several sibling attempts timing
-// out outright just past it. A ceiling that half the real distribution
-// overruns isn't a safety limit, it's a coin flip, so prompt size now
-// feeds it directly.
+// representative's prompt. The old formula gave both the identical 43000ms.
+// Real measured judge completions on the default model in that incident:
+// 26.9s, 33.9s, and 43.2s - the last of those at that very ceiling (a
+// logged duration can read slightly over it, since it also covers the
+// progress write made just before the request starts), with several sibling
+// attempts timing out outright just past it. A ceiling that half the real
+// distribution overruns isn't a safety limit, it's a coin flip, so prompt
+// size now feeds it directly.
 //
 // Sum of attempt ceilings across the whole escalation chain: a judge at
 // 4550 prompt tokens (the incident's judges - above p90, so a deliberately
@@ -107,15 +106,15 @@ const MAX_FAST_TRANSIENT_RETRIES_PER_TIER = 4;
 // median) to 587.0s, both just inside the 650s budget. Those two figures
 // are what the budget was sized against.
 //
-// It is NOT inside the budget by construction, which this comment used to
-// claim. The ceiling scales with prompt size and real prompts have a long
-// tail - the largest judge prompt in the log (as of 2026-09-21) is 11318
-// tokens, which sums to 767s, over budget by nearly two minutes. Even p90
-// (4483) only reaches 647.5s, so the tail has to be genuinely unusual
-// before this bites, and it bites safely when it does: remainingMs()
-// clamps the last attempt and the loop reports honestly that the budget
-// ran out before a further tier could be tried. The effect of an outsized
-// prompt is fewer tiers actually reached, not a silent overrun.
+// It is NOT inside the budget by construction. The ceiling scales with
+// prompt size and real prompts have a long tail - the largest judge prompt
+// in the log (as of 2026-09-21) is 11318 tokens, which sums to 767s, over
+// budget by nearly two minutes. Even p90 (4483) only reaches 647.5s, so the
+// tail has to be genuinely unusual before this bites, and it bites safely
+// when it does: remainingMs() clamps the last attempt and the loop reports
+// honestly that the budget ran out before a further tier could be tried.
+// The effect of an outsized prompt is fewer tiers actually reached, not a
+// silent overrun.
 //
 // The result is also clamped: never under 30000ms, and never over the
 // whole budget less MIN_REMAINING_TO_ATTEMPT_MS.
@@ -521,11 +520,12 @@ export async function callOpenRouter(
   // function, so every discarded attempt only became visible once the
   // entire chain had already finished.
   //
-  // Note what this does NOT do, since it used to claim otherwise: it is
-  // not what shows a live card "currently trying X". A discarded attempt
-  // is by definition over, so this is always one step behind whatever is
-  // actually in flight. onAttemptStart below is what covers that, and the
-  // two exist separately for exactly this reason.
+  // Note what this does NOT do: it is not what shows a live card
+  // "currently trying X". A discarded attempt is by definition over, so
+  // this is always one step behind whatever is actually in flight. For a
+  // day (2026-09-03) the card's model line did come from these rows, and
+  // lagged one attempt behind as a result. onAttemptStart below is what
+  // covers that now, and the two exist separately for exactly this reason.
   //
   // Optional and fire-and-forget-tolerant (awaited if it returns a
   // promise, but a rejection here should never break the actual retry

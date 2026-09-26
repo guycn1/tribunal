@@ -28,10 +28,9 @@ import { logApiCall, ABORTED_BY_USER_MESSAGE } from './lib/db';
 // So this call does stop server-side work, just indirectly - by leaving a
 // record the running calls notice, not by cancelling anything. It cannot
 // interrupt an HTTP request already in flight; it stops the next attempt,
-// which is where the escalation chain's real cost lives. An earlier version
-// of this comment said the abort could not stop server-side work at all,
-// which was true before that mechanism was added (2026-09-20) and is not
-// true now.
+// which is where the escalation chain's real cost lives. Before that
+// mechanism was added (2026-09-20), an abort stopped nothing server-side:
+// an aborted trial's judges ran on and wrote their rulings.
 const rawHandler: Handler = async (event) => {
   if (event.httpMethod !== 'POST') {
     return json(405, { error: 'Method not allowed' });

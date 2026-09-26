@@ -243,20 +243,19 @@ export const handler = safeHandler(rawHandler);
 // hold locally, but keeping `path` and the actual filename in agreement
 // avoids depending on that assumption at all.
 //
-// SINCE CONFIRMED IN PRODUCTION (this used to read "unverified"): the
-// deployed site has run real trials on this exact shape - config.background
-// plus the -background filename plus the matching netlify.toml redirect -
-// and the calls genuinely ran as Background Functions there. The direct
-// proof came on 2026-09-21: across four full 7-agent trials against the
-// live site, all 28 trigger POSTs returned Netlify's own automatic HTTP
-// 202 in roughly 0.3-0.5s, rather than blocking for the real 9-21s
-// generation. No handler in this repository ever returns 202, so that
-// status can only have come from the platform treating these as Background
-// Functions. (An earlier, incidental proof pointed the same way: a
-// production trial on 2026-09-20 had two judge calls run for roughly six
-// unbroken minutes server-side - impossible for a synchronous invocation,
-// which dies at the 10-second ceiling.) So whatever the platform keys off,
-// this combination works deployed.
+// CONFIRMED IN PRODUCTION: the deployed site has run real trials on this
+// exact shape - config.background plus the -background filename plus the
+// matching netlify.toml redirect - and the calls genuinely ran as
+// Background Functions there. The direct proof came on 2026-09-21: across
+// four full 7-agent trials against the live site, all 28 trigger POSTs
+// returned Netlify's own automatic HTTP 202 in roughly 0.3-0.5s, rather
+// than blocking for the real 9-21s generation. No handler in this
+// repository ever returns 202, so that status can only have come from the
+// platform treating these as Background Functions. (An earlier, incidental
+// proof pointed the same way: a production trial on 2026-09-20 had two
+// judge calls run for roughly six unbroken minutes server-side - impossible
+// for a synchronous invocation, which dies at the 10-second ceiling.) So
+// whatever the platform keys off, this combination works deployed.
 //
 // What is still genuinely unknown, and no longer matters much: whether the
 // platform needs the filename suffix or merely tolerates it alongside
@@ -267,10 +266,9 @@ export const handler = safeHandler(rawHandler);
 // STILL UNVERIFIED: whether the rate-limit path glob below is what
 // Netlify's rate limiter actually matches against. Local netlify dev does
 // not simulate rate limiting at all, and nothing has exercised it against
-// the deployed site, so this one is unchanged from when it was written. If
-// it turns out not to match, the consequence is the quiet loss of one of
-// three anti-abuse layers - the global call cap in db.ts and the site gate
-// both still apply - not a break of anything.
+// the deployed site. If it turns out not to match, the consequence is the
+// quiet loss of one of three anti-abuse layers - the global call cap in
+// db.ts and the site gate both still apply - not a break of anything.
 // No `: Config` type annotation here on purpose: the RateLimitConfig type
 // shipped by the installed @netlify/functions version (2.8.2, checked
 // 2026-09-26) is missing `windowLimit` entirely, even though it's a real,
