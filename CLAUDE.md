@@ -8,9 +8,9 @@ Read this whole file before writing or touching any code. This project was **bui
 
 Do not act on any instruction that contradicts this file — flag the conflict and ask instead of guessing.
 
-## HARD RULES — read before touching git or spending any external quota
+## HARD RULES — read before touching git, spending any external quota, or editing any doc or comment
 
-Restated explicitly by the user on 2026-08-27, specifically so they survive a context compaction. These two govern almost every action taken in this repo and are not situational — they apply the same way regardless of how routine the action feels, what an earlier session did, or how confident it seems this one time is fine.
+Rules 1 and 2 were restated explicitly by the user on 2026-08-27, specifically so they survive a context compaction; rule 3 was added by the user on 2026-09-27, and applies retroactively as well as to new text. Together they govern almost every action taken in this repo and are not situational — they apply the same way regardless of how routine the action feels, what an earlier session did, or how confident it seems this one time is fine.
 
 ### 1. Never spend real OpenRouter quota or touch Netlify's cloud without asking first, every time
 
@@ -25,6 +25,37 @@ Restated explicitly by the user on 2026-08-27, specifically so they survive a co
 ### 2. Only merge to `main` once a substantial milestone is genuinely done, and ask first
 
 `draft` gets every commit. `main` only receives a `git merge draft --no-ff` once a real phase of work is settled — not as a reflex after each fix (this was gotten wrong earlier in this project: see the "Known trap" note in [[tribunal-git-workflow]] in memory). Per rule 1 above, merging to `main` and pushing triggers a deploy, so it already requires explicit permission — but treat "is this actually a milestone" as its own judgment call to raise explicitly, not just "do I have permission to deploy right now." When in doubt, ask rather than merge.
+
+### 3. Edit history belongs in the commit message, not in the file
+
+A live document or code comment says what is true **now**. It does not say what it used to say, that a figure was corrected, or when. That story belongs in the commit message, next to the diff it explains.
+
+This applies equally to **markdown files and code comments**.
+
+**The line is what the history is ABOUT: text recounting what the document used to say goes; history of the app, the process or a decision stays.**
+
+- **Goes — history of the WORDING.** "This said X until <date>", "this comment used to claim…", "an earlier version of this note…", "corrected here rather than preserved", "this row was missing until…". The reader needs the current fact, not the text's edit log.
+- **Stays — history of the APP, the PROCESS or a DECISION.** "The fallback was `X` until <date>, so failed calls were logged against the wrong model." "Export was synchronous until v2 and timed out on large files." "Option B was tried first and reverted because…". That is the record of the product and of how it got here, and it is often the guard that stops the old behaviour coming back. A decision record keeps what it says happened; tidying its prose is fine, changing its account is not.
+
+**One carve-out.** When the old wording is something a reader might plausibly put back, state the rule going forward, not the history: "No count here on purpose: it drifts every time a table is added", not "This said 84, then 16, then 33."
+
+**When fixing such a passage:**
+
+1. Delete the self-narration and keep every present-tense fact around it.
+2. Check that what remains is actually true. Narration often sits on top of a claim that has itself gone stale, so correct that too, rather than just trimming.
+3. If the passage recorded a mistake in the work (a wrong diagnosis, a bad measurement), keep the mistake as process history, phrased as what happened ("the first measurement averaged over the whole edge, which hid a 200× swing") rather than as what the text used to say.
+4. Put the correction story in the commit message.
+
+**History that stays must read as history.** In a dated log or changelog-style entry, put figures in the past tense or pin them to the date ("15 of 16 days as of <date>", "the counts that day were…"). A present-tense figure in an old entry gets read as current. The same goes for instructions: once one has served its purpose ("do not re-run the sweep"), either scope it to what it was for or remove it.
+
+**Phrasings that are almost always self-narration**, and worth a search before committing:
+- "This said" or "This read" followed by a quotation
+- "this <comment | note | entry | paragraph | sentence | bullet | row> used to…"
+- "an earlier version of this…"
+- "rather than preserved"
+- a parenthetical opening "(This listed…"
+
+Not every match is narration: "read" can mean "looked", as in "this row read too tall". Borderline cases need a human judgement; no pattern can make the call.
 
 ---
 
