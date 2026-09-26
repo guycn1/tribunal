@@ -8,7 +8,7 @@ The Tribunal decides one question — **justified / not justified** — and give
 
 ## Architecture
 
-Three-tier: browser (static HTML/CSS/vanilla JS) → backend (Netlify Functions, TypeScript) → database (Supabase/Postgres). The backend holds the OpenRouter API key and orchestrates every model call; the database stores the case record, every representative argument, every judge ruling, and a full per-call log (model, tokens, cost, status, duration).
+Three-tier: browser (static HTML/CSS/vanilla JS) → backend (Netlify Functions, TypeScript) → database (Supabase/Postgres). The backend holds the OpenRouter API key and orchestrates every model call; the database stores the case record, each trial, every representative argument and judge ruling, a full per-call log (model, tokens, cost, status, duration), and the attempt each running call is on.
 
 - Four representatives run concurrently — they don't depend on each other. Dispatch goes through a small worker pool, but because the agent endpoints are Background Functions that return as soon as the work is accepted, a pool slot frees at the trigger rather than at the end of the generation — so all four are genuinely in flight at the same time. That is measured from the call log's own timings rather than assumed, and it is how every trial behind the reliability record below actually ran. What the pool still bounds is how many trigger requests overlap, which matters only for Netlify's per-IP rate limit.
 - Three judges run after, each independently receiving the case record plus all four representative arguments (or however many are actually available — a failed representative call is never backfilled with invented text).
@@ -16,13 +16,13 @@ Three-tier: browser (static HTML/CSS/vanilla JS) → backend (Netlify Functions,
 
 **Background Functions + polling.** Representative and judge calls run as Netlify Background Functions rather than standard synchronous invocations — a real generation can take well past the ~10s ceiling a synchronous function gets. The browser triggers a call, gets an immediate `202`, and polls `GET /api/trials/:id` until the result lands.
 
-**A 4-tier model escalation chain** guards against unusable output: `default model (2 attempts) → claude-haiku-4.5 (2 attempts) → a top-tier model (2 attempts) → a last-resort model (1 attempt)`, escalating once a tier has used up its attempts. The escalation signals are `finish_reason === 'length'` (hit the token cap), two independent degeneration heuristics (a long punctuation-less run-on, and the same whole sentence repeated 4+ times), a plain HTTP failure such as a removed model id (which skips the tier's remaining attempts, since re-asking a model that just 404'd is pointless), and transient failures (timeout, 429, 5xx, an empty-content 200).
+**A 4-tier model escalation chain** guards against unusable output: `default model (2 attempts) → claude-haiku-4.5 (2 attempts) → a top-tier model (2 attempts) → a last-resort model (1 attempt)`, escalating once a tier has used up its attempts. The escalation signals are `finish_reason === 'length'` (hit the token cap), two independent degeneration heuristics (a long punctuation-less run-on, and the same whole sentence repeated 4+ times), a plain HTTP failure such as a removed model id (which skips the tier's remaining attempts, since re-asking a model that just 404'd is pointless), and transient failures (a timeout or network error, a 429, a 5xx, or a 200 with no content). Two failures end the call at once instead, since no retry can fix them: the account running out of credits (HTTP 402), and a rate-limit window that outlasts the remaining time budget.
 
 Transient failures are split by **how long they took**, because the right response differs: a call that bounces back in under 10 seconds (a burst rate limit, say) gets a bounded number of same-model retries that don't count against the tier's attempt budget — escalating to a costlier model within seconds of a rate limit that clears on its own would be exactly the wrong move — while one that burns its whole ceiling is treated as a real failure of that tier and escalates. Per-attempt timeouts scale with both prompt size and the token cap, so a judge's much larger prompt gets a proportionally larger ceiling.
 
 Every tier in the chain is a paid model; none of them runs on a free tier. The tiers differ in cost by a wide margin (the default is $0.05/$0.08 per million prompt/completion tokens, the next is $1.00/$5.00), which is why the chain is built to exhaust the cheapest option before reaching for a better one — not to avoid spending, but to spend proportionately.
 
-Every discarded attempt — including a timeout — gets logged as its own real row (model, tokens, cost, outcome) the moment it's decided, not batched at the end, so the call log shows the whole path rather than only the final result. A live-in-progress card shows the model and attempt actually running right now, updating as the chain escalates.
+Every discarded attempt — including a timeout — gets logged as its own real row (model, tokens, cost, duration, outcome) the moment it's decided, not batched at the end, so the call log shows the whole path rather than only the final result. A live-in-progress card shows the model and attempt actually running right now, updating as the chain escalates.
 
 **Abort stops server-side work, not just the UI.** A Background Function can't be cancelled by the browser that started it, so the trial's abort is recorded in the database and each in-flight call checks for it between attempts and stops itself, rather than continuing to escalate through increasingly expensive models for a result nobody is waiting for. A result that arrives after an abort is discarded rather than written into the aborted trial.
 
@@ -35,14 +35,14 @@ Each route below is a rewrite in `netlify.toml` to one function in `netlify/func
 | Method | Path | Function | What it does |
 | --- | --- | --- | --- |
 | `GET` | `/api/case` | `case.ts` | The fixed case record, the starting model for each role, and the shared completion-token cap. Read once when the page loads. |
-| `GET` | `/api/trials` | `trials.ts` | The 50 most recent trials, for the run-history sidebar — each with how many of its 7 results were saved and whether it was aborted. |
+| `GET` | `/api/trials` | `trials.ts` | The 50 most recent trials, newest first, for the run-history sidebar — each with its status, how many of its 7 results were saved, whether it was aborted, and whether any attempt ever failed. |
 | `POST` | `/api/trials` | `trials.ts` | Creates a trial and returns it with the case record (`201`). Needs the site-gate header. Makes no model call. |
-| `GET` | `/api/trials/:id` | `trial.ts` | Everything recorded for one trial: its arguments, rulings, every call-log row, and the attempt each role is on right now. Polled throughout a run, and read once to open a past trial. `404` for an unknown id. |
-| `POST` | `/api/trials/:id/representatives/:role` | `representative-background.ts` | Runs one representative through the escalation chain and saves the argument. |
-| `POST` | `/api/trials/:id/judges/:role` | `judge-background.ts` | Runs one judge on the case record plus whichever representative arguments were saved, and saves the ruling. |
-| `POST` | `/api/trials/:id/abort` | `abort.ts` | Takes `{ "roles": [...] }` — the roles still pending — and records an abort for each. The running calls check for it between attempts and stop. |
+| `GET` | `/api/trials/:id` | `trial.ts` | Everything recorded for one trial: the trial itself, the case record, its saved arguments and rulings, every call-log row (oldest first), and the attempt each role most recently started. Polled throughout a run, and read once to open a past trial. `404` for an unknown id. |
+| `POST` | `/api/trials/:id/representatives/:role` | `representative-background.ts` | Runs one representative through the escalation chain and saves the argument, unless the trial has been aborted meanwhile. |
+| `POST` | `/api/trials/:id/judges/:role` | `judge-background.ts` | Runs one judge on the case record plus whichever representative arguments were saved, and saves the ruling, unless the trial has been aborted meanwhile. Marks the trial completed once every judge has a final outcome. |
+| `POST` | `/api/trials/:id/abort` | `abort.ts` | Takes `{ "roles": [...] }` — the roles still pending — records an abort for each one it recognises, and replies with the roles it recorded. The running calls check for it between attempts and stop. |
 
-**The two agent endpoints behave differently from the rest.** They are the only ones that spend OpenRouter quota, and the only Background Functions: Netlify answers the POST with `202` as soon as the call is accepted and runs the handler afterwards, so nothing the handler returns ever reaches the browser, which learns the outcome by polling `GET /api/trials/:id`. The handler checks, in order, that the role is one it knows (`jon_snow`, `tyrion_lannister`, `daenerys_targaryen` or `grey_worm`; `barak`, `elon` or `shamgar`), the site-gate header, the site-wide call cap, and that the trial exists. Because of the `202`, a rejection at any of those steps shows up only in Netlify's function logs — in the browser, that role never resolves, and its card says so once polling gives up, after about 12 minutes. Netlify's per-IP rate limit (45 requests per 5 minutes on each of the two, declared in each function's `config`) is enforced by the platform ahead of the handler, so a rejection there would reach the browser directly; it has never been tripped, so that path is untested in production. A judge's reply must contain a `VERDICT: justified` or `VERDICT: not justified` line, and one without it is logged as a failure rather than saved.
+**The two agent endpoints behave differently from the rest.** They are the only ones that spend OpenRouter quota, and the only Background Functions: Netlify answers the POST with `202` as soon as the call is accepted and runs the handler afterwards, so nothing the handler returns ever reaches the browser, which learns the outcome by polling `GET /api/trials/:id`. The handler checks, in order, that the request is a POST naming a trial and a role, that the role is one it knows (`jon_snow`, `tyrion_lannister`, `daenerys_targaryen` or `grey_worm`; `barak`, `elon` or `shamgar`), the site-gate header, the site-wide call cap, and that the trial exists. Because of the `202`, a rejection at any of those steps never reaches the browser: the site-gate and call-cap rejections are written to Netlify's function logs, the others are not logged at all, and in the browser that role never resolves — its card says so once polling gives up, after about 12 minutes. Netlify's per-IP rate limit (45 requests per 5 minutes on each of the two, declared in each function's `config`) is enforced by the platform ahead of the handler, so a rejection there would reach the browser directly; it has never been tripped, so that path is untested in production. A judge's reply must contain a `VERDICT: justified` or `VERDICT: not justified` line, and one without it is logged as a failure rather than saved.
 
 ### Database
 
@@ -55,13 +55,13 @@ Six tables in Supabase/Postgres. `supabase/schema.sql` is the authority on every
 
 **`trials`** — one row per run: `id` (a UUID — the `:id` in every route above), `case_code`, `status`, `created_at` and `updated_at`. `status` is `created` until every judge has a final outcome logged — a ruling, a failure the chain gave up on, or an abort — and then `completed`, set by the judge endpoint that finds it so. A judge that notices its trial was aborted stops without setting it, so a trial aborted before any judge finished stays `created`.
 
-**`representative_arguments`** — one row per representative whose argument was kept: `trial_id`, `role`, `seat` (`defense` or `prosecution`), `argument_text` and `model_used`. There is at most one row per trial and role, so a representative that needed several attempts still counts once; this table and `judge_rulings` are what the sidebar's "N of 7" counts. Discarded attempts never land here — they live in `api_call_logs`.
+**`representative_arguments`** — one row per representative whose argument was kept: `id`, `trial_id`, `role` (one of the four representatives), `seat` (`defense` or `prosecution`), `argument_text`, `model_used` and `created_at`. There is at most one row per trial and role, so a representative that needed several attempts still counts once; this table and `judge_rulings` are what the sidebar's "N of 7" counts. Discarded attempts never land here — they live in `api_call_logs`.
 
-**`judge_rulings`** — one row per judge whose ruling was kept: `trial_id`, `role`, `verdict` (`justified` or `not justified`), `reasoning_text` and `model_used`. At most one row per trial and role. A trial's three rulings are independent rows, and nothing in the schema or the code combines them.
+**`judge_rulings`** — one row per judge whose ruling was kept: `id`, `trial_id`, `role` (one of the three judges), `verdict` (`justified` or `not justified`), `reasoning_text`, `model_used` and `created_at`. At most one row per trial and role. A trial's three rulings are independent rows, and nothing in the schema or the code combines them.
 
-**`api_call_logs`** — one row per model-call attempt, kept or discarded, appended and never updated. It carries the fields the spec requires for every call — `agent_role`, `model_used`, `prompt_tokens`, `completion_tokens`, `total_tokens`, `cost` (in US dollars), `status` (`success` or `failed`) and `timestamp` — plus `trial_id`, `call_type` (`representative` or `judge`), `error_message` and `duration_ms`. A discarded attempt's `error_message` starts with a marker saying what happened to it, such as `[transient-retried]`, and `duration_ms` is empty on rows logged before that column existed. An abort is recorded here too, as a `failed` row with the model `n/a` for each pending role; that row is what running calls look for to know they should stop.
+**`api_call_logs`** — one row per model-call attempt, kept or discarded, appended and never updated. It carries the fields the spec requires for every call — `agent_role`, `model_used`, `prompt_tokens`, `completion_tokens`, `total_tokens`, `cost` (in US dollars), `status` (`success` or `failed`) and `timestamp` — plus the row's own `id`, `trial_id`, `call_type` (`representative` or `judge`), `error_message` and `duration_ms`. A discarded attempt's `error_message` starts with a marker saying what happened to it, such as `[transient-retried]`, and `duration_ms` is empty on the abort endpoint's rows (they record a decision, not an attempt) and on rows logged before that column existed. An abort is recorded here too, as a `failed` row with the model `n/a` for each pending role; that row is what running calls look for to know they should stop.
 
-**`agent_progress`** — one row per trial and role (`trial_id` and `role` together are its key), overwritten each time a new attempt starts: `model`, `tier_index`, `attempt_in_tier` and `tier_max_attempts`. It drives the live "Model: … (second attempt)" line on a card that is still running. A row left behind after a role has finished is harmless: the page only reads it for a role with no final result yet.
+**`agent_progress`** — one row per trial and role (`trial_id` and `role` together are its key), overwritten each time a new attempt starts: `model`, `tier_index`, `attempt_in_tier`, `tier_max_attempts` and `updated_at`. It drives the live "Model: … (second attempt)" line on a card that is still running. A row left behind after a role has finished is harmless: the page only reads it for a role with no final result yet.
 
 ## Reading the UI: status badges
 
@@ -73,14 +73,14 @@ One row per real model attempt, including attempts that were discarded in favour
 
 | Badge | Colour | What triggered it |
 | --- | --- | --- |
-| `success` | green | The attempt returned usable content and was kept. This is the text shown on that agent's card. |
+| `success` | green | The attempt returned usable content and was kept — for a judge, that includes a `VERDICT` line. This is the text shown on that agent's card. The one exception: a result that arrives after its trial was aborted is logged as a success but not saved. |
 | `failed` | red | Either a real attempt that ended the call (the agent's card reads "Call failed") — every tier or the time budget used up, a failure no retry can fix such as the account running out of credits, or a judge reply with no `VERDICT` line — or the marker row the abort endpoint writes for a role that was still pending when the user stopped the trial — recognisable by a model of `n/a` and zero tokens, and the agent's card reads "Aborted" rather than "Call failed" for that one. |
 | `Truncated` | amber | `finish_reason === 'length'` — the model was still writing when it hit that tier's token cap. Retried or escalated; the caption says which. |
-| `Degenerated` | amber | A detector fired on text that finished *on its own*: a 40+ word run with no punctuation, or the same whole sentence 4+ times. Retried or escalated. |
+| `Degenerated` | amber | A detector fired on text that finished *on its own*: a 40+ word run with no punctuation, or the same whole sentence 4+ times. Retried or escalated; the caption says which. |
 | `Truncated` | red | The same cap hit, with nothing left to fall back to: on the final tier, or with no time budget left for another. Nothing was saved. |
 | `Degenerated` | red | The same detector hit, with nothing left to fall back to. Nothing was saved. |
-| `Escalated` | amber | A plain HTTP failure from that tier's own model (e.g. a removed model id returning 404). Skips the tier's remaining attempts, since re-asking a model that just 404'd is pointless. |
-| `No response` | amber | A transient failure — timeout, HTTP 429, a 5xx, or a 200 carrying no content. Retried. Coming back in under 10 seconds *can* make the retry free — not counted against the tier's attempts — but only for the first few at each tier, and only with enough time budget left to try again; past that a fast failure costs an attempt like any other. |
+| `Escalated` | amber | A plain HTTP failure from that tier's own model (e.g. a removed model id returning 404). Skips the tier's remaining attempts, since re-asking a model that just 404'd is pointless. On the last tier there is nowhere to escalate, so the same failure ends the call and shows as `failed`. |
+| `No response` | amber | A transient failure — a timeout or network error, HTTP 429, a 5xx, or a 200 carrying no content. Retried on the same model, or escalated once the tier's attempts are used up. Coming back in under 10 seconds *can* make the retry free — not counted against the tier's attempts — but only for the first few at each tier, and only with enough time budget left to try again; past that a fast failure costs an attempt like any other. |
 | `Aborted` | amber | The chain stopped itself between attempts because the trial was aborted while it was still running server-side. |
 | `truncated` | amber | Legacy only: shown *next to* a green `success` on historical rows recorded before truncation became a real failure. New trials never produce it. |
 
@@ -93,23 +93,23 @@ One badge per trial, summarising the whole run.
 | Badge | Colour | What triggered it |
 | --- | --- | --- |
 | `Completed` | green | Finished, with all 7 of 7 results saved. |
-| `Completed — missing N of 7` | amber | Finished, but fewer than 7 results were saved: some agent failed on every tier, or was never reached. |
+| `Completed — missing N of 7` | amber | Finished, but fewer than 7 results were saved: some agent's call failed for good (every tier or the time budget used up, a failure no retry can fix, or a judge reply with no `VERDICT` line), or never ran because its trigger request was rejected or never got through. |
 | `Aborted` | grey | Stopped by the user before the trial reached completion. |
 | `Aborted (N of 7 completed)` | grey | Stopped by the user, but the trial had already been marked complete — the count says how much survived. |
-| `In progress…` | slate | Still running, and under 40 minutes old. |
-| `Interrupted` | red | Not finished and over 40 minutes old, so it is treated as never going to finish (a dev-server restart mid-run, say). The threshold is sized above the genuine worst case: a full four-tier escalation for every representative, then the same again for every judge — about 22 minutes. |
+| `In progress…` | slate | Not finished, not aborted, and under 40 minutes old — presumably still running. |
+| `Interrupted` | red | Not finished, not aborted, and over 40 minutes old, so it is treated as never going to finish — a dev-server restart mid-run, say, or the page closed before the judges were started (the browser starts each phase). The threshold is sized above the genuine worst case: a full four-tier escalation for every representative, then the same again for every judge — about 22 minutes. |
 
 "Missing N" counts results that actually persisted, **not** whether any individual call ever failed along the way. A transient failure that the retry recovered from is a real logged attempt, not a flaw in the outcome — labelling the run on that basis would mark almost every trial as damaged. The call log still shows every attempt in full.
 
 ## Project layout
 
-Every file tracked in the repository. `node_modules/` and `.netlify/` are generated locally and git-ignored.
+Every file tracked in the repository. Not tracked, and git-ignored: `node_modules/` and `.netlify/`, which are generated locally; `.env`, which holds your own keys (copied from `.env.example`); and logs and a few other local-only paths, listed in `.gitignore`.
 
 ```text
 .
 ├── public/                           static frontend, served as-is — no build step
 │   ├── index.html
-│   ├── app.js                        all client logic: starting a trial, polling, rendering
+│   ├── app.js                        all client logic: running and aborting a trial, polling, rendering, run history
 │   └── styles.css
 ├── netlify/functions/                backend — one file per Netlify Function
 │   ├── case.ts                       GET /api/case
@@ -120,13 +120,13 @@ Every file tracked in the repository. `node_modules/` and `.netlify/` are genera
 │   ├── abort.ts                      POST /api/trials/:id/abort
 │   └── lib/                          code shared by the functions above
 │       ├── openrouter.ts             the escalation chain: tiers, timeouts, detectors
-│       ├── models.ts                 the model for each tier, and the token cap
+│       ├── models.ts                 the model for each role and tier, and the token cap
 │       ├── pricing.ts                per-token prices, for the cost column
 │       ├── prompts.ts                builds each agent's prompt; parses a judge's verdict
 │       ├── representatives.ts        the four representatives, in character
 │       ├── judges.ts                 the three judges' reasoning methods
-│       ├── chargeSheet.ts            reads the case record from the database
-│       ├── db.ts                     every Supabase query, the call cap, the abort check
+│       ├── chargeSheet.ts            reads the case record from the database; formats it for prompts
+│       ├── db.ts                     every other Supabase query, the call cap, the abort check
 │       ├── supabase.ts               the Supabase client (service-role key)
 │       ├── siteGate.ts               the X-Site-Gate header check
 │       ├── extractParams.ts          reads :id and :role from the request
@@ -144,7 +144,7 @@ Every file tracked in the repository. `node_modules/` and `.netlify/` are genera
 │       ├── compile-backend.js        compiles the real backend TypeScript
 │       ├── fake-supabase.js          an in-memory Supabase, for running the backend
 │       └── load-app.js               runs the real app.js against a stub DOM
-├── netlify.toml                      build settings and the /api/* routes
+├── netlify.toml                      build and local-dev settings, and the /api/* routes
 ├── package.json, package-lock.json
 ├── tsconfig.json                     type-checks netlify/functions (not app.js)
 ├── .env.example                      every environment variable the backend reads

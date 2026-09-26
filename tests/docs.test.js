@@ -331,12 +331,14 @@ async function main() {
   const paragraphs = Object.fromEntries([...db.matchAll(/^\*\*`(\w+)`\*\* — (.*)$/gm)].map((m) => [m[1], m[2]]));
   check('every table has a paragraph', minus(tableNames, Object.keys(paragraphs)).length === 0, minus(tableNames, Object.keys(paragraphs)).join(', '));
   check('every paragraph is about a real table', minus(Object.keys(paragraphs), tableNames).length === 0, minus(Object.keys(paragraphs), tableNames).join(', '));
-  const BOOKKEEPING = ['id', 'created_at', 'updated_at'];
   const markerValues = [...OPENROUTER_SRC.matchAll(/export const [A-Z0-9_]+_MARKER = '([^']+)'/g)].map((m) => m[1]);
   for (const [table, info] of Object.entries(TABLES)) {
     const para = paragraphs[table] || '';
     const named = [...para.matchAll(/`([^`]+)`/g)].map((m) => m[1]);
-    const unnamed = info.columns.filter((c) => !BOOKKEEPING.includes(c) && !named.includes(c));
+    // Every column, bookkeeping ones included: each paragraph reads as the
+    // table's full column list, so one that drops id or created_at is
+    // incomplete, not merely brief.
+    const unnamed = info.columns.filter((c) => !named.includes(c));
     check(`${table}: every column is named`, unnamed.length === 0, unnamed.join(', '));
     const bogus = named.filter((n) => /^[a-z][a-z0-9_]*$/.test(n) && n.includes('_') && !info.columns.includes(n) && !tableNames.includes(n));
     check(`${table}: every column named exists`, bogus.length === 0, bogus.join(', '));
