@@ -345,6 +345,14 @@ Progress so far:
   - **Statements that were not quite true:** `.env.example`, `app.js` and `siteGate.ts` said a wrong site-gate token makes "every gated call" fail with a 401, when an agent call is dropped silently (visible only in Netlify's function logs) and only trial creation gets the 401; `siteGate.ts` still read as a to-do to set a token that has been set since 2026-08-30. `CALL_LOG_PAGE_COLUMNS` claimed to leave out only `response_text` (it also leaves out `id` and `trial_id`) and to be held to that by a test that does not import it. The abort check was described as running only between attempts, omitting the final check before a result is saved. A `[degenerate-final]` row was described as always meaning the last tier, omitting the out-of-time-budget case; `styles.css` called the scrollbar "3-tier in every browser" three paragraphs above saying only two tiers render anywhere; a cross-reference pointed at a fix by description no reader could follow; one said "below" for something above.
   - **Wording history the first rule-3 pass missed**, because its search did not match "revision": an `app.js` comment on `INTERRUPTED_THRESHOLD_MS` recounted what "an earlier revision of this comment" said, and a `styles.css` note told the reader how to read "the comment below"; both now state the facts directly. A handful of dated log entries still read as current ("Not yet understood", "uses today", "all four of today's production trials", "23 now", "28 since") and were pinned to their day, and the log's methodology note had a real line break inside the very `out.join(...)` example it describes.
   - Nothing in SPEC.md, the schema, `index.html` or the remaining test files needed changing.
+- **Merged to `main` (2026-09-27, on the user's explicit request), triggering a deploy: 6 commits, everything since the 2026-09-26 merge (`c33c3ed`).** They are:
+  - HARD RULE 3 and its retroactive pass (`698a06d`, `b57f621`);
+  - the widened repeated-sentence detector (`e044600`);
+  - every model reply kept in the call log for audit, never sent to the page (`727c13b`) - its `response_text` column was already applied to the shared Supabase database, which the deployed site uses too, so the deployed code has the column waiting for it;
+  - the second full documentation sweep (`51a26b1`);
+  - the commit that adds this entry.
+
+  The merge commit is the `--no-ff` commit on `main` directly after this entry's commit; `git log --first-parent main` names it. This entry was committed to `draft` ahead of the merge, so that right after it `main` and `draft` hold identical trees.
 
 ---
 
