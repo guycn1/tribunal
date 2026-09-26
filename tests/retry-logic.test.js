@@ -165,6 +165,46 @@ async function main() {
     check('accepted first time, no escalation', calls.length === 1 && r.status === 'success', JSON.stringify(calls));
   });
 
+  // ------------------------------------------------------------------ 2b
+  await test('Shorter verbatim loops are caught, and the pattern just short of each is not', async () => {
+    /**
+     * What the first attempt's reply gets logged as, or null if it was kept.
+     * @param {string} content
+     * @returns {Promise<string | null>}
+     */
+    const verdict = async (content) => {
+      global.fetch = async (_u, o) => { const m = JSON.parse(o.body).model; return reply(m, m === DEFAULT ? content : CLEAN); };
+      const r = await callOpenRouter(DEFAULT, [{ role: 'user', content: 'hi' }], 1400, 'rep:test');
+      return r.discardedAttempts && r.discardedAttempts.length ? r.discardedAttempts[0].errorMessage : null;
+    };
+    /** A distinct filler sentence, so copies can be kept apart. @param {number} i */
+    const filler = (i) => `Point number ${i} stands on its own terms here.`;
+    const SHORT = 'He had no lawful authority to act.';
+    const LONG = 'He had seen the city burn after the bells rang and he knew that she would not stop there.';
+
+    // The 2026-09-26 miss, word for word: three copies back to back, a
+    // fourth differing by one word ("Jon Snow's" for "his").
+    const closing = 'I ask the Tribunal to consider these words, and to consider the facts of the case. I ask the Tribunal to consider whether Jon Snow\'s actions were justified, and I ask the Tribunal to consider whether his actions were necessary. ' + 'I ask the Tribunal to consider whether his actions were justified, and I ask the Tribunal to consider whether his actions were necessary. '.repeat(3);
+    const missed = await verdict(closing);
+    check('the looped closing that got through is now caught', missed !== null && /3 times in a row/.test(missed), missed);
+
+    const twiceInARow = await verdict(`${filler(1)} ${SHORT} ${SHORT} ${filler(2)}`);
+    check('a sentence twice in a row is caught', twiceInARow !== null && /2 times in a row/.test(twiceInARow), twiceInARow);
+    check('the same short sentence twice apart is not', (await verdict(`${SHORT} ${filler(1)} ${SHORT}`)) === null);
+
+    const threeApart = await verdict(`${SHORT} ${filler(1)} ${SHORT} ${filler(2)} ${SHORT}`);
+    check('a short sentence 3 times apart is caught', threeApart !== null && /same sentence 3 times/.test(threeApart), threeApart);
+
+    const longTwice = await verdict(`${LONG} ${filler(1)} ${filler(2)} ${LONG}`);
+    check('a long sentence twice apart is caught', longTwice !== null && /-word sentence 2 times/.test(longTwice), longTwice);
+    check('a 4-word sentence repeated back to back is not (too short to count)', (await verdict('I agree with him. I agree with him. I agree with him. ' + filler(1))) === null);
+
+    const passage = [filler(1), filler(2), filler(3)].join(' ');
+    const repeatedPassage = await verdict(`${passage} ${filler(4)} ${passage}`);
+    check('a 3-sentence passage repeated later is caught', repeatedPassage !== null && /3-sentence passage/.test(repeatedPassage), repeatedPassage);
+    check('a 2-sentence passage repeated later is not', (await verdict(`${filler(1)} ${filler(2)} ${filler(3)} ${filler(1)} ${filler(2)}`)) === null);
+  });
+
   // ------------------------------------------------------------------ 3
   await test('Repeated slow timeouts escalate instead of looping at one tier', async () => {
     // The six-minute stall: every transient failure used to retry the same

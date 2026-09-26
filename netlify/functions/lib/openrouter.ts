@@ -290,28 +290,64 @@ function detectDegenerateRun(content: string): { degenerate: boolean; runLength:
 // frequency_penalty/presence_penalty work, and it had been shipping
 // undetected the whole time since.
 //
-// Threshold calibrated against that same real corpus rather than guessed,
-// the same way DEGENERATE_RUN_THRESHOLD was: at 4+ verbatim repeats,
-// inspection of every borderline case (4x through 8x, read in full with
-// surrounding context) found genuine degeneration in each - consecutive
-// identical sentences closing out a text, or the model looping the same
-// paragraph-sized block over and over. Deliberate rhetorical repetition
-// does NOT trip this: real anaphora repeats an opening phrase and then
-// continues differently ("I ask you to consider the scale..." / "I ask you
-// to consider the evidence..."), which produces different whole sentences
-// and is therefore invisible here - unlike the earlier, abandoned 5-word
-// phrase heuristic, which flagged exactly that pattern as a false
-// positive. Only genuinely verbatim whole-sentence repetition counts.
-// Sentences under 5 words are ignored outright, so a short refrain ("Thank
-// you.", "I agree.") can never trip it either.
+// It flags a text on any of four verbatim-repetition patterns:
+//   1. the same sentence twice in a row;
+//   2. a long sentence (15+ words) twice anywhere in the text;
+//   3. any sentence 3+ times anywhere in the text;
+//   4. a passage of 3+ consecutive sentences (12+ words) that appears again
+//      later, word for word.
+// Only sentences of 5+ words count for 1-3, so a short refrain ("Thank
+// you.", "I agree.") can never trip them. The longer a sentence, the less
+// likely a verbatim restatement of it is deliberate, hence 2 copies for a
+// long one against 3 for a short one.
+//
+// Calibrated against the real corpus, and deliberately tuned to miss as
+// little as possible: a degenerate text saved and shown as a successful
+// argument is far worse than a sound one discarded and retried, which
+// costs a cheap same-model attempt or, at worst, an escalation.
+// - The first version (2026-09-20) flagged only 4+ copies anywhere, after
+//   every 4x-8x case in the corpus read as genuine degeneration. Below 4
+//   was never examined, and a 3-copy loop got through on 2026-09-26
+//   (daenerys_targaryen, trial e4a20a68: her closing sentence three times
+//   back to back, a fourth copy differing by one word).
+// - Re-measured on 2026-09-27 across 830 stored texts. Every text holding
+//   a 5+ word sentence twice in a row was read, and each is a loop - an
+//   identical sentence restated with nothing between, never a stylistic
+//   choice (11 texts). A repeated 3+ sentence passage is the model
+//   re-emitting a paragraph (48 texts, among them 5 of the 70 saved since
+//   the first version shipped - a 3-5 sentence block pasted again later,
+//   twice directly after itself). A sentence 3 times spread across a text
+//   is usually a refrain ("He acted to save lives.") rather than a loop,
+//   and some are sound ("This test is not met." closing each of Barak's
+//   tests) - flagged anyway, on the priority above. A 15+ word sentence
+//   twice is at 20+ words a whole thought pasted again (a 41-word one in
+//   an Elon ruling); at 15-19 words mostly a refrain ("He had only the
+//   knowledge of what must be done and the courage to do it.") and
+//   occasionally a structural line ("We will grant this point for the sake
+//   of argument and proceed to the next test.") - flagged, on the same
+//   priority. Together the four rules flag 144 of the 830 texts (17%, and
+//   11 of the 70 saved since the first version shipped), against 30 for
+//   the first version.
+// Deliberate rhetorical repetition does NOT trip this: real anaphora
+// repeats an opening phrase and then continues differently ("I ask you to
+// consider the scale..." / "I ask you to consider the evidence..."), which
+// produces different whole sentences and is therefore invisible here -
+// unlike the earlier, abandoned 5-word phrase heuristic, which flagged
+// exactly that pattern as a false positive. Only verbatim whole-sentence
+// repetition counts.
+//
+// What it does not catch: near-verbatim looping, where each copy differs
+// by a word or two ("Jon Snow's actions" / "his actions"). Matching that
+// would take a fuzzy comparison with its own calibration against the
+// anaphora risk, and has not been built.
 //
 // It works on real output, not just on the corpus it was calibrated
 // against: counted from api_call_logs as of 2026-09-26, this check has
 // caught seven natural live cases, all on the tier-1 default model, at 4
 // to 8 verbatim repeats each - five in local testing on the day it
 // shipped (tyrion_lannister twice, grey_worm three times), then two on the
-// deployed site the next day: grey_worm again, at exactly the 4-repeat
-// threshold, and later a judge, the first catch on a judge (shamgar, 5
+// deployed site the next day: grey_worm again, at 4 repeats (the
+// threshold of the time), and later a judge, the first catch on a judge (shamgar, 5
 // repeats). The first production catch is worth knowing what it cost to
 // miss: the response had finish_reason=stop at 604 tokens, so without
 // this check it would have been saved and shown as a perfectly ordinary
@@ -320,30 +356,66 @@ function detectDegenerateRun(content: string): { degenerate: boolean; runLength:
 // tier-2 model of the time, at 180 and 84 words - far past the 40-word
 // line, and the 84-word one was read in full and confirmed degenerate.
 //
-// On false positives, the honest answer is that they are mostly not
-// auditable here, and this should not be reported as if it were a clean
-// precision record. A discarded attempt's content is never stored (see
+// On false positives: the thresholds above knowingly accept some (a
+// refrain, a structural line), in exchange for missing as little as
+// possible. Beyond those, they are mostly not auditable here, and this
+// should not be reported as if it were a clean precision record. A discarded attempt's content is never stored (see
 // the note further down on why the offending text is quoted into the
 // reason), so for the catches predating that quoting there is no way to
 // check either way. Where a sample does exist, it shows a full sentence
 // repeated verbatim, which deliberate anaphora cannot produce - it varies
 // the continuation, so the whole sentences differ. That is the reason to
-// think precision is good; it is not a measurement of it.
-const REPEATED_SENTENCE_THRESHOLD = 4;
+// think anaphora is safe from it; it is not a measurement of precision.
+const REPEATED_SENTENCE_THRESHOLD = 3;
+const CONSECUTIVE_REPEAT_THRESHOLD = 2;
+const LONG_SENTENCE_WORDS = 15;
+const LONG_SENTENCE_REPEAT_THRESHOLD = 2;
 const MIN_WORDS_FOR_REPEAT_CHECK = 5;
+const REPEATED_PASSAGE_SENTENCES = 3;
+const MIN_WORDS_FOR_REPEATED_PASSAGE = 12;
 
 function normalizeSentenceForRepeatCheck(sentence: string): string {
   return sentence.trim().toLowerCase().replace(/\s+/g, ' ').replace(/[^\w\s]/g, '');
 }
 
-function detectRepeatedSentences(content: string): { degenerate: boolean; count: number; sample: string } {
-  const counts = new Map<string, number>();
-  for (const raw of content.split(/[.!?]+/)) {
-    const normalized = normalizeSentenceForRepeatCheck(raw);
-    if (normalized.split(' ').filter(Boolean).length < MIN_WORDS_FOR_REPEAT_CHECK) continue;
-    counts.set(normalized, (counts.get(normalized) ?? 0) + 1);
+function wordCount(normalized: string): number {
+  return normalized.split(' ').filter(Boolean).length;
+}
+
+/**
+ * The first verbatim-repetition pattern found, as the reason text a
+ * discarded attempt is logged with (the repeated text quoted, so a discard
+ * can be audited after the content is gone). The in-a-row check comes
+ * first because it names a loop most precisely.
+ */
+function detectRepeatedSentences(content: string): { degenerate: boolean; reason: string } {
+  const sentences = content.split(/[.!?]+/).map(normalizeSentenceForRepeatCheck).filter((s) => wordCount(s) > 0);
+  const quote = (s: string) => `("${s.slice(0, 60)}...")`;
+
+  let run = 1;
+  let longestRun = 1;
+  let runSample = '';
+  for (let i = 1; i < sentences.length; i++) {
+    run = sentences[i] === sentences[i - 1] && wordCount(sentences[i]) >= MIN_WORDS_FOR_REPEAT_CHECK ? run + 1 : 1;
+    if (run > longestRun) {
+      longestRun = run;
+      runSample = sentences[i];
+    }
+  }
+  if (longestRun >= CONSECUTIVE_REPEAT_THRESHOLD) {
+    return { degenerate: true, reason: `repeated the same sentence ${longestRun} times in a row ${quote(runSample)}` };
   }
 
+  const counts = new Map<string, number>();
+  for (const s of sentences) {
+    if (wordCount(s) >= MIN_WORDS_FOR_REPEAT_CHECK) counts.set(s, (counts.get(s) ?? 0) + 1);
+  }
+  for (const [sentence, n] of counts) {
+    const words = wordCount(sentence);
+    if (words >= LONG_SENTENCE_WORDS && n >= LONG_SENTENCE_REPEAT_THRESHOLD) {
+      return { degenerate: true, reason: `repeated a ${words}-word sentence ${n} times ${quote(sentence)}` };
+    }
+  }
   let count = 0;
   let sample = '';
   for (const [sentence, n] of counts) {
@@ -352,7 +424,30 @@ function detectRepeatedSentences(content: string): { degenerate: boolean; count:
       sample = sentence;
     }
   }
-  return { degenerate: count >= REPEATED_SENTENCE_THRESHOLD, count, sample };
+  if (count >= REPEATED_SENTENCE_THRESHOLD) {
+    return { degenerate: true, reason: `repeated the same sentence ${count} times ${quote(sample)}` };
+  }
+
+  // A window of consecutive sentences seen again later, without the two
+  // copies overlapping, then widened to the full length of the repeat.
+  const firstSeen = new Map<string, number>();
+  const n = REPEATED_PASSAGE_SENTENCES;
+  for (let i = 0; i + n <= sentences.length; i++) {
+    const window = sentences.slice(i, i + n);
+    if (wordCount(window.join(' ')) < MIN_WORDS_FOR_REPEATED_PASSAGE) continue;
+    const key = window.join('|');
+    const earlier = firstSeen.get(key);
+    if (earlier === undefined) {
+      firstSeen.set(key, i);
+      continue;
+    }
+    if (earlier + n > i) continue;
+    let length = n;
+    while (i + length < sentences.length && earlier + length < i && sentences[earlier + length] === sentences[i + length]) length++;
+    return { degenerate: true, reason: `repeated a ${length}-sentence passage word for word ${quote(sentences[i])}` };
+  }
+
+  return { degenerate: false, reason: '' };
 }
 
 // Sent on every attempt after the first, whatever caused the retry - a
@@ -1029,11 +1124,11 @@ export async function callOpenRouter(
           reason = `collapsed into a ${degenerateCheck.runLength}-word run with no punctuation ("${degenerateCheck.sample.slice(0, 60)}...")`;
         } else {
           console.warn(
-            `[openrouter] ${label}: DEGENERATE - response finished on its own (finish_reason=${finishReason}) but repeats the same sentence ${repeatCheck!.count} times ("${repeatCheck!.sample.slice(0, 80)}...") - treating as a failure rather than trusting a technically-complete but looping result.`
+            `[openrouter] ${label}: DEGENERATE - response finished on its own (finish_reason=${finishReason}) but ${repeatCheck!.reason} - treating as a failure rather than trusting a technically-complete but looping result.`
           );
-          // Same reasoning as the run-on case above - the repeated sentence
-          // itself is what makes this checkable later.
-          reason = `repeated the same sentence ${repeatCheck!.count} times ("${repeatCheck!.sample.slice(0, 60)}...")`;
+          // Same reasoning as the run-on case above - the repeated text
+          // quoted in the reason is what makes this checkable later.
+          reason = repeatCheck!.reason;
         }
 
         const next = await recordFailedAttemptAndAdvance({
