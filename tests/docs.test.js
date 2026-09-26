@@ -10,8 +10,8 @@
  * from its TypeScript, app.js against a stub DOM), not by reading its text.
  *
  * CLAUDE.md's running status log is deliberately not checked: it records
- * what was true when each entry was written, and is not meant to change
- * afterwards.
+ * what was true when each entry was written, as history rather than as a
+ * claim about the current code.
  */
 
 const fs = require('node:fs');
@@ -444,7 +444,7 @@ async function main() {
   // above and just below, with copies kept apart by distinct filler
   // sentences so that no other rule fires.
   /**
-   * Every number README states for one rule, and whether they all agree.
+   * Every number README states for one rule, wherever it states it.
    * @param {RegExp} re
    * @returns {number[]}
    */

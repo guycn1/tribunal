@@ -22,8 +22,8 @@ import { logApiCall, ABORTED_BY_USER_MESSAGE } from './lib/db';
 //      happened, and the agent Background Functions poll for it: the
 //      browser has no way to cancel a Background Function, so each
 //      in-flight call checks isTrialAborted() between attempts and stops
-//      itself (see the isAborted callback on callOpenRouter, and
-//      isTrialAborted in db.ts).
+//      itself, and checks once more before saving a result (see the
+//      isAborted callback on callOpenRouter, and isTrialAborted in db.ts).
 //
 // So this call does stop server-side work, just indirectly - by leaving a
 // record the running calls notice, not by cancelling anything. It cannot

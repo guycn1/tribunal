@@ -10,13 +10,12 @@ const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 // against its tier - see FAST_FAILURE_THRESHOLD_MS - while one where each
 // try genuinely takes most of its ceiling uses up its tier's attempts.
 //
-// representative-background.ts/judge-background.ts now run as Netlify
+// representative-background.ts/judge-background.ts run as Netlify
 // Background Functions (config.background = true), not standard
-// synchronous invocations - the
-// real, verified reason this whole file used to budget against a tight
-// ~26s ceiling. That number was calibrated against a *standard* Netlify
-// Function invocation limit that turned out to be wrong for what this
-// project actually runs on: the real free-tier synchronous limit is 10
+// synchronous invocations. Before that move this file budgeted against a
+// tight ~26s ceiling, calibrated against a *standard* Netlify Function
+// invocation limit that turned out to be wrong for what this project
+// actually runs on: the real free-tier synchronous limit is 10
 // seconds (verified directly against Netlify's own docs and support
 // forum, not assumed), which every real completion measured on this
 // project (consistently 8-18s+ per call) would have been at serious risk
@@ -307,9 +306,9 @@ function detectDegenerateRun(content: string): { degenerate: boolean; runLength:
 // costs a cheap same-model attempt or, at worst, an escalation.
 // - The first version (2026-09-20) flagged only 4+ copies anywhere, after
 //   every 4x-8x case in the corpus read as genuine degeneration. Below 4
-//   was never examined, and a 3-copy loop got through on 2026-09-26
-//   (daenerys_targaryen, trial e4a20a68: her closing sentence three times
-//   back to back, a fourth copy differing by one word).
+//   was never examined, and a 3-copy loop got through in trial e4a20a68
+//   (2026-09-26 22:25 UTC): daenerys_targaryen's closing sentence three
+//   times back to back, a fourth copy differing by one word.
 // - Re-measured on 2026-09-27 across 830 stored texts. Every text holding
 //   a 5+ word sentence twice in a row was read, and each is a loop - an
 //   identical sentence restated with nothing between, never a stylistic
@@ -325,9 +324,9 @@ function detectDegenerateRun(content: string): { degenerate: boolean; runLength:
 //   knowledge of what must be done and the courage to do it.") and
 //   occasionally a structural line ("We will grant this point for the sake
 //   of argument and proceed to the next test.") - flagged, on the same
-//   priority. Together the four rules flag 144 of the 830 texts (17%, and
-//   11 of the 70 saved since the first version shipped), against 30 for
-//   the first version.
+//   priority. Run over the same 830 texts, the four rules flag 149 (18%,
+//   and 12 of the 70 saved since the first version shipped), against 30
+//   for the first version.
 // Deliberate rhetorical repetition does NOT trip this: real anaphora
 // repeats an opening phrase and then continues differently ("I ask you to
 // consider the scale..." / "I ask you to consider the evidence..."), which
@@ -342,30 +341,34 @@ function detectDegenerateRun(content: string): { degenerate: boolean; runLength:
 // anaphora risk, and has not been built.
 //
 // It works on real output, not just on the corpus it was calibrated
-// against: counted from api_call_logs as of 2026-09-26, this check has
-// caught seven natural live cases, all on the tier-1 default model, at 4
-// to 8 verbatim repeats each - five in local testing on the day it
-// shipped (tyrion_lannister twice, grey_worm three times), then two on the
-// deployed site the next day: grey_worm again, at 4 repeats (the
-// threshold of the time), and later a judge, the first catch on a judge (shamgar, 5
-// repeats). The first production catch is worth knowing what it cost to
-// miss: the response had finish_reason=stop at 604 tokens, so without
-// this check it would have been saved and shown as a perfectly ordinary
-// successful argument.
+// against. It has caught at least eleven natural live cases, all on the
+// tier-1 default model (counted from api_call_logs on 2026-09-27). The
+// first seven, under the original 4-copy rule, repeated a sentence 4 to 8
+// times: five in local testing on the day it shipped (tyrion_lannister
+// twice, grey_worm three times), then two on the deployed site the next
+// day - grey_worm again, at 4 repeats, and later the first catch on a
+// judge (shamgar, 5 repeats). The first production catch shows what a
+// miss costs: the response had finish_reason=stop at 604 tokens, so
+// without this check it would have been saved and shown as a perfectly
+// ordinary successful argument. Four more came late on 2026-09-26 (UTC):
+// barak (a sentence 4 times), grey_worm (a 17-word sentence 4 times), and
+// daenerys_targaryen and elon (an 18-word and a 40-word sentence, twice
+// each) - those last two caught only by the widened rules.
 // The older run-on check above has caught two, both grey_worm, both on the
 // tier-2 model of the time, at 180 and 84 words - far past the 40-word
 // line, and the 84-word one was read in full and confirmed degenerate.
 //
 // On false positives: the thresholds above knowingly accept some (a
 // refrain, a structural line), in exchange for missing as little as
-// possible. Beyond those, they are mostly not auditable here, and this
-// should not be reported as if it were a clean precision record. A discarded attempt's content is never stored (see
-// the note further down on why the offending text is quoted into the
-// reason), so for the catches predating that quoting there is no way to
-// check either way. Where a sample does exist, it shows a full sentence
-// repeated verbatim, which deliberate anaphora cannot produce - it varies
-// the continuation, so the whole sentences differ. That is the reason to
-// think anaphora is safe from it; it is not a measurement of precision.
+// possible, and this should not be reported as a clean precision record.
+// Since 2026-09-27 every discarded reply is stored in full
+// (api_call_logs.response_text), so a catch can be read and judged after
+// the fact; before that only the 60-character quote in the reason
+// survived, and for the earliest catches not even that. Where a sample
+// exists, it shows a full sentence repeated verbatim, which deliberate
+// anaphora cannot produce - it varies the continuation, so the whole
+// sentences differ. That is the reason to think anaphora is safe from it;
+// it is not a measurement of precision.
 const REPEATED_SENTENCE_THRESHOLD = 3;
 const CONSECUTIVE_REPEAT_THRESHOLD = 2;
 const LONG_SENTENCE_WORDS = 15;
@@ -897,7 +900,8 @@ export async function callOpenRouter(
       try {
         await onAttemptStart({ model: attemptModel, tierIndex, attemptInTier: attemptsAtTier + 1, tierMaxAttempts: tier.maxAttempts });
       } catch (err) {
-        // Same tolerance as onDiscardedAttempt below - a failure to record
+        // Same tolerance as onDiscardedAttempt (in
+        // recordFailedAttemptAndAdvance above) - a failure to record
         // "this attempt started" must never block or fail the actual call.
         console.warn(`[openrouter] ${label}: onAttemptStart callback failed, continuing anyway: ${err instanceof Error ? err.message : String(err)}`);
       }
@@ -1143,19 +1147,19 @@ export async function callOpenRouter(
             `[openrouter] ${label}: DEGENERATE - response finished on its own (finish_reason=${finishReason}) but contains a ${degenerateCheck.runLength}-word run with no punctuation ("${degenerateCheck.sample}...") - treating as a failure rather than trusting a technically-complete but incoherent result.`
           );
           // The offending text is quoted into the persisted reason, not just
-          // the console line, for a specific reason: a discarded attempt's
-          // content is never stored anywhere, so without a sample there is
-          // no way to audit a degeneration discard after the fact and tell a
-          // genuine catch from a false positive. The count alone ("repeated
-          // the same sentence 5 times") is unfalsifiable once the text is
-          // gone. Kept short so the call log stays readable.
+          // the console line, so the call log itself shows what tripped the
+          // check - a count alone ("repeated the same sentence 5 times")
+          // says nothing about whether the catch was genuine. The whole
+          // reply is stored alongside it (responseText below, the call log's
+          // response_text) for a full read. Kept short so the call log
+          // stays readable.
           reason = `collapsed into a ${degenerateCheck.runLength}-word run with no punctuation ("${degenerateCheck.sample.slice(0, 60)}...")`;
         } else {
           console.warn(
             `[openrouter] ${label}: DEGENERATE - response finished on its own (finish_reason=${finishReason}) but ${repeatCheck!.reason} - treating as a failure rather than trusting a technically-complete but looping result.`
           );
-          // Same reasoning as the run-on case above - the repeated text
-          // quoted in the reason is what makes this checkable later.
+          // Same reasoning as the run-on case above: the quote, and where
+          // the copies sit, show at a glance what tripped the check.
           reason = repeatCheck!.reason;
         }
 

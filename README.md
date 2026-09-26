@@ -8,7 +8,7 @@ The Tribunal decides one question — **justified / not justified** — and give
 
 ## Architecture
 
-Three-tier: browser (static HTML/CSS/vanilla JS) → backend (Netlify Functions, TypeScript) → database (Supabase/Postgres). The backend holds the OpenRouter API key and orchestrates every model call; the database stores the case record, each trial, every representative argument and judge ruling, a full per-call log (model, tokens, cost, status, duration), and the attempt each running call is on.
+Three-tier: browser (static HTML/CSS/vanilla JS) → backend (Netlify Functions, TypeScript) → database (Supabase/Postgres). The backend holds the OpenRouter API key and orchestrates every model call; the database stores the case record, each trial, every representative argument and judge ruling, a full per-call log (model, tokens, cost, status, duration, and the model's reply word for word, kept for audit), and the attempt each running call is on.
 
 - Four representatives run concurrently — they don't depend on each other. Dispatch goes through a small worker pool, but because the agent endpoints are Background Functions that return as soon as the work is accepted, a pool slot frees at the trigger rather than at the end of the generation — so all four are genuinely in flight at the same time. That is measured from the call log's own timings rather than assumed, and it is how every trial behind the reliability record below actually ran. What the pool still bounds is how many trigger requests overlap, which matters only for Netlify's per-IP rate limit.
 - Three judges run after, each independently receiving the case record plus all four representative arguments (or however many are actually available — a failed representative call is never backfilled with invented text).
@@ -37,7 +37,7 @@ Each route below is a rewrite in `netlify.toml` to one function in `netlify/func
 | `GET` | `/api/case` | `case.ts` | The fixed case record, the starting model for each role, and the shared completion-token cap. Read once when the page loads. |
 | `GET` | `/api/trials` | `trials.ts` | The 50 most recent trials, newest first, for the run-history sidebar — each with its status, how many of its 7 results were saved, whether it was aborted, and whether any attempt ever failed. |
 | `POST` | `/api/trials` | `trials.ts` | Creates a trial and returns it with the case record (`201`). Needs the site-gate header. Makes no model call. |
-| `GET` | `/api/trials/:id` | `trial.ts` | Everything recorded for one trial: the trial itself, the case record, its saved arguments and rulings, every call-log row (oldest first), and the attempt each role most recently started. Polled throughout a run, and read once to open a past trial. `404` for an unknown id. |
+| `GET` | `/api/trials/:id` | `trial.ts` | Everything recorded for one trial: the trial itself, the case record, its saved arguments and rulings, every call-log row (oldest first, without the stored reply text), and the attempt each role most recently started. Polled throughout a run, and read once to open a past trial. `404` for an unknown id. |
 | `POST` | `/api/trials/:id/representatives/:role` | `representative-background.ts` | Runs one representative through the escalation chain and saves the argument, unless the trial has been aborted meanwhile. |
 | `POST` | `/api/trials/:id/judges/:role` | `judge-background.ts` | Runs one judge on the case record plus whichever representative arguments were saved, and saves the ruling, unless the trial has been aborted meanwhile. Marks the trial completed once every judge has a final outcome. |
 | `POST` | `/api/trials/:id/abort` | `abort.ts` | Takes `{ "roles": [...] }` — the roles still pending — records an abort for each one it recognises, and replies with the roles it recorded. The running calls check for it between attempts and stop. |
@@ -136,7 +136,7 @@ Every file tracked in the repository. Not tracked, and git-ignored: `node_module
 ├── supabase/schema.sql               all six tables, the seeded case, RLS, grants
 ├── tests/                            npm test — no network, spends no quota
 │   ├── retry-logic.test.js           the escalation chain, from the real TypeScript
-│   ├── trial-status.test.js          when a trial is marked completed
+│   ├── trial-status.test.js          when a trial is completed; replies kept for audit, off the page
 │   ├── render-cards.test.js          app.js: cards, the call log, failed requests
 │   ├── shared-constants.test.js      values duplicated across files still agree
 │   ├── docs.test.js                  README, SPEC.md and CLAUDE.md agree with the code
@@ -172,7 +172,7 @@ npm test                # five regression suites (see below)
 `npm test` needs no network and spends no quota. Every suite runs the real source rather than a copy of it — the backend compiled from its TypeScript with the project's own `tsc`, and `app.js` executed against a stub DOM:
 
 - `tests/retry-logic.test.js` — the escalation chain, driven against a mocked `fetch`.
-- `tests/trial-status.test.js` — when a trial is marked completed, against an in-memory stand-in for Supabase, including the real judge endpoint end to end.
+- `tests/trial-status.test.js` — when a trial is marked completed, and that every model reply is kept in the call log but never sent to the page, against an in-memory stand-in for Supabase, including the real judge and trial endpoints end to end.
 - `tests/render-cards.test.js` — `app.js`'s agent cards and call log, how it shortens model ids, and how it reports a request that fails outright.
 - `tests/shared-constants.test.js` — values that are deliberately duplicated across files still agree.
 - `tests/docs.test.js` — this README, `SPEC.md` and the requirement parts of `CLAUDE.md` still say what the code does. Every file, route, table, column, threshold, price and badge they describe is checked against its source, so changing one without the other fails the suite.

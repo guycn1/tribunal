@@ -208,8 +208,8 @@ export const handler = safeHandler(rawHandler);
 //
 // background: true is the real fix for a verified, load-bearing problem:
 // Netlify's free-tier synchronous function limit is 10 seconds (confirmed
-// against Netlify's own docs and support forum - not the ~30s this file
-// used to assume), while every real OpenRouter call measured on this
+// against Netlify's own docs and support forum; the budget here was first
+// built around a mistaken ~30s), while every real OpenRouter call measured on this
 // project at the time had taken 8-18s+ per attempt. A standard invocation
 // could not reliably survive that gap regardless of any retry/timeout tuning inside
 // callOpenRouter() - only a genuinely different execution model

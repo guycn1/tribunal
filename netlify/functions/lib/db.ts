@@ -144,8 +144,10 @@ export async function getTrial(trialId: string): Promise<TrialRecord | null> {
   return data ? mapTrial(data) : null;
 }
 
-// Every api_call_logs column the page is sent - all of them but
-// response_text. Exported so a test can hold it to that.
+// The api_call_logs columns the page is sent: every column except id and
+// trial_id, which the page has no use for, and response_text, which holds
+// each model reply in full for audit only (tests/trial-status.test.js
+// checks the trial endpoint's output never carries it).
 export const CALL_LOG_PAGE_COLUMNS =
   'agent_role, call_type, model_used, prompt_tokens, completion_tokens, total_tokens, cost, status, error_message, timestamp, duration_ms';
 
@@ -385,7 +387,8 @@ export async function isGlobalCallCapExceeded(): Promise<{ exceeded: boolean; co
 
 // Has the user aborted this trial? Checked by the agent Background
 // Functions between attempts (see the isAborted callback on
-// callOpenRouter) so an abandoned trial stops costing real money.
+// callOpenRouter) so an abandoned trial stops costing real money, and once
+// more before a result is saved, so an aborted trial never gains one.
 //
 // abort.ts writes one row carrying exactly ABORTED_BY_USER_MESSAGE per
 // role that was still pending when the user clicked Abort, which makes
