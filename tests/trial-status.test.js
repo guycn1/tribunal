@@ -19,6 +19,10 @@
  *   2. The judge endpoint checks for completion only after it has saved its
  *      own ruling, so a trial never reads as completed with a ruling still
  *      unwritten.
+ *   3. Every model reply is kept in the call log's response_text, discarded
+ *      ones included, so they can be audited in full - and the trial
+ *      endpoint never sends that text to the page. A database the column
+ *      has not reached yet still gets every row, without the text.
  */
 
 const { compileBackend } = require('./support/compile-backend');
@@ -42,7 +46,7 @@ function check(name, condition, detail) {
   }
 }
 
-const backend = compileBackend(['lib/db.ts', 'lib/openrouter.ts', 'judge-background.ts']);
+const backend = compileBackend(['lib/db.ts', 'lib/openrouter.ts', 'judge-background.ts', 'trial.ts']);
 useFakeSupabase(backend.outDir);
 const { markTrialCompletedIfJudgingDone, ABORTED_BY_USER_MESSAGE } = backend.load('lib/db.js');
 const markers = backend.load('lib/openrouter.js');
@@ -114,11 +118,15 @@ const GOOD_RULING = 'VERDICT: justified\n\nThe record shows a surrendered city b
  * which elon and shamgar have already finished.
  *
  * @param {object} scenario
- * @param {string} scenario.reply The model's reply text.
+ * @param {string | string[]} scenario.reply The model's reply text, or one
+ *   per attempt in order (the last one repeats).
  * @param {boolean} [scenario.aborted] Whether the trial was aborted first.
+ * @param {Record<string, string[]>} [scenario.missingColumns] Columns the
+ *   database does not have yet - see fakeSupabase.
  * @returns {Promise<{status: number, tables: object, writes: object[]}>}
  */
-async function runJudge({ reply, aborted = false }) {
+async function runJudge({ reply, aborted = false, missingColumns }) {
+  const replies = Array.isArray(reply) ? [...reply] : [reply];
   const logs = [judgeRow('elon', null, TRIAL_ID), judgeRow('shamgar', null, TRIAL_ID)];
   if (aborted) logs.push({ ...judgeRow('barak', ABORTED_BY_USER_MESSAGE, TRIAL_ID) });
   const fake = fakeSupabase({
@@ -128,13 +136,13 @@ async function runJudge({ reply, aborted = false }) {
     judge_rulings: [],
     api_call_logs: logs,
     agent_progress: [],
-  });
+  }, { missingColumns });
   global.fakeSupabase = fake.client;
   global.fetch = async (_url, request) => ({
     ok: true, status: 200, headers: new Map(),
     json: async () => ({
       model: JSON.parse(request.body).model,
-      choices: [{ message: { content: reply }, finish_reason: 'stop' }],
+      choices: [{ message: { content: replies.length > 1 ? replies.shift() : replies[0] }, finish_reason: 'stop' }],
       usage: { prompt_tokens: 3000, completion_tokens: 200, total_tokens: 3200 },
     }),
   });
@@ -149,6 +157,9 @@ process.env.OPENROUTER_API_KEY = 'test-key';
 // the same exemption local `netlify dev` gets (see isGlobalCallCapExceeded).
 process.env.NETLIFY_DEV = 'true';
 const { handler: judgeHandler } = backend.load('judge-background.js');
+const { handler: trialHandler } = backend.load('trial.js');
+// A judge reply the repetition check discards: one sentence twice in a row.
+const LOOPED_RULING = 'VERDICT: justified\n\nThe bells had rung before the fire. He had no lawful authority to strike her down. He had no lawful authority to strike her down.';
 
 async function main() {
   say('\n=== One judge with retries does not complete the trial on its own ===');
@@ -229,6 +240,33 @@ async function main() {
   j = await runJudge({ reply: GOOD_RULING, aborted: true });
   check('no ruling is written into it', j.tables.judge_rulings.length === 0, JSON.stringify(j.tables.judge_rulings));
   check('it is not marked completed', j.tables.trials[0].status === 'created', j.tables.trials[0].status);
+
+  say('\n=== Every reply is kept for audit, and the page never sees it ===');
+  j = await runJudge({ reply: [LOOPED_RULING, GOOD_RULING] });
+  const barakRows = j.tables.api_call_logs.filter((row) => row.agent_role === 'barak');
+  const discardedRow = barakRows.find((row) => row.status === 'failed');
+  const keptRow = barakRows.find((row) => row.status === 'success');
+  check('the discarded reply is stored word for word', discardedRow && discardedRow.response_text === LOOPED_RULING, discardedRow && discardedRow.response_text);
+  check('its reason says where the copies sit', discardedRow && /2 times in a row \(sentences 2-3 of 3\)/.test(discardedRow.error_message), discardedRow && discardedRow.error_message);
+  check('the kept reply is stored raw, VERDICT line included', keptRow && keptRow.response_text === GOOD_RULING, keptRow && keptRow.response_text);
+
+  const page = await quietly(() => trialHandler({ httpMethod: 'GET', path: `/.netlify/functions/trial/${TRIAL_ID}`, headers: {}, queryStringParameters: {} }, {}));
+  const pageLogs = page.statusCode === 200 ? JSON.parse(page.body).apiCallLogs : [];
+  check('the trial endpoint still returns the discarded row', pageLogs.some((row) => row.agentRole === 'barak' && row.status === 'failed'), page.statusCode);
+  // The row's reason quotes the start of the repeated sentence, by design;
+  // the rest of the reply, like its opening, must stay out.
+  check('but none of the stored reply text', page.statusCode === 200 && !page.body.includes('bells had rung before the fire') && !/response_?text/i.test(page.body), page.body.slice(0, 200));
+
+  j = await runJudge({ reply: 'The record is long and the question is hard, and I decline to reduce it to a single word.' });
+  const unparseable = j.tables.api_call_logs.find((row) => row.agent_role === 'barak');
+  check('a reply with no VERDICT line is kept too', unparseable && /decline to reduce it/.test(unparseable.response_text || ''), unparseable && unparseable.response_text);
+
+  say('\n=== A database without the column still gets every row ===');
+  j = await runJudge({ reply: [LOOPED_RULING, GOOD_RULING], missingColumns: { api_call_logs: ['response_text'] } });
+  const unmigrated = j.tables.api_call_logs.filter((row) => row.agent_role === 'barak');
+  check("both of barak's rows are still written", unmigrated.length === 2 && unmigrated.some((row) => row.status === 'failed') && unmigrated.some((row) => row.status === 'success'), JSON.stringify(unmigrated.map((row) => row.status)));
+  check('without the text', unmigrated.every((row) => !('response_text' in row)));
+  check('and the ruling is still saved', j.tables.judge_rulings.length === 1);
 }
 
 main().then(

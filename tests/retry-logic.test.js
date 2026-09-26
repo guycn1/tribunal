@@ -145,6 +145,10 @@ async function main() {
     check('did not accept the looping response', r.content !== degenerate, 'accepted a degenerate response');
     check('spent both tier-1 attempts before escalating', calls[0] === DEFAULT && calls[1] === DEFAULT, JSON.stringify(calls));
     check('escalated and returned a clean result', r.status === 'success' && r.model === TIER2, `${r.status}/${r.model}`);
+    // Discarded text is kept for audit - see DiscardedAttempt.responseText.
+    const discarded = r.discardedAttempts || [];
+    check('each discarded reply is kept word for word', discarded.length === 2 && discarded.every((d) => d.responseText === degenerate), discarded.map((d) => typeof d.responseText).join(', '));
+    check('and the kept reply is returned for the log as well', r.responseText === CLEAN, r.responseText);
   });
 
   // ------------------------------------------------------------------ 2
@@ -186,7 +190,7 @@ async function main() {
     // fourth differing by one word ("Jon Snow's" for "his").
     const closing = 'I ask the Tribunal to consider these words, and to consider the facts of the case. I ask the Tribunal to consider whether Jon Snow\'s actions were justified, and I ask the Tribunal to consider whether his actions were necessary. ' + 'I ask the Tribunal to consider whether his actions were justified, and I ask the Tribunal to consider whether his actions were necessary. '.repeat(3);
     const missed = await verdict(closing);
-    check('the looped closing that got through is now caught', missed !== null && /3 times in a row/.test(missed), missed);
+    check('the looped closing that got through is now caught', missed !== null && /3 times in a row \(sentences 3-5 of 5\)/.test(missed), missed);
 
     const twiceInARow = await verdict(`${filler(1)} ${SHORT} ${SHORT} ${filler(2)}`);
     check('a sentence twice in a row is caught', twiceInARow !== null && /2 times in a row/.test(twiceInARow), twiceInARow);
@@ -196,12 +200,12 @@ async function main() {
     check('a short sentence 3 times apart is caught', threeApart !== null && /same sentence 3 times/.test(threeApart), threeApart);
 
     const longTwice = await verdict(`${LONG} ${filler(1)} ${filler(2)} ${LONG}`);
-    check('a long sentence twice apart is caught', longTwice !== null && /-word sentence 2 times/.test(longTwice), longTwice);
+    check('a long sentence twice apart is caught', longTwice !== null && /a 19-word sentence 2 times \(sentences 1 and 4 of 4\)/.test(longTwice), longTwice);
     check('a 4-word sentence repeated back to back is not (too short to count)', (await verdict('I agree with him. I agree with him. I agree with him. ' + filler(1))) === null);
 
     const passage = [filler(1), filler(2), filler(3)].join(' ');
     const repeatedPassage = await verdict(`${passage} ${filler(4)} ${passage}`);
-    check('a 3-sentence passage repeated later is caught', repeatedPassage !== null && /3-sentence passage/.test(repeatedPassage), repeatedPassage);
+    check('a 3-sentence passage repeated later is caught', repeatedPassage !== null && /3-sentence passage word for word \(sentences 1-3 and 5-7 of 7\)/.test(repeatedPassage), repeatedPassage);
     check('a 2-sentence passage repeated later is not', (await verdict(`${filler(1)} ${filler(2)} ${filler(3)} ${filler(1)} ${filler(2)}`)) === null);
   });
 

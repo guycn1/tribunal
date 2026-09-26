@@ -384,55 +384,67 @@ function wordCount(normalized: string): number {
 
 /**
  * The first verbatim-repetition pattern found, as the reason text a
- * discarded attempt is logged with (the repeated text quoted, so a discard
- * can be audited after the content is gone). The in-a-row check comes
- * first because it names a loop most precisely.
+ * discarded attempt is logged with: the repeated text quoted, and where
+ * its copies sit ("sentences 3 and 31 of 32"), so the call log alone shows
+ * a closing restatement apart from a loop. The whole reply is stored too
+ * (DiscardedAttempt.responseText). The in-a-row check comes first because
+ * it names a loop most precisely.
  */
 function detectRepeatedSentences(content: string): { degenerate: boolean; reason: string } {
   const sentences = content.split(/[.!?]+/).map(normalizeSentenceForRepeatCheck).filter((s) => wordCount(s) > 0);
+  const total = sentences.length;
   const quote = (s: string) => `("${s.slice(0, 60)}...")`;
+  // 0-based indexes in, "sentences 3, 17 and 31 of 32" out.
+  const where = (indexes: number[]) => {
+    const labels = indexes.map((i) => String(i + 1));
+    const list = labels.length > 1 ? `${labels.slice(0, -1).join(', ')} and ${labels[labels.length - 1]}` : labels[0];
+    return `(sentences ${list} of ${total})`;
+  };
+  const span = (from: number, length: number) => `${from + 1}-${from + length}`;
+  const aOrAn = (n: number) => (n === 11 || n === 18 || String(n).startsWith('8') ? 'an' : 'a');
 
   let run = 1;
   let longestRun = 1;
-  let runSample = '';
-  for (let i = 1; i < sentences.length; i++) {
+  let runEnd = 0;
+  for (let i = 1; i < total; i++) {
     run = sentences[i] === sentences[i - 1] && wordCount(sentences[i]) >= MIN_WORDS_FOR_REPEAT_CHECK ? run + 1 : 1;
     if (run > longestRun) {
       longestRun = run;
-      runSample = sentences[i];
+      runEnd = i;
     }
   }
   if (longestRun >= CONSECUTIVE_REPEAT_THRESHOLD) {
-    return { degenerate: true, reason: `repeated the same sentence ${longestRun} times in a row ${quote(runSample)}` };
+    const from = runEnd - longestRun + 1;
+    return {
+      degenerate: true,
+      reason: `repeated the same sentence ${longestRun} times in a row (sentences ${span(from, longestRun)} of ${total}) ${quote(sentences[runEnd])}`,
+    };
   }
 
-  const counts = new Map<string, number>();
-  for (const s of sentences) {
-    if (wordCount(s) >= MIN_WORDS_FOR_REPEAT_CHECK) counts.set(s, (counts.get(s) ?? 0) + 1);
-  }
-  for (const [sentence, n] of counts) {
+  const positions = new Map<string, number[]>();
+  sentences.forEach((s, i) => {
+    if (wordCount(s) < MIN_WORDS_FOR_REPEAT_CHECK) return;
+    positions.set(s, [...(positions.get(s) ?? []), i]);
+  });
+  for (const [sentence, at] of positions) {
     const words = wordCount(sentence);
-    if (words >= LONG_SENTENCE_WORDS && n >= LONG_SENTENCE_REPEAT_THRESHOLD) {
-      return { degenerate: true, reason: `repeated a ${words}-word sentence ${n} times ${quote(sentence)}` };
+    if (words >= LONG_SENTENCE_WORDS && at.length >= LONG_SENTENCE_REPEAT_THRESHOLD) {
+      return { degenerate: true, reason: `repeated ${aOrAn(words)} ${words}-word sentence ${at.length} times ${where(at)} ${quote(sentence)}` };
     }
   }
-  let count = 0;
-  let sample = '';
-  for (const [sentence, n] of counts) {
-    if (n > count) {
-      count = n;
-      sample = sentence;
-    }
+  let most: [string, number[]] = ['', []];
+  for (const entry of positions) {
+    if (entry[1].length > most[1].length) most = entry;
   }
-  if (count >= REPEATED_SENTENCE_THRESHOLD) {
-    return { degenerate: true, reason: `repeated the same sentence ${count} times ${quote(sample)}` };
+  if (most[1].length >= REPEATED_SENTENCE_THRESHOLD) {
+    return { degenerate: true, reason: `repeated the same sentence ${most[1].length} times ${where(most[1])} ${quote(most[0])}` };
   }
 
   // A window of consecutive sentences seen again later, without the two
   // copies overlapping, then widened to the full length of the repeat.
   const firstSeen = new Map<string, number>();
   const n = REPEATED_PASSAGE_SENTENCES;
-  for (let i = 0; i + n <= sentences.length; i++) {
+  for (let i = 0; i + n <= total; i++) {
     const window = sentences.slice(i, i + n);
     if (wordCount(window.join(' ')) < MIN_WORDS_FOR_REPEATED_PASSAGE) continue;
     const key = window.join('|');
@@ -443,8 +455,11 @@ function detectRepeatedSentences(content: string): { degenerate: boolean; reason
     }
     if (earlier + n > i) continue;
     let length = n;
-    while (i + length < sentences.length && earlier + length < i && sentences[earlier + length] === sentences[i + length]) length++;
-    return { degenerate: true, reason: `repeated a ${length}-sentence passage word for word ${quote(sentences[i])}` };
+    while (i + length < total && earlier + length < i && sentences[earlier + length] === sentences[i + length]) length++;
+    return {
+      degenerate: true,
+      reason: `repeated a ${length}-sentence passage word for word (sentences ${span(earlier, length)} and ${span(i, length)} of ${total}) ${quote(sentences[i])}`,
+    };
   }
 
   return { degenerate: false, reason: '' };
@@ -570,6 +585,11 @@ export interface DiscardedAttempt {
   cost: number;
   errorMessage: string;
   durationMs: number;
+  // The model's reply, word for word, when this attempt got one (a
+  // truncated or degenerate response). Stored in the call log for audit
+  // and never shown on the page; absent for a timeout, an HTTP error or
+  // any other attempt that returned no text.
+  responseText?: string;
 }
 
 export interface OpenRouterResult {
@@ -593,6 +613,11 @@ export interface OpenRouterResult {
   // abort is not in here: it ends the chain, so it is this result itself.
   // Empty on the common path (no retry or escalation needed).
   discardedAttempts?: DiscardedAttempt[];
+  // The final attempt's reply, word for word, whenever it returned text -
+  // on success (where it equals `content`) and on a failure that rejected
+  // the text, such as a response still degenerate at the last tier. For
+  // the call log, like DiscardedAttempt.responseText.
+  responseText?: string;
 }
 
 // label identifies the caller in the log lines below (e.g.
@@ -740,6 +765,7 @@ export async function callOpenRouter(
     reason: string;
     usage?: { promptTokens: number; completionTokens: number; totalTokens: number };
     cost?: number;
+    responseText?: string;
     skipRestOfTier?: boolean;
     // Set only for genuinely transient failures: a 429, a 5xx, an
     // empty-content/upstream-error 200, and the fetch-level catch (a
@@ -775,6 +801,7 @@ export async function callOpenRouter(
         cost: opts.cost ?? 0,
         errorMessage: `${opts.marker} ${opts.reason} after ${attemptDurationMs}ms - re-tried with the same model (fast failure ${fastRetriesAtTier}/${MAX_FAST_TRANSIENT_RETRIES_PER_TIER} at this tier, not counted against it).`,
         durationMs: attemptDurationMs,
+        responseText: opts.responseText,
       };
       discardedAttempts.push(discarded);
       if (onDiscardedAttempt) {
@@ -810,6 +837,7 @@ export async function callOpenRouter(
         cost: opts.cost ?? 0,
         errorMessage: `${marker} ${opts.reason} - ${sameModel ? 're-tried with the same model' : `escalated to ${nextModel}`}.`,
         durationMs: Date.now() - lastAttemptStartedAt,
+        responseText: opts.responseText,
       };
       discardedAttempts.push(discarded);
       if (onDiscardedAttempt) {
@@ -1138,6 +1166,7 @@ export async function callOpenRouter(
           reason: `This attempt ${reason}`,
           usage: { promptTokens, completionTokens, totalTokens },
           cost: calculateCost(servingModel, promptTokens, completionTokens),
+          responseText: content,
         });
         if (next.canContinue) continue;
         // Still bad (truncated or degenerate) after using every attempt at
@@ -1177,12 +1206,14 @@ export async function callOpenRouter(
           errorMessage,
           discardedAttempts,
           durationMs: Date.now() - lastAttemptStartedAt,
+          responseText: content,
         };
       }
 
       return {
         status: 'success',
         content,
+        responseText: content,
         model: servingModel,
         promptTokens,
         completionTokens,

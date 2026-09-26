@@ -121,8 +121,18 @@ create table if not exists api_call_logs (
   -- rows logged before this column existed have no value here, and the
   -- frontend shows a plain placeholder for those rather than a
   -- fabricated 0 (which would misleadingly read as an instant response).
-  duration_ms integer
+  duration_ms integer,
+  -- The model's reply, word for word, for any attempt that got one -
+  -- including every discarded attempt, so a truncated or degenerate reply
+  -- can be read in full after the fact. Kept for audit and diagnosis only:
+  -- the trial endpoint never selects it, so it never reaches the page.
+  -- Empty for an attempt with no reply (a timeout, an HTTP error, an
+  -- abort) and on rows logged before this column existed.
+  response_text text
 );
+-- Adds the column to a database created before it existed; a no-op on a
+-- fresh one.
+alter table api_call_logs add column if not exists response_text text;
 alter table api_call_logs enable row level security;
 create index if not exists api_call_logs_trial_id_idx on api_call_logs (trial_id);
 -- ---------------------------------------------------------------------------

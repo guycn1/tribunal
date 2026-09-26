@@ -144,6 +144,11 @@ export async function getTrial(trialId: string): Promise<TrialRecord | null> {
   return data ? mapTrial(data) : null;
 }
 
+// Every api_call_logs column the page is sent - all of them but
+// response_text. Exported so a test can hold it to that.
+export const CALL_LOG_PAGE_COLUMNS =
+  'agent_role, call_type, model_used, prompt_tokens, completion_tokens, total_tokens, cost, status, error_message, timestamp, duration_ms';
+
 export async function getFullTrial(trialId: string) {
   const supabase = getSupabaseClient();
 
@@ -151,7 +156,13 @@ export async function getFullTrial(trialId: string) {
     supabase.from('trials').select('*').eq('id', trialId).maybeSingle(),
     supabase.from('representative_arguments').select('*').eq('trial_id', trialId),
     supabase.from('judge_rulings').select('*').eq('trial_id', trialId),
-    supabase.from('api_call_logs').select('*').eq('trial_id', trialId).order('timestamp', { ascending: true }),
+    // Named columns rather than '*': response_text holds every model reply
+    // in full, for audit only, and has no business in the page's payload.
+    supabase
+      .from('api_call_logs')
+      .select(CALL_LOG_PAGE_COLUMNS)
+      .eq('trial_id', trialId)
+      .order('timestamp', { ascending: true }),
     supabase.from('agent_progress').select('*').eq('trial_id', trialId),
   ]);
 
@@ -423,9 +434,13 @@ export async function logApiCall(params: {
   // report, since it's logging the fact of a client-side cancellation,
   // not a completed attempt.
   durationMs?: number | null;
+  // The model's reply, word for word, for any attempt that got one -
+  // including every discarded one. Kept for audit and diagnosis, never
+  // sent to the page (see CALL_LOG_PAGE_COLUMNS).
+  responseText?: string | null;
 }): Promise<void> {
   const supabase = getSupabaseClient();
-  const { error } = await supabase.from('api_call_logs').insert({
+  const row = {
     trial_id: params.trialId,
     agent_role: params.agentRole,
     call_type: params.callType,
@@ -437,7 +452,17 @@ export async function logApiCall(params: {
     status: params.status,
     error_message: params.errorMessage ?? null,
     duration_ms: params.durationMs ?? null,
-  });
+    response_text: params.responseText ?? null,
+  };
+  let { error } = await supabase.from('api_call_logs').insert(row);
+  // A database the response_text migration hasn't reached yet rejects the
+  // whole insert over the one unknown column. Losing the row would hide a
+  // call from the log entirely, so it is written again without the text.
+  if (error && /response_text/.test(error.message)) {
+    console.error(`api_call_logs has no response_text column yet (apply supabase/schema.sql) - logging this row without the reply: ${error.message}`);
+    const { response_text: _dropped, ...withoutText } = row;
+    ({ error } = await supabase.from('api_call_logs').insert(withoutText));
+  }
 
   if (error) {
     // Logging failure is itself worth surfacing, but it must never mask

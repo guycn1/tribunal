@@ -2,8 +2,9 @@
  * @file A small in-memory stand-in for the Supabase client, so suites can run
  * the real compiled backend - its queries included - with no network. Covers
  * only the query shapes the backend actually uses: filtered selects (a list,
- * one row, or a head-only count), ordering, inserts (optionally reading the
- * new row back), upserts on a conflict key, and filtered updates.
+ * one row, or a head-only count, returning only the columns named), ordering,
+ * inserts (optionally reading the new row back), upserts on a conflict key,
+ * and filtered updates.
  */
 
 const fs = require('node:fs');
@@ -22,8 +23,11 @@ const path = require('node:path');
  * test can read the tables back afterwards to see what the backend wrote.
  *
  * @param {Record<string, object[]>} tables Initial rows, by table name.
- * @param {{failReads?: boolean}} [options] failReads makes every select
- *   return an error, to exercise the backend's failure paths.
+ * @param {{failReads?: boolean, missingColumns?: Record<string, string[]>}} [options]
+ *   failReads makes every select return an error, to exercise the backend's
+ *   failure paths. missingColumns names columns a table does not have yet,
+ *   as in a database a migration has not reached: a write naming one is
+ *   rejected whole, with the error Supabase gives.
  * @returns {FakeSupabase}
  */
 function fakeSupabase(tables, options = {}) {
@@ -41,11 +45,16 @@ function fakeSupabase(tables, options = {}) {
       let single = null;
       let orderBy = null;
       let returning = false;
+      let columns = null;
       const matches = (row) => filters.every((test) => test(row));
+      const unknownColumn = () => ((options.missingColumns || {})[table] || []).find((c) => payload && c in payload);
+      const project = (row) => (columns ? Object.fromEntries(columns.map((c) => [c, row[c]])) : row);
       const query = {
-        select(_columns, selectOptions) {
-          if (op === 'select') headOnly = Boolean(selectOptions && selectOptions.head);
-          else returning = true;
+        select(selected, selectOptions) {
+          if (op === 'select') {
+            headOnly = Boolean(selectOptions && selectOptions.head);
+            if (typeof selected === 'string' && selected.trim() !== '*') columns = selected.split(',').map((c) => c.trim());
+          } else returning = true;
           return query;
         },
         eq(column, value) { filters.push((row) => row[column] === value); return query; },
@@ -60,7 +69,10 @@ function fakeSupabase(tables, options = {}) {
         update(values) { op = 'update'; payload = values; return query; },
         then(resolve, reject) {
           let result;
-          if (op === 'insert') {
+          const missing = op === 'insert' || op === 'upsert' ? unknownColumn() : undefined;
+          if (missing) {
+            result = { data: null, error: { message: `Could not find the '${missing}' column of '${table}' in the schema cache` } };
+          } else if (op === 'insert') {
             const stamp = String(++clock).padStart(8, '0');
             const row = { id: `00000000-0000-4000-8000-${String(++nextId).padStart(12, '0')}`, timestamp: stamp, created_at: stamp, updated_at: stamp, ...payload };
             rowsOf(table).push(row);
@@ -83,9 +95,9 @@ function fakeSupabase(tables, options = {}) {
             let rows = rowsOf(table).filter(matches);
             if (orderBy) rows = [...rows].sort((a, b) => String(a[orderBy]).localeCompare(String(b[orderBy])));
             if (headOnly) result = { count: rows.length, error: null };
-            else if (single === 'maybe') result = { data: rows[0] || null, error: null };
-            else if (single === 'exact') result = rows[0] ? { data: rows[0], error: null } : { data: null, error: { message: 'no rows' } };
-            else result = { data: rows, error: null };
+            else if (single === 'maybe') result = { data: rows[0] ? project(rows[0]) : null, error: null };
+            else if (single === 'exact') result = rows[0] ? { data: project(rows[0]), error: null } : { data: null, error: { message: 'no rows' } };
+            else result = { data: rows.map(project), error: null };
           }
           return Promise.resolve(result).then(resolve, reject);
         },

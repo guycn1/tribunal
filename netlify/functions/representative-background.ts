@@ -101,6 +101,7 @@ const rawHandler: Handler = async (event) => {
         status: 'failed',
         errorMessage: discarded.errorMessage,
         durationMs: discarded.durationMs,
+        responseText: discarded.responseText,
       }),
     // Overwrites the one agent_progress row for this role the moment each
     // attempt starts - see the "currently in flight" comment on
@@ -136,6 +137,10 @@ const rawHandler: Handler = async (event) => {
     status: result.status,
     errorMessage: result.errorMessage ?? null,
     durationMs: result.durationMs,
+    // Kept even when the argument is saved too: it is what makes a row
+    // auditable on its own, including a result discarded below because the
+    // trial was aborted meanwhile.
+    responseText: result.responseText,
   });
 
   // Checked AFTER logApiCall above, deliberately: whatever this call

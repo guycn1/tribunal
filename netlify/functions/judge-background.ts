@@ -115,6 +115,7 @@ const rawHandler: Handler = async (event) => {
         status: 'failed',
         errorMessage: discarded.errorMessage,
         durationMs: discarded.durationMs,
+        responseText: discarded.responseText,
       }),
     // See the matching comment in representative-background.ts.
     (info) =>
@@ -154,6 +155,10 @@ const rawHandler: Handler = async (event) => {
         ? 'Model response did not include a parseable VERDICT line.'
         : null,
     durationMs: result.durationMs,
+    // The raw reply, VERDICT line included - see the matching comment in
+    // representative-background.ts. For an unparseable reply this is the
+    // only copy of what the model actually said.
+    responseText: result.responseText,
   });
 
   // Checked after logApiCall, before anything is persisted or the trial is
