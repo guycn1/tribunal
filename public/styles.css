@@ -858,9 +858,9 @@ body {
    text-box trims the badge's content down to the band between the
    baseline and the top of a capital letter, so the padding is measured
    from the letters themselves rather than from the font's own (and
-   font-specific) ascent and descent. Rendered in Edge and Firefox, every
-   call-log and sidebar label sits within 0.25px of the same place in
-   Segoe UI (Windows) as in Roboto (Android).
+   font-specific) ascent and descent. Rendered in Edge, Firefox and WebKit
+   (Safari's engine), every call-log and sidebar label sits within 0.25px
+   of the same place in Segoe UI (Windows) as in Roboto (Android).
    The bottom padding is 0.1em larger than the top, which sets the pill's
    centre halfway between the middle of a capital letter and the middle
    of a lowercase one. Every badge label is lowercase, some with an
