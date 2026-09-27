@@ -84,7 +84,7 @@ One row per real model attempt, including attempts that were discarded in favour
 | `aborted` | amber | The chain stopped itself between attempts because the trial was aborted while it was still running server-side. |
 | `truncated` | amber | Legacy only: a second badge shown *next to* a green `success` on historical rows recorded before truncation became a real failure. New trials never produce it. |
 
-The two labels record how an attempt ended, not what the text was like: `truncated` means the model was still writing when it hit the token cap, and `degenerated` means it stopped on its own and a detector flagged the text (the detectors do not run on a capped reply). In practice a truncated reply is usually degenerate too — a repetition loop that ran until the cap stopped it. Measured on 2026-09-27, all 34 capped replies whose text was stored were loops, and no reply that finished on its own had run past 1,147 of the 1,400 tokens the default model is given.
+The two labels record how an attempt ended, not what the text was like: `truncated` means the model was still writing when it hit the token cap, and `degenerated` means it stopped on its own and a detector flagged the text (the detectors do not run on a capped reply). In practice a truncated reply is usually degenerate too — a repetition loop that ran until the cap stopped it. Measured on 2026-09-27, all 48 capped replies whose text was stored were loops, and no reply that finished on its own had run past 1,147 of the 1,400 tokens the default model is given.
 
 ### Run history sidebar
 

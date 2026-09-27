@@ -176,7 +176,7 @@ export interface OpenRouterMessage {
 // shared-vendor quirk can't explain a failure that makes it that far.
 // Every tier also gets more token headroom than the one before it, as a
 // safeguard in case a sound response ever runs past the cap. None has been
-// seen to: all 34 capped replies whose text was stored, as of 2026-09-27,
+// seen to: all 48 capped replies whose text was stored, as of 2026-09-27,
 // are repetition loops that ran until the cap stopped them, and no tier-1
 // reply that finished on its own had gone past 1,147 of its 1,400 tokens.
 // For a loop, a bigger cap only means a longer loop; what recovers it is
