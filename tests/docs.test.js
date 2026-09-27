@@ -657,7 +657,8 @@ async function main() {
   const required = ENV_EXAMPLE.split(/\n\s*\n/).filter((block) => /\(required\)/.test(block)).flatMap((block) => [...block.matchAll(/^([A-Z][A-Z0-9_]+)=/gm)].map((m) => m[1]));
   const toFillIn = [...(local.match(/# fill in ([A-Z0-9_, ]+)/) || ['', ''])[1].matchAll(/[A-Z][A-Z0-9_]+/g)].map((m) => m[0]);
   check('README asks for exactly the required variables', required.length > 0 && minus(required, toFillIn).length === 0 && minus(toFillIn, required).length === 0, `required: ${required}, README: ${toFillIn}`);
-  check('the bundler is esbuild, as the tech stack says', /esbuild/.test(section(README, '## Tech stack')) && /node_bundler = "esbuild"/.test(TOML));
+  const threeTier = README.split('\n').find((line) => line.startsWith('Three-tier:')) || '';
+  check('the bundler is esbuild, as the architecture line says', /bundled by esbuild/.test(threeTier) && /node_bundler = "esbuild"/.test(TOML), threeTier || 'no "Three-tier:" line in README');
 
   // ======================================================== paths named anywhere
   console.log('\n=== README and SPEC.md: every file they name exists ===');

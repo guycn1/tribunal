@@ -8,7 +8,7 @@ The Tribunal decides one question — **justified / not justified** — and give
 
 ## Architecture
 
-Three-tier: browser (static HTML/CSS/vanilla JS) → backend (Netlify Functions, TypeScript) → database (Supabase/Postgres). The backend holds the OpenRouter API key and orchestrates every model call; the database stores the case record, each trial, every representative argument and judge ruling, a full per-call log (model, tokens, cost, status, duration, and the model's reply word for word, kept for audit), and the attempt each running call is on.
+Three-tier: browser (static HTML/CSS/vanilla JS, no build step or framework) → backend (Netlify Functions, TypeScript, bundled by esbuild) → database (Supabase/Postgres). The backend holds the OpenRouter API key and orchestrates every model call; the database stores the case record, each trial, every representative argument and judge ruling, a full per-call log (model, tokens, cost, status, duration, and the model's reply word for word, kept for audit), and the attempt each running call is on.
 
 - Four representatives run concurrently — they don't depend on each other. Dispatch goes through a small worker pool, but because the agent endpoints are Background Functions that return as soon as the work is accepted, a pool slot frees at the trigger rather than at the end of the generation — so all four are genuinely in flight at the same time. That is measured from the call log's own timings rather than assumed, and it is how every trial behind the reliability record below actually ran. What the pool still bounds is how many trigger requests overlap, which matters only for Netlify's per-IP rate limit.
 - Three judges run after, each independently receiving the case record plus all four representative arguments (or however many are actually available — a failed representative call is never backfilled with invented text).
@@ -179,10 +179,6 @@ npm test                # five regression suites (see below)
 - `tests/docs.test.js` — this README, `SPEC.md` and the requirement parts of `CLAUDE.md` still say what the code does. Every file, route, table, column, threshold, price and badge they describe is checked against its source, so changing one without the other fails the suite.
 
 `netlify dev` costs no Netlify credits — it never touches the cloud build/deploy pipeline. It does reach the real OpenRouter API for any representative/judge call, so local testing still spends real quota.
-
-## Tech stack
-
-Netlify Functions (TypeScript, `esbuild` bundler) · Supabase (Postgres) · OpenRouter · vanilla HTML/CSS/JS on the frontend, no build step or framework.
 
 ## Project history and directing decisions
 
