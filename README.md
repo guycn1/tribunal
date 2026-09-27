@@ -99,7 +99,7 @@ One badge per trial, summarising the whole run.
 | `in progress…` | slate | Not finished, not aborted, and under 40 minutes old — presumably still running. |
 | `interrupted` | red | Not finished, not aborted, and over 40 minutes old, so it is treated as never going to finish — a dev-server restart mid-run, say, or the page closed before the judges were started (the browser starts each phase). The threshold is sized above the genuine worst case: a full four-tier escalation for every representative, then the same again for every judge — about 22 minutes. |
 
-"Missing N" counts results that actually persisted, **not** whether any individual call ever failed along the way. A transient failure that the retry recovered from is a real logged attempt, not a flaw in the outcome — labelling the run on that basis would mark almost every trial as damaged. The call log still shows every attempt in full.
+"Missing N" counts results that were actually saved, **not** whether any individual attempt failed along the way. A failed attempt that a retry or escalation recovered from (a timeout, a rate limit, a truncated or degenerate reply) is logged, but it is not a flaw in the outcome; most complete trials have at least one, so labelling on that basis would mark most runs as damaged. The call log still lists every attempt.
 
 ## Project layout
 
