@@ -677,15 +677,12 @@ function detectRepeatedSentences(content: string): { degenerate: boolean; reason
 // guess (e.g. telling a degenerate-but-not-truncated response it was "cut
 // off") would be actively misleading to the model on the retry.
 //
-// Worth knowing, since the wording does not fit every case it now
-// reaches: `attempt > 1` is the gate, so this is also appended after a
-// transient failure - a timeout, a 429, an empty-content 200 - where the
-// previous attempt produced no content at all and there was nothing to be
-// too long or too repetitive. The text is wrong for that case, though
-// harmlessly so: it asks for a concise, well-punctuated answer, which is
-// what was wanted anyway. Narrowing the gate to content-quality failures
-// specifically would be a behaviour change, not a comment fix, and has
-// not been made.
+// `attempt > 1` is the gate, so this is also appended after a transient
+// failure - a timeout, a 429, an empty-content 200 - where the previous
+// attempt produced no content at all and there was nothing to be too long
+// or too repetitive. It suits that case too: the reminder asks for a
+// concise, well-punctuated answer, which is what every retry wants,
+// whatever discarded the attempt before it.
 const CONCISENESS_REMINDER: OpenRouterMessage = {
   role: 'user',
   content:

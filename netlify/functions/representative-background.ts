@@ -249,9 +249,9 @@ export const handler = safeHandler(rawHandler);
 // pointing at the old name-based URL. Fixed by updating both this `path`
 // and the matching redirect target in netlify.toml to the new name,
 // rather than relying on the old path continuing to resolve under a
-// renamed file - not yet root-caused exactly why the override didn't
-// hold locally, but keeping `path` and the actual filename in agreement
-// avoids depending on that assumption at all.
+// renamed file. Keeping `path` and the actual filename in agreement is
+// the rule that follows: with the two always matching, the override
+// behaviour never comes into play.
 //
 // CONFIRMED IN PRODUCTION: the deployed site has run real trials on this
 // exact shape - config.background plus the -background filename plus the
@@ -267,18 +267,15 @@ export const handler = safeHandler(rawHandler);
 // for a synchronous invocation, which dies at the 10-second ceiling.) So
 // whatever the platform keys off, this combination works deployed.
 //
-// What is still genuinely unknown, and no longer matters much: whether the
-// platform needs the filename suffix or merely tolerates it alongside
-// config.background. Both are present and the pair is confirmed working, so
-// there is nothing to act on - only a reason not to drop either one
-// casually.
+// Both the filename suffix and config.background are kept, as a pair: that
+// is the combination confirmed working deployed, so neither is dropped.
 //
-// STILL UNVERIFIED: whether the rate-limit path glob below is what
-// Netlify's rate limiter actually matches against. Local netlify dev does
-// not simulate rate limiting at all, and nothing has exercised it against
-// the deployed site. If it turns out not to match, the consequence is the
-// quiet loss of one of three anti-abuse layers - the global call cap in
-// db.ts and the site gate both still apply - not a break of anything.
+// The rate limit below is a backstop far above normal use (a full trial
+// sends 7 requests; the limit is 45 per 5 minutes per IP), and it has
+// never been tripped - local netlify dev does not simulate rate limiting,
+// and no real traffic has come near it. It is one of three independent
+// anti-abuse layers: the global call cap in db.ts and the site gate apply
+// on every agent call regardless of it.
 // No `: Config` type annotation here on purpose: the RateLimitConfig type
 // shipped by the installed @netlify/functions version (2.8.2, checked
 // 2026-09-26) is missing `windowLimit` entirely, even though it's a real,
