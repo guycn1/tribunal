@@ -294,7 +294,8 @@ function detectDegenerateRun(content: string): { degenerate: boolean; runLength:
 // undetected the whole time since.
 //
 // It flags a text on any of four verbatim-repetition patterns in its
-// sentences, and two more in its clauses (see CLAUSE_SPLIT below):
+// sentences, two more in its clauses (see CLAUSE_SPLIT below), and two
+// near-verbatim ones (see NEAR_COPY_SIMILARITY below). The four:
 //   1. the same sentence twice in a row;
 //   2. a long sentence (18+ words) twice anywhere in the text;
 //   3. any sentence 3+ times anywhere in the text;
@@ -361,10 +362,9 @@ function detectDegenerateRun(content: string): { degenerate: boolean; runLength:
 // below are the exception: an opening that ends at a comma is a clause of
 // its own, and three copies of it close together are flagged.
 //
-// What it does not catch: near-verbatim looping, where each copy differs
-// by a word or two ("Jon Snow's actions" / "his actions"). Matching that
-// would take a fuzzy comparison with its own calibration against the
-// anaphora risk, and has not been built.
+// Near-verbatim looping, where each copy differs by a word or two ("Jon
+// Snow's actions" / "his actions"), is left to the two near-copy rules
+// further below, with their own calibration.
 //
 // It works on real output, not just on the corpus it was calibrated
 // against: it catches natural live cases, in local testing and on the
@@ -448,6 +448,57 @@ const MIN_WORDS_FOR_CLAUSE_CLUSTER = 6;
 const CLAUSE_CLUSTER_COPIES = 3;
 const CLAUSE_CLUSTER_SPAN = 6;
 
+// Near-verbatim looping: copies that differ by a word or two, which every
+// rule above misses because it compares whole sentences or clauses
+// exactly. Two sentences count as near-copies by word-level edit distance
+// (the number of words to insert, delete or replace to turn one into the
+// other), over the length of the longer one. Two rules:
+//   1. a near-verbatim passage: 2+ consecutive sentences found again later,
+//      each aligned pair at least 80% alike, 10+ words in all (counting the
+//      shorter of each pair);
+//   2. a looping close: a sentence in the last 10% of the text that is at
+//      least 60% like one of the 4 sentences before it, both of 8+ words
+//      and not identical. This is the shape the passage rule misses: a
+//      closing paragraph that reshuffles the one before it ("I ask you to
+//      consider the legacy of a woman who was a threat, who was a
+//      liberator..." then "...the legacy of a realm that was torn apart by
+//      the actions of a woman who was a threat, who was a liberator...").
+// Calibrated on 2026-09-27 against the 959 replies ever kept as a success
+// (851 in the database, 108 from deleted targeted trials), of which the
+// rules above flag 133 and pass 826. Every reply these two rules flag
+// among the 826 was read, 109 in all: 27 clear near-verbatim loops (of 28
+// known in the corpus), 44 borderline (a sentence or two re-emitted near
+// the end), and 38 sound, mostly a closing that restates a line from the
+// paragraph above. Read on the recall-first priority above, and chosen by
+// the user over a stricter setting (the last 5%, 12+ words) that, in its
+// prototype, rejected 14 sound replies but caught only 24 of the 28. The
+// one known loop it misses (a daenerys_targaryen closing, trial dc1cb897)
+// re-emits its lines too early for the closing rule and too loosely for
+// the passage rule. Neither rule catches a loop that never re-emits a
+// sentence, such as an escalating list ("It was the only way to save the
+// realm... to save the people... to save the world").
+const NEAR_COPY_SIMILARITY = 0.8;
+const NEAR_PASSAGE_SENTENCES = 2;
+const MIN_WORDS_FOR_NEAR_PASSAGE = 10;
+const CLOSING_COPY_SIMILARITY = 0.6;
+const CLOSING_SHARE = 0.1;
+const CLOSING_LOOKBACK = 4;
+const MIN_WORDS_FOR_CLOSING_COPY = 8;
+
+// Word-level similarity of two normalized sentences: 1 for identical, 0 for
+// nothing in common.
+function sentenceSimilarity(a: string[], b: string[]): number {
+  let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i];
+    for (let j = 1; j <= b.length; j++) {
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+    prev = cur;
+  }
+  return 1 - prev[b.length] / Math.max(a.length, b.length, 1);
+}
+
 function normalizeSentenceForRepeatCheck(sentence: string): string {
   return sentence.trim().toLowerCase().replace(/\s+/g, ' ').replace(/[^\w\s]/g, '');
 }
@@ -457,12 +508,13 @@ function wordCount(normalized: string): number {
 }
 
 /**
- * The first verbatim-repetition pattern found, as the reason text a
- * discarded attempt is logged with: the repeated text quoted, and where
- * its copies sit ("sentences 3 and 31 of 32"), so the call log alone shows
- * a closing restatement apart from a loop. The whole reply is stored too
- * (DiscardedAttempt.responseText). The in-a-row check comes first because
- * it names a loop most precisely.
+ * The first repetition pattern found, verbatim or near-verbatim, as the
+ * reason text a discarded attempt is logged with: the repeated text
+ * quoted, and where its copies sit ("sentences 3 and 31 of 32"), so the
+ * call log alone shows a closing restatement apart from a loop. The whole
+ * reply is stored too (DiscardedAttempt.responseText). The in-a-row check
+ * comes first because it names a loop most precisely, and the near-copy
+ * checks last, so an exact repeat is reported as one.
  */
 function detectRepeatedSentences(content: string): { degenerate: boolean; reason: string } {
   const sentences = content.split(/[.!?]+/).map(normalizeSentenceForRepeatCheck).filter((s) => wordCount(s) > 0);
@@ -574,6 +626,39 @@ function detectRepeatedSentences(content: string): { degenerate: boolean; reason
         degenerate: true,
         reason: `repeated ${aOrAn(words)} ${words}-word clause ${copies.length} times close together (clauses ${list} of ${clauseTotal}) ${quote(clause)}`,
       };
+    }
+  }
+
+  // Near-copy rules last of all, so an exact repeat is reported as one.
+  const tokens = sentences.map((s) => s.split(' ').filter(Boolean));
+  const similar = (i: number, j: number) => sentenceSimilarity(tokens[i], tokens[j]);
+  for (let i = 0; i < total; i++) {
+    for (let j = i + 1; j < total; j++) {
+      let length = 0;
+      let words = 0;
+      while (i + length < j && j + length < total && similar(i + length, j + length) >= NEAR_COPY_SIMILARITY) {
+        words += Math.min(tokens[i + length].length, tokens[j + length].length);
+        length++;
+      }
+      if (length >= NEAR_PASSAGE_SENTENCES && words >= MIN_WORDS_FOR_NEAR_PASSAGE) {
+        return {
+          degenerate: true,
+          reason: `repeated a ${length}-sentence passage almost word for word (sentences ${span(i, length)} and ${span(j, length)} of ${total}) ${quote(sentences[j])}`,
+        };
+      }
+    }
+  }
+
+  for (let j = 0; j < total; j++) {
+    if ((j + 1) / total < 1 - CLOSING_SHARE || tokens[j].length < MIN_WORDS_FOR_CLOSING_COPY) continue;
+    for (let i = Math.max(0, j - CLOSING_LOOKBACK); i < j; i++) {
+      if (tokens[i].length < MIN_WORDS_FOR_CLOSING_COPY || sentences[i] === sentences[j]) continue;
+      if (similar(i, j) >= CLOSING_COPY_SIMILARITY) {
+        return {
+          degenerate: true,
+          reason: `closed on a near-copy of a sentence just before it (sentences ${i + 1} and ${j + 1} of ${total}) ${quote(sentences[j])}`,
+        };
+      }
     }
   }
 

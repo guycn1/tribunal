@@ -451,8 +451,23 @@ async function main() {
    * @returns {number[]}
    */
   const claimed = (re) => [...README.matchAll(re)].map((m) => Number(m[1]));
-  /** A distinct 8-word filler sentence. @param {number} i */
-  const filler = (i) => `Point number ${i} stands on its own terms here.`;
+  /**
+   * An 8-word filler sentence sharing no word with any other, so fillers
+   * never look like near-copies of each other.
+   * @param {number} i
+   */
+  const filler = (i) => `Note${i}a note${i}b note${i}c note${i}d note${i}e note${i}f note${i}g note${i}h.`;
+  /**
+   * The reason the default model's first reply was discarded, or null if it
+   * was kept - for a check that must tell two rules apart.
+   * @param {string} content
+   * @returns {Promise<string | null>}
+   */
+  const discardReason = async (content) => {
+    global.fetch = async (_url, request) => { const m = JSON.parse(request.body).model; return reply(m, m === DEFAULT ? content : CLEAN); };
+    const r = await quietly(() => callOpenRouter(DEFAULT, [{ role: 'user', content: 'hi' }], 1400, 'docs:detector'));
+    return r.discardedAttempts && r.discardedAttempts.length ? r.discardedAttempts[0].errorMessage : null;
+  };
   /** A sentence of exactly `count` words. @param {number} count */
   const sentenceOf = (count) => Array.from({ length: count }, (_, i) => `term${i}`).join(' ') + '.';
   const SHORT = 'He had no lawful authority to act.';
@@ -484,18 +499,20 @@ async function main() {
   if (passageClaims.length) {
     const n = passageClaims[0];
     const passageTwice = (count) => { const p = Array.from({ length: count }, (_, i) => filler(i)).join(' '); return `${p} ${filler(99)} ${p}`; };
-    check(`a ${n}-sentence passage repeated is caught`, !(await acceptedFirstTime(passageTwice(n))));
-    check(`a ${n - 1}-sentence passage repeated is not`, await acceptedFirstTime(passageTwice(n - 1)));
+    // Named by the rule itself: a shorter passage repeated is caught too, by
+    // the near-copy passage rule, which reports it differently.
+    check(`a ${n}-sentence passage repeated is caught as one`, /passage word for word/.test((await discardReason(passageTwice(n))) || ''));
+    check(`a ${n - 1}-sentence passage repeated is not`, !/passage word for word/.test((await discardReason(passageTwice(n - 1))) || ''));
   }
 
   // The two clause rules. Each copy of a clause sits in a different
   // sentence, so no sentence rule can fire.
   const clusterClaims = [...README.matchAll(/a clause of (\d+)\+ words (\d+) times close together/g)].map((m) => `${m[1]}/${m[2]}`);
   // Stated wherever the clause rules are, not merely somewhere in README.
-  const inARowClauseClaims = README.match(/the same clause twice in a row, or a clause of/g) || [];
+  const inARowClauseClaims = README.match(/the same clause twice in a row, a clause of/g) || [];
   check('a clause twice in a row is stated as a rule, wherever the clause rules are', inARowClauseClaims.length > 0 && inARowClauseClaims.length === clusterClaims.length, `${inARowClauseClaims.length} of ${clusterClaims.length}`);
   check('a clause twice in a row is caught', !(await acceptedFirstTime(`${filler(1)} He had seen the city burn, he had seen the city burn, and he acted. ${filler(2)}`)));
-  check('and the same clause twice apart is not', await acceptedFirstTime(`He had seen the city burn, and he acted. ${filler(1)} He had seen the city burn, and he waited.`));
+  check('and the same clause twice apart is not', await acceptedFirstTime(`He had seen the city burn, and he acted before the council could meet. ${filler(1)} He had seen the city burn, yet the lords sat idle through a long winter.`));
   check('the clause-cluster thresholds are stated, the same everywhere', clusterClaims.length > 0 && clusterClaims.every((c) => c === clusterClaims[0]), clusterClaims.join(', '));
   if (clusterClaims.length) {
     const [words, copies] = clusterClaims[0].split('/').map(Number);
@@ -507,10 +524,74 @@ async function main() {
      * @param {number} count
      * @param {number} times
      */
-    const cluster = (count, times) => Array.from({ length: times }, (_, i) => `${clauseOf(count)}, then ${i}.`).join(' ');
+    // Each copy's sentence ends in six words of its own, so the sentences
+    // are not near-copies of each other and only the clause rules apply.
+    const tail = (i) => Array.from({ length: 6 }, (_, k) => `tail${i}w${k}`).join(' ');
+    const cluster = (count, times) => Array.from({ length: times }, (_, i) => `${clauseOf(count)}, ${tail(i)}.`).join(' ');
     check(`a ${words}-word clause ${copies} times close together is caught`, !(await acceptedFirstTime(cluster(words, copies))));
     check(`a ${words - 1}-word clause ${copies} times close together is not`, await acceptedFirstTime(cluster(words - 1, copies)));
     check(`a ${words}-word clause ${copies - 1} times close together is not`, await acceptedFirstTime(cluster(words, copies - 1)));
+  }
+  // The two near-copy rules. Likeness is the share of a sentence's words that
+  // need no change to turn it into the other, so a sentence of `len` words
+  // with its last `changed` words replaced is (len - changed) / len alike.
+  /**
+   * A sentence of `len` words unique to `tag`, with the last `changed` of
+   * them swapped for words of its own.
+   * @param {string} tag
+   * @param {number} len
+   * @param {number} [changed=0]
+   */
+  // A comma every 9 words keeps a long sentence clear of the run-on check.
+  const sentenceFor = (tag, len, changed = 0) =>
+    Array.from({ length: len }, (_, k) => (k >= len - changed ? `${tag}x${k}` : `${tag}w${k}`) + (k % 9 === 8 && k < len - 1 ? ',' : '')).join(' ') + '.';
+  /** `count` fillers, numbered from `from`. @param {number} from @param {number} count */
+  const fillers = (from, count) => Array.from({ length: count }, (_, i) => filler(from + i)).join(' ');
+  const passageClaims2 = [...README.matchAll(/(\d+)\+ consecutive sentences found again almost word for word \((\d+)%\+ alike, (\d+)\+ words\)/g)].map((m) => m.slice(1, 4).join('/'));
+  check('the near-copy passage thresholds are stated, the same everywhere', passageClaims2.length === 2 && passageClaims2.every((c) => c === passageClaims2[0]), passageClaims2.join(', '));
+  if (passageClaims2.length) {
+    const [count, pct, words] = passageClaims2[0].split('/').map(Number);
+    /**
+     * `k` sentences, then found again later with `changed` of each one's
+     * words replaced, well away from the end.
+     * @param {number[]} lens @param {number} changed
+     */
+    const nearPassage = (lens, changed) =>
+      `${lens.map((len, i) => sentenceFor(`p${i}`, len)).join(' ')} ${fillers(1, 6)} ${lens.map((len, i) => sentenceFor(`p${i}`, len, changed)).join(' ')} ${fillers(10, 12)}`;
+    // 100-word sentences, so likeness moves in steps of 1%.
+    check(`${count} sentences found again ${pct}% alike are caught`, !(await acceptedFirstTime(nearPassage(Array(count).fill(100), 100 - pct))));
+    check(`and found again ${pct - 1}% alike are not`, await acceptedFirstTime(nearPassage(Array(count).fill(100), 101 - pct)));
+    check(`a single sentence found again ${pct}% alike is not`, await acceptedFirstTime(nearPassage(Array(count - 1).fill(100), 100 - pct)));
+    const half = Math.ceil(words / count);
+    check(`${words} words in all is caught`, !(await acceptedFirstTime(nearPassage([half, words - half], 0))));
+    check(`${words - 1} is not`, await acceptedFirstTime(nearPassage([half, words - 1 - half], 0)));
+  }
+  const closingClaims = [...README.matchAll(/a sentence in the last (\d+)% that is (\d+)%\+ like one of the (\d+) before it \((\d+)\+ words each\)/g)].map((m) => m.slice(1, 5).join('/'));
+  check('the near-copy closing thresholds are stated, the same everywhere', closingClaims.length === 2 && closingClaims.every((c) => c === closingClaims[0]), closingClaims.join(', '));
+  if (closingClaims.length) {
+    const [share, pct, lookback, words] = closingClaims[0].split('/').map(Number);
+    /**
+     * `lead` fillers, a sentence, `gap` more fillers, the sentence's copy with
+     * `changed` words replaced, then `after` fillers. 100 words by default,
+     * so likeness moves in steps of 1%. Each run of fillers is numbered apart
+     * from the others, so no filler appears twice.
+     */
+    const closing = ({ len = 100, changed = 100 - pct, gap = 1, after = 0, lead = 20 } = {}) =>
+      `${fillers(1000, lead)} ${sentenceFor('c', len)} ${fillers(2000, gap)} ${sentenceFor('c', len, changed)}${after ? ' ' + fillers(3000, after) : ''}`;
+    check(`a closing sentence ${pct}% like one just before it is caught`, !(await acceptedFirstTime(closing())));
+    check(`and ${pct - 1}% alike is not`, await acceptedFirstTime(closing({ changed: 101 - pct })));
+    check(`one ${lookback} sentences back is caught`, !(await acceptedFirstTime(closing({ gap: lookback - 1 }))));
+    check(`one ${lookback + 1} back is not`, await acceptedFirstTime(closing({ gap: lookback })));
+    const minChanged = Math.floor((words * (100 - pct)) / 100);
+    check(`${words}-word sentences are caught`, !(await acceptedFirstTime(closing({ len: words, changed: minChanged }))));
+    check(`${words - 1}-word ones are not`, await acceptedFirstTime(closing({ len: words - 1, changed: Math.floor(((words - 1) * (100 - pct)) / 100) })));
+    // Identical copies are the exact rules' business; twice, apart and under
+    // the long-sentence minimum, none of them objects.
+    check('an identical sentence is left to the exact rules', await acceptedFirstTime(closing({ len: 10, changed: 0 })));
+    // 100 sentences in all, with the copy at sentence 100 - share: exactly
+    // on the line. One more filler after it moves it just outside.
+    check(`a copy still in the last ${share}% is caught`, !(await acceptedFirstTime(closing({ lead: 97 - share, after: share }))));
+    check('one just before that is not', await acceptedFirstTime(closing({ lead: 97 - share, after: share + 1 })));
   }
   const fastClaims = [...README.matchAll(/under (\d+) seconds/g)].map((m) => Number(m[1]));
   check('the fast-failure threshold is stated, the same everywhere', fastClaims.length > 0 && fastClaims.every((n) => n === fastClaims[0]), fastClaims.join(', '));
