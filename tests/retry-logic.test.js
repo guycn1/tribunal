@@ -185,7 +185,9 @@ async function main() {
     /** A distinct filler sentence, so copies can be kept apart. @param {number} i */
     const filler = (i) => `Point number ${i} stands on its own terms here.`;
     const SHORT = 'He had no lawful authority to act.';
-    const LONG = 'He had seen the city burn after the bells rang and he knew that she would not stop there.';
+    // Exactly at the long-sentence minimum (18 words), and one word under.
+    const LONG = 'He had seen the city burn after the bells rang and he knew that she would not stop.';
+    const LONG_LESS_ONE = 'He had seen the city burn after the bells rang and he knew she would not stop.';
 
     // The 2026-09-26 miss, word for word: three copies back to back, a
     // fourth differing by one word ("Jon Snow's" for "his").
@@ -201,7 +203,8 @@ async function main() {
     check('a short sentence 3 times apart is caught', threeApart !== null && /same sentence 3 times/.test(threeApart), threeApart);
 
     const longTwice = await verdict(`${LONG} ${filler(1)} ${filler(2)} ${LONG}`);
-    check('a long sentence twice apart is caught', longTwice !== null && /a 19-word sentence 2 times \(sentences 1 and 4 of 4\)/.test(longTwice), longTwice);
+    check('a long sentence twice apart is caught', longTwice !== null && /an 18-word sentence 2 times \(sentences 1 and 4 of 4\)/.test(longTwice), longTwice);
+    check('a 17-word sentence twice apart is not', (await verdict(`${LONG_LESS_ONE} ${filler(1)} ${filler(2)} ${LONG_LESS_ONE}`)) === null);
     check('a 4-word sentence repeated back to back is not (too short to count)', (await verdict('I agree with him. I agree with him. I agree with him. ' + filler(1))) === null);
 
     const passage = [filler(1), filler(2), filler(3)].join(' ');

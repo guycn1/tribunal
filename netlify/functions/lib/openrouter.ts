@@ -176,7 +176,7 @@ export interface OpenRouterMessage {
 // shared-vendor quirk can't explain a failure that makes it that far.
 // Every tier also gets more token headroom than the one before it, as a
 // safeguard in case a sound response ever runs past the cap. None has been
-// seen to: all 13 capped replies whose text was stored, as of 2026-09-27,
+// seen to: all 34 capped replies whose text was stored, as of 2026-09-27,
 // are repetition loops that ran until the cap stopped them, and no tier-1
 // reply that finished on its own had gone past 1,147 of its 1,400 tokens.
 // For a loop, a bigger cap only means a longer loop; what recovers it is
@@ -295,7 +295,7 @@ function detectDegenerateRun(content: string): { degenerate: boolean; runLength:
 // It flags a text on any of four verbatim-repetition patterns in its
 // sentences, and two more in its clauses (see CLAUSE_SPLIT below):
 //   1. the same sentence twice in a row;
-//   2. a long sentence (15+ words) twice anywhere in the text;
+//   2. a long sentence (18+ words) twice anywhere in the text;
 //   3. any sentence 3+ times anywhere in the text;
 //   4. a passage of 3+ consecutive sentences (12+ words) that appears again
 //      later, word for word.
@@ -331,6 +331,18 @@ function detectDegenerateRun(content: string): { degenerate: boolean; runLength:
 //   priority. Run over the same 830 texts, the four rules flag 149 (18%,
 //   and 12 of the 70 saved since the first version shipped), against 30
 //   for the first version.
+// - Measured on live output later on 2026-09-27: 20 local trials of
+//   daenerys_targaryen, grey_worm and barak, every one of the 105 replies
+//   read. Of the 84 that stopped on their own, the rules rejected 24: 15
+//   degenerate and 9 sound, 8 of those 9 on a 16-22 word sentence stated
+//   twice (a callback, a bookend, Barak restating each test's question as
+//   its heading). Every degenerate reply was rejected except two that
+//   repeat nothing - a persona slip and a self-contradicting ruling - which
+//   no repetition rule can see. The long-sentence minimum was then raised
+//   from 15 to 18 words: re-scored, that clears 2 of the 9 with no
+//   degenerate reply lost, and the 24 older stored texts it stops flagging
+//   were all read and are all sound. 19 would be one word too far: a
+//   looping closing in the stored corpus turns on an 18-word sentence.
 // Deliberate rhetorical repetition does NOT trip this: real anaphora
 // repeats an opening phrase and then continues differently ("I ask you to
 // consider the scale..." / "I ask you to consider the evidence..."), which
@@ -373,10 +385,12 @@ function detectDegenerateRun(content: string): { degenerate: boolean; runLength:
 // exists, it shows a full sentence repeated verbatim, which deliberate
 // anaphora cannot produce - it varies the continuation, so the whole
 // sentences differ. That is the reason to think anaphora is safe from it;
-// it is not a measurement of precision.
+// it is not a measurement of precision. The first such measurement is the
+// 20-trial run above: of the replies these rules rejected, 15 of 24 were
+// degenerate with the long-sentence minimum at 15, and 15 of 22 at 18.
 const REPEATED_SENTENCE_THRESHOLD = 3;
 const CONSECUTIVE_REPEAT_THRESHOLD = 2;
-const LONG_SENTENCE_WORDS = 15;
+const LONG_SENTENCE_WORDS = 18;
 const LONG_SENTENCE_REPEAT_THRESHOLD = 2;
 const MIN_WORDS_FOR_REPEAT_CHECK = 5;
 const REPEATED_PASSAGE_SENTENCES = 3;
@@ -397,8 +411,9 @@ const MIN_WORDS_FOR_REPEATED_PASSAGE = 12;
 //   1. the same clause (5+ words) twice in a row - matches exactly one of
 //      the 692, that loop;
 //   2. the same clause (6+ words) 3 times, the third copy no more than 6
-//      clauses after the first - matches 5: that loop again, two daenerys_targaryen closings saved as
-//      successes on 2026-09-20 that loop a clause with small variations
+//      clauses after the first - matches 5: that loop again, two
+//      daenerys_targaryen closings saved as successes on 2026-09-20 that
+//      loop a clause with small variations
 //      ("...and to render a verdict that reflects the reality of what
 //      happened in that throne room" three times over), and two sound but
 //      repetitive enumerations ("He knew that if he did not act, more would
@@ -406,8 +421,9 @@ const MIN_WORDS_FOR_REPEATED_PASSAGE = 12;
 //      Those two are accepted false positives, on the priority above:
 //      anaphora whose shared opening ends at a comma looks, clause by
 //      clause, exactly like a loop.
-// With them the detector flags 157 of the 844 texts (18.6%), against 152
-// without.
+// With them, and the long-sentence minimum at 15 as it then was, the
+// detector flagged 157 of the 844 texts (18.6%), against 152 without; with
+// the minimum at 18 it flags 133 (15.8%).
 // Copies spread across a text are left alone: a thesis line restated at
 // the start and the end, or a phrase quoted from the Question for
 // Judgment ("the presence or absence of safer alternatives"), repeats 3
