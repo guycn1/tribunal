@@ -358,9 +358,13 @@ function detectDegenerateRun(content: string): { degenerate: boolean; runLength:
 // consider the scale..." / "I ask you to consider the evidence..."), which
 // produces different whole sentences and is therefore invisible to the
 // sentence rules - unlike the earlier, abandoned 5-word phrase heuristic,
-// which flagged exactly that pattern as a false positive. The clause rules
-// below are the exception: an opening that ends at a comma is a clause of
-// its own, and three copies of it close together are flagged.
+// which flagged exactly that pattern as a false positive. Two kinds of rule
+// below are exceptions. The clause rules: an opening that ends at a comma
+// is a clause of its own, and three copies of it close together are
+// flagged. And the near-copy rules: anaphora whose sentences share most of
+// their words - a closing that restates a line from just above, most often
+// - reads as a near-copy, and most of the sound replies they reject are
+// exactly that.
 //
 // Near-verbatim looping, where each copy differs by a word or two ("Jon
 // Snow's actions" / "his actions"), is left to the two near-copy rules
@@ -395,8 +399,9 @@ function detectDegenerateRun(content: string): { degenerate: boolean; runLength:
 // survived, and for the earliest catches not even that. Where a sample
 // exists, it shows a full sentence repeated verbatim, which deliberate
 // anaphora cannot produce - it varies the continuation, so the whole
-// sentences differ. That is the reason to think anaphora is safe from it;
-// it is not a measurement of precision. The two live runs above are: of
+// sentences differ. That is the reason to think anaphora is safe from the
+// verbatim rules (not from the near-copy rules, as above); it is not a
+// measurement of precision. The two live runs above are: of
 // the replies these rules rejected in the 20-trial run, 15 of 24 were
 // degenerate with the long-sentence minimum at 15, and 15 of 22 at 18;
 // in the 16-trial run, at 18, 10 of 12.
@@ -435,7 +440,8 @@ const MIN_WORDS_FOR_REPEATED_PASSAGE = 12;
 //      clause, exactly like a loop.
 // With them, and the long-sentence minimum at 15 as it then was, the
 // detector flagged 157 of the 844 texts (18.6%), against 152 without; with
-// the minimum at 18 it flags 133 (15.8%).
+// the minimum at 18, 133 (15.8%). The near-copy rules below were measured
+// on a larger set, with its own figures.
 // Copies spread across a text are left alone: a thesis line restated at
 // the start and the end, or a phrase quoted from the Question for
 // Judgment ("the presence or absence of safer alternatives"), repeats 3
@@ -588,8 +594,8 @@ function detectRepeatedSentences(content: string): { degenerate: boolean; reason
     };
   }
 
-  // Clause rules last, so a loop the sentence rules already name is
-  // reported in sentences.
+  // Clause rules after the sentence rules, so a loop the sentence rules
+  // already name is reported in sentences.
   const clauses = content.split(CLAUSE_SPLIT).map(normalizeSentenceForRepeatCheck).filter((c) => wordCount(c) > 0);
   const clauseTotal = clauses.length;
   let clauseRun = 1;
