@@ -16,7 +16,7 @@
  * the frontend matches on the prefix to decide what a row means. A marker
  * that exists on the backend but is missing or misspelled in app.js falls
  * straight past isRetriedMarkerLog()'s guard in deriveRoleStates() and lands
- * in the terminal-failure branch, so an agent card reads "Call failed" while
+ * in the terminal-failure branch, so an agent card reads "call failed" while
  * its escalation chain is still running and about to succeed. That is the
  * exact bug 197609b and c1155f3 were written to fix, it fails silently, and
  * it only shows on the escalation path - the path a developer sees least.
@@ -86,7 +86,7 @@ const onlyFrontend = [...frontendMarkers.keys()].filter((k) => !backendMarkers.h
 check(
   'every backend marker is declared in app.js',
   onlyBackend.length === 0,
-  `missing from app.js: ${onlyBackend.join(', ')} - a discarded attempt carrying one of these would be shown as a terminal "Call failed"`
+  `missing from app.js: ${onlyBackend.join(', ')} - a discarded attempt carrying one of these would be shown as a terminal "call failed"`
 );
 check(
   'app.js declares no marker the backend does not',
@@ -104,7 +104,7 @@ console.log('\n=== Both sides agree which markers are retries, not outcomes ==='
 
 // A row carrying one of these is not a role's final outcome. The frontend
 // uses its list (isRetriedMarkerLog) to keep polling a role instead of
-// showing "Call failed"; the backend uses its own (RETRIED_ATTEMPT_MARKERS)
+// showing "call failed"; the backend uses its own (RETRIED_ATTEMPT_MARKERS)
 // to decide when every judge has finished and the trial is complete. If the
 // two disagree, one side calls a role finished while the other is still
 // waiting on it.
@@ -118,8 +118,8 @@ check(
   `app.js: ${[...frontendRetried].join(', ')} | openrouter.ts: ${[...backendRetried].join(', ')}`
 );
 
-// --- 2. ABORTED_BY_USER_MESSAGE: db.ts <-> app.js ------------------------
-console.log('\n=== The abort marker message agrees ===');
+// --- 2. ABORTED_BY_USER_MESSAGE and NO_MODEL_USED: db.ts <-> app.js -----
+console.log('\n=== The abort rows\' marker message and model agree ===');
 
 const abortRe = /(?:export\s+)?const\s+ABORTED_BY_USER_MESSAGE\s*=\s*'([^']*)'/;
 const abortBackend = (db.match(abortRe) || [])[1];
@@ -129,7 +129,20 @@ check('ABORTED_BY_USER_MESSAGE found in app.js', Boolean(abortFrontend));
 check(
   'ABORTED_BY_USER_MESSAGE is identical in both',
   Boolean(abortBackend) && abortBackend === abortFrontend,
-  `db.ts '${abortBackend}' vs app.js '${abortFrontend}' - deriveRoleStates() compares this by exact equality to show "Aborted" rather than "Call failed"`
+  `db.ts '${abortBackend}' vs app.js '${abortFrontend}' - deriveRoleStates() compares this by exact equality to show "aborted" rather than "call failed"`
+);
+
+// The abort rows' model_used: app.js compares it by exact equality to print
+// it as written instead of shortening it like a model id ("n/a" -> "a").
+const noModelRe = /(?:export\s+)?const\s+NO_MODEL_USED\s*=\s*'([^']*)'/;
+const noModelBackend = (db.match(noModelRe) || [])[1];
+const noModelFrontend = (appJs.match(noModelRe) || [])[1];
+check('NO_MODEL_USED found in db.ts', Boolean(noModelBackend));
+check('NO_MODEL_USED found in app.js', Boolean(noModelFrontend));
+check(
+  'NO_MODEL_USED is identical in both',
+  Boolean(noModelBackend) && noModelBackend === noModelFrontend,
+  `db.ts '${noModelBackend}' vs app.js '${noModelFrontend}' - the call log would shorten the abort rows' model like a model id`
 );
 
 // --- 3. Spinner duration: app.js <-> styles.css --------------------------
@@ -162,6 +175,19 @@ check(
   'the overlay offset matches the sidebar width',
   Boolean(sidebarWidth) && sidebarWidth === overlayLeft,
   `sidebar '${sidebarWidth}' vs overlay '${overlayLeft}' - a mismatch leaves the overlay covering the sidebar or leaving a strip of .main uncovered`
+);
+
+// --- 5. Dimmed call-log rows: app.js <-> styles.css -----------------------
+console.log('\n=== The class that dims a call-log row is the one styled ===');
+
+// renderCallLog() dims a non-final row by adding a class; a rename on one
+// side only would leave those rows at full opacity with nothing failing.
+const dimClass = (appJs.match(/tr\.classList\.add\('([\w-]+)'\)/) || [])[1];
+check('app.js adds a class to dim a row', Boolean(dimClass), String(dimClass));
+check(
+  'styles.css styles that class',
+  Boolean(dimClass) && new RegExp(`tr\\.${dimClass}\\s*\\{[^}]*opacity`).test(css),
+  `app.js adds '${dimClass}', but no 'tr.${dimClass} { opacity ... }' rule was found in styles.css`
 );
 
 console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} check(s) failed.`);

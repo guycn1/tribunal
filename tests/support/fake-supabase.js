@@ -58,6 +58,7 @@ function fakeSupabase(tables, options = {}) {
           return query;
         },
         eq(column, value) { filters.push((row) => row[column] === value); return query; },
+        neq(column, value) { filters.push((row) => row[column] !== value); return query; },
         in(column, values) { filters.push((row) => values.includes(row[column])); return query; },
         gte(column, value) { filters.push((row) => row[column] >= value); return query; },
         order(column) { orderBy = column; return query; },

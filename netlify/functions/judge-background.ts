@@ -5,7 +5,7 @@ import { extractParams } from './lib/extractParams';
 import { getChargeSheet } from './lib/chargeSheet';
 import { JUDGES } from './lib/judges';
 import { buildJudgeMessages, parseJudgeOutput } from './lib/prompts';
-import { callOpenRouter } from './lib/openrouter';
+import { callOpenRouter, finishedAfterAbort } from './lib/openrouter';
 import { getModelForRole, AGENT_MAX_TOKENS } from './lib/models';
 import {
   getFullTrial,
@@ -97,7 +97,7 @@ const rawHandler: Handler = async (event) => {
   // That is what lets a client polling GET /api/trials/:id see the
   // escalation happening live, mid-call, instead of only learning about it
   // once this role's result is already final.
-  const result = await callOpenRouter(
+  let result = await callOpenRouter(
     getModelForRole(judgeRole),
     messages,
     MAX_TOKENS,
@@ -132,6 +132,11 @@ const rawHandler: Handler = async (event) => {
     // through the escalation chain after the user has hit Abort.
     () => isTrialAborted(id)
   );
+
+  // A reply that finished after the user aborted the trial is logged as
+  // what it now is - aborted, and not saved - rather than as a success; see
+  // finishedAfterAbort in openrouter.ts.
+  if (result.status === 'success' && (await isTrialAborted(id))) result = finishedAfterAbort(result);
 
   // Parsed before logging, because a reply with no VERDICT line is logged
   // as a failure even though the call itself succeeded.

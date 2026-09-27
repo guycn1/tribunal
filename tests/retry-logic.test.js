@@ -12,16 +12,17 @@
  * prompt size, a degeneration check blind to its most common signature, a
  * fractional millisecond that would have crashed half of all real calls,
  * a fast-429 storm that escalated to a costlier tier within five seconds,
- * a backoff pause timed as part of the attempt before it, and a
- * three-copy loop the repeated-sentence check let through. Each one below
- * is a test, so none of them can quietly come back.
+ * a backoff pause timed as part of the attempt before it, a three-copy
+ * loop the repeated-sentence check let through, and an attempt that failed
+ * as the user aborted logged as "re-tried" when no retry followed. Each
+ * one below is a test, so none of them can quietly come back.
  */
 
 const { compileBackend } = require('./support/compile-backend');
 
 const backend = compileBackend(['lib/openrouter.ts']);
 process.env.OPENROUTER_API_KEY = 'test-key';
-const { callOpenRouter } = backend.load('lib/openrouter.js');
+const { callOpenRouter, finishedAfterAbort } = backend.load('lib/openrouter.js');
 
 /** Tier 1 of the escalation chain - the default, and cheapest, model. */
 const DEFAULT = 'mistralai/mistral-small-24b-instruct-2501';
@@ -185,7 +186,9 @@ async function main() {
     /** A distinct filler sentence, so copies can be kept apart. @param {number} i */
     const filler = (i) => `Point number ${i} stands on its own terms here.`;
     const SHORT = 'He had no lawful authority to act.';
-    const LONG = 'He had seen the city burn after the bells rang and he knew that she would not stop there.';
+    // Exactly at the long-sentence minimum (18 words), and one word under.
+    const LONG = 'He had seen the city burn after the bells rang and he knew that she would not stop.';
+    const LONG_LESS_ONE = 'He had seen the city burn after the bells rang and he knew she would not stop.';
 
     // The 2026-09-26 miss, word for word: three copies back to back, a
     // fourth differing by one word ("Jon Snow's" for "his").
@@ -201,13 +204,32 @@ async function main() {
     check('a short sentence 3 times apart is caught', threeApart !== null && /same sentence 3 times/.test(threeApart), threeApart);
 
     const longTwice = await verdict(`${LONG} ${filler(1)} ${filler(2)} ${LONG}`);
-    check('a long sentence twice apart is caught', longTwice !== null && /a 19-word sentence 2 times \(sentences 1 and 4 of 4\)/.test(longTwice), longTwice);
+    check('a long sentence twice apart is caught', longTwice !== null && /an 18-word sentence 2 times \(sentences 1 and 4 of 4\)/.test(longTwice), longTwice);
+    check('a 17-word sentence twice apart is not', (await verdict(`${LONG_LESS_ONE} ${filler(1)} ${filler(2)} ${LONG_LESS_ONE}`)) === null);
     check('a 4-word sentence repeated back to back is not (too short to count)', (await verdict('I agree with him. I agree with him. I agree with him. ' + filler(1))) === null);
 
     const passage = [filler(1), filler(2), filler(3)].join(' ');
     const repeatedPassage = await verdict(`${passage} ${filler(4)} ${passage}`);
     check('a 3-sentence passage repeated later is caught', repeatedPassage !== null && /3-sentence passage word for word \(sentences 1-3 and 5-7 of 7\)/.test(repeatedPassage), repeatedPassage);
     check('a 2-sentence passage repeated later is not', (await verdict(`${filler(1)} ${filler(2)} ${filler(3)} ${filler(1)} ${filler(2)}`)) === null);
+
+    // Loops that never end a sentence, only a clause. Both are stored
+    // replies the sentence rules passed: a grey_worm reply (2026-08-29)
+    // looping one clause between commas, and a daenerys_targaryen closing
+    // saved as a success (2026-09-20), word for word.
+    const commaLoop = await verdict('He was a man who had seen the destruction she would choose to cause, ' + 'and who had seen the destruction she would choose to cause, '.repeat(6));
+    check('a clause looped between commas is caught', commaLoop !== null && /same clause 6 times in a row \(clauses 2-7 of 7\)/.test(commaLoop), commaLoop);
+    const loopedClosing = await verdict(`${filler(1)} I ask the Tribunal to consider the truth, and to render a verdict that reflects the reality of what happened in that throne room. I ask the Tribunal to consider the truth, and to render a verdict that reflects the reality of what happened in that throne room, and to consider the truth, and to render a verdict that reflects the reality of what happened in that throne room.`);
+    check('the looped closing saved on 2026-09-20 is now caught', loopedClosing !== null && /a 16-word clause 3 times close together \(clauses 3, 5 and 7 of 7\)/.test(loopedClosing), loopedClosing);
+    // Three copies of a clause, each in a different sentence, so no
+    // sentence rule can fire.
+    const CLAUSE6 = 'she would never stop the burning';
+    const close = await verdict(`${CLAUSE6}, then one. ${filler(1)} ${CLAUSE6}, then two. ${filler(2)} ${CLAUSE6}, then three.`);
+    check('a 6-word clause 3 times within 6 clauses is caught', close !== null && /a 6-word clause 3 times close together \(clauses 1, 4 and 7 of 8\)/.test(close), close);
+    check('the same 3 copies spread one clause wider are not', (await verdict(`${CLAUSE6}, then one. ${filler(1)} ${CLAUSE6}, then two. ${filler(2)} ${filler(3)} ${CLAUSE6}, then three.`)) === null);
+    check('a 5-word clause 3 times close together is not', (await verdict('she would never stop burning, then one. she would never stop burning, then two. she would never stop burning, then three.')) === null);
+    check('a clause twice close together is not', (await verdict(`${CLAUSE6}, then one. ${filler(1)} ${CLAUSE6}, then two.`)) === null);
+    check('a 4-word clause twice in a row is not', (await verdict(`${filler(1)} He saw the fire, he saw the fire, and he acted. ${filler(2)}`)) === null);
   });
 
   // ------------------------------------------------------------------ 3
@@ -317,6 +339,58 @@ async function main() {
     check('made no further attempt after the abort', calls.length === 1, JSON.stringify(calls));
     check('reported as an abort, not a generic failure', r.status === 'failed' && r.errorMessage.startsWith('[aborted-mid-call]'), r.errorMessage);
     check('never reached a costlier tier', !calls.includes(TIER2), JSON.stringify(calls));
+  });
+
+  // ------------------------------------------------------------------ 8b
+  await test('An abort during a run gives the call log one honest last row', async () => {
+    // Trial a02b8215 (2026-09-21): aborted 4s in, while all four attempts
+    // were generating. Two ran into the token cap after the abort and were
+    // logged "re-tried with the same model" - a retry that never happened -
+    // followed by a "Stopped before attempt 2" row carrying the previous
+    // attempt's duration again.
+    const TRUNCATED = 'He had seen the city burn and '.repeat(40);
+    let userAborted = false;
+    let calls = 0;
+    global.fetch = async () => { calls++; userAborted = true; return reply(DEFAULT, TRUNCATED, 'length', 1400); };
+    const cut = await callOpenRouter(DEFAULT, [{ role: 'user', content: 'hi' }], 1400, 'rep:test', undefined, undefined, () => userAborted);
+    check('an attempt failing as the abort lands is not logged as re-tried', (cut.discardedAttempts || []).length === 0, JSON.stringify(cut.discardedAttempts));
+    check('it is the call\'s one final row, saying it was not retried', cut.status === 'failed' && /^\[aborted-mid-call\] This attempt hit the max_tokens limit.*Not retried: the user aborted this trial/.test(cut.errorMessage), cut.errorMessage);
+    check('and it keeps the attempt\'s real tokens, cost and reply', cut.completionTokens === 1400 && cut.cost > 0 && cut.responseText === TRUNCATED, `${cut.completionTokens} / ${cut.cost}`);
+    check('with the attempt\'s own duration', typeof cut.durationMs === 'number', String(cut.durationMs));
+    check('and no second request is made', calls === 1, String(calls));
+
+    // A transient failure as the abort lands reads the same way.
+    userAborted = false;
+    global.fetch = async () => { userAborted = true; return rateLimited(); };
+    const limited = await callOpenRouter(DEFAULT, [{ role: 'user', content: 'hi' }], 1400, 'rep:test', undefined, undefined, () => userAborted);
+    check('a rate limit as the abort lands is not retried either', (limited.discardedAttempts || []).length === 0 && /^\[aborted-mid-call\] This attempt was rate limited \(HTTP 429\)\. Not retried/.test(limited.errorMessage), limited.errorMessage);
+    // Every other failure an attempt can end in, the same way.
+    const endings = {
+      'a timeout': () => throwTimeout(),
+      'an upstream 5xx': () => ({ ok: false, status: 503, headers: new Map(), text: async () => '{}' }),
+      'a removed model': () => notFound(DEFAULT),
+      'an empty reply': () => reply(DEFAULT, ''),
+    };
+    for (const [what, respond] of Object.entries(endings)) {
+      userAborted = false;
+      global.fetch = async () => { userAborted = true; return respond(); };
+      const r = await callOpenRouter(DEFAULT, [{ role: 'user', content: 'hi' }], 1400, 'rep:test', undefined, undefined, () => userAborted);
+      check(`${what} as the abort lands is not retried either`, (r.discardedAttempts || []).length === 0 && /^\[aborted-mid-call\] This attempt .*\. Not retried/.test(r.errorMessage), r.errorMessage);
+    }
+
+    // Stopping before any attempt is not an attempt: no duration, no tokens.
+    calls = 0;
+    global.fetch = async () => { calls++; return reply(DEFAULT, CLEAN); };
+    const before = await callOpenRouter(DEFAULT, [{ role: 'user', content: 'hi' }], 1400, 'rep:test', undefined, undefined, () => true);
+    check('a call aborted before its first attempt sends nothing', calls === 0, String(calls));
+    check('and its row has no duration and no tokens', before.durationMs === undefined && before.totalTokens === 0 && /Stopped before attempt 1/.test(before.errorMessage), `${before.durationMs} / ${before.totalTokens}`);
+
+    // A reply that finished after the abort: logged as aborted, not success.
+    const done = finishedAfterAbort({ status: 'success', content: CLEAN, responseText: CLEAN, model: DEFAULT, promptTokens: 1000, completionTokens: 400, totalTokens: 1400, cost: 0.0001, durationMs: 9000 });
+    check('a reply finished after the abort is not a success', done.status === 'failed' && done.content === undefined && /^\[aborted-mid-call\] Finished after the user aborted this trial/.test(done.errorMessage), done.errorMessage);
+    check('but keeps what it cost', done.completionTokens === 400 && done.cost === 0.0001 && done.durationMs === 9000 && done.responseText === CLEAN);
+    const failedAlready = { status: 'failed', model: DEFAULT, promptTokens: 0, completionTokens: 0, totalTokens: 0, cost: 0, errorMessage: 'OpenRouter account is out of credits (HTTP 402): x', durationMs: 100 };
+    check('a result that already failed is left as it is', finishedAfterAbort(failedAlready) === failedAlready);
   });
 
   // ------------------------------------------------------------------ 9

@@ -47,7 +47,8 @@ export function getModelForRole(role: string): string {
 // at once. Deliberately a different model from
 // whatever getModelForRole() resolves to, not the same one tried again -
 // and one assumed to be more capable, though that is a judgement about
-// these models generally and not something measured on this workload. Real data showed a same-model retry doesn't behave
+// these models generally and not something measured on this workload.
+// Real data showed a same-model retry doesn't behave
 // like an independent second attempt: once a role's first attempt
 // truncated, a same-model retry truncated again roughly 60-75% of the
 // time (measured on daenerys_targaryen/grey_worm, the two roles this
@@ -74,33 +75,35 @@ export function getModelForRole(role: string): string {
 // piece of writing. That was the reason for the choice, and it has since
 // been measured on this workload rather than left as an expectation.
 //
-// 23 calls to this model on this project as of 2026-09-27, all clean: 7
-// served through the app during real trials, and 16 in a targeted batch
-// that drove the real
-// callOpenRouter() with the real Grey Worm and Daenerys prompts at this
-// tier's real 2800-token allowance. Every one finished naturally
-// (finish_reason=stop) and was kept. Completion lengths ran 502-789
-// tokens - the longest reaching 28% of the cap - and none truncated,
-// degenerated or was discarded. The targeted batch was slightly harsher
-// than production, since it omitted the CONCISENESS_REMINDER a real
-// escalation would carry.
+// Measured in three fixed samples, all on the exact workload this tier
+// serves:
+//   - a targeted batch of 16 calls (2026-09-21) that drove the real
+//     callOpenRouter() with the real Grey Worm and Daenerys prompts at this
+//     tier's real 2800-token allowance, omitting the CONCISENESS_REMINDER a
+//     real escalation carries (so slightly harsher than production).
+//     Completion lengths ran 502-789 tokens, the longest reaching 28% of
+//     the cap;
+//   - the 7 escalations the chain reached on its own in ordinary trials up
+//     to 2026-09-26, each after 2-3 discarded attempts - five locally, and
+//     two on the deployed site on 2026-09-21 (grey_worm, after a
+//     repeated-sentence degeneration and then a truncation at tier 1, at
+//     605 tokens in 9.3s; later that day daenerys_targaryen, after two
+//     truncations, at 640 tokens in 10.1s);
+//   - the 22 escalations in the targeted local trials of 2026-09-27, each
+//     reply read in full.
+// In all three, every call finished on its own and was kept: none was
+// truncated, caught by a detector, or discarded. One of the 22 was still
+// judged degenerate on reading - a daenerys_targaryen argument that spoke
+// as Jon Snow ("I knew Daenerys. I loved her.") - a persona failure that
+// repeats nothing, so no rule here could catch it.
 //
-// All 7 of the app-served calls were escalations the chain reached on its
-// own, each with 2-3 attempts already discarded for that role - none
-// forced or staged. Five of those happened locally, and two on the
-// deployed site (2026-09-21): first grey_worm, after a repeated-sentence
-// degeneration and then a truncation at tier 1, answered here cleanly at
-// 605 tokens in 9.3s; then, later that day, daenerys_targaryen, after two
-// truncations at tier 1, at 640 tokens in 10.1s.
-//
-// Read that for what it is. 23 clean calls is a real result on the exact
-// workload this tier serves, and it is not a basis for saying this model
-// will never truncate or degenerate - no sample size establishes that,
-// here or at any other tier. What it does establish is that the failure
-// modes this tier exists to catch have not appeared, at a cap the model
-// is nowhere near reaching. The predecessor at this tier, for contrast,
-// logged 88 calls: 74 kept, 11 attempts discarded and retried, and 3
-// terminal failures.
+// Read that for what it is: a real result on these samples, and no basis
+// for saying this model will never truncate or degenerate - no sample
+// size establishes that, here or at any other tier. What it does show is
+// that the looping failure modes this tier exists to catch have not
+// appeared, at a cap the model is nowhere near reaching. The predecessor
+// at this tier, for contrast, logged 88 calls in its time: 74 kept, 11
+// attempts discarded and retried, and 3 terminal failures.
 //
 // Crossing vendors here is not a new risk either - tiers 3/4 already do
 // it from the default, across many real trials. Real, verified pricing
@@ -128,15 +131,13 @@ export function getTruncationFallbackModel(): string {
 // not just a shared-size one. Their capability ranking relative to each
 // other and to tier 2 is an assumption, not a measurement.
 //
-// What has been measured, from api_call_logs as of 2026-09-27:
-// openai/gpt-5.6-sol has served 13 calls here, all kept, none discarded.
-// google/gemini-2.5-pro
-// has served 9 - 6 kept and 3 failed, all three the same HTTP 400
-// "Reasoning is mandatory" rejection from before modelRequiresReasoning()
-// existed below, i.e. a configuration fault rather than anything about
-// the output. Neither has produced a truncated or degenerate result here.
-// Same caveat as tier 2: that records what has been seen at these sample
-// sizes, and is not a promise about what will be.
+// What has been measured, from api_call_logs up to 2026-09-27: every
+// openai/gpt-5.6-sol call was kept, none discarded; google/gemini-2.5-pro's
+// only failures were the HTTP 400 "Reasoning is mandatory" rejection from
+// before modelRequiresReasoning() existed below, i.e. a configuration fault
+// rather than anything about the output. Neither had produced a truncated
+// or degenerate result. Same caveat as tier 2: that records what was seen
+// in those calls, and is not a promise about what will be.
 // Reached rarely enough (only after every earlier tier has already
 // failed) that the real cost impact stays small despite a materially
 // higher per-token price than either the default model or tier 2 - see

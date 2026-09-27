@@ -49,8 +49,9 @@
  * @property {string | null} errorMessage May begin with one of the
  *   *_MARKER prefixes below.
  * @property {string} timestamp ISO 8601.
- * @property {number | null} durationMs Null for rows logged before the
- *   column existed.
+ * @property {number | null} durationMs Null on a row that timed no attempt
+ *   (the abort endpoint's rows, and a call that stopped on an abort before
+ *   its next attempt) and on rows logged before the column existed.
  */
 
 /**
@@ -179,19 +180,29 @@ const JUDGE_ROLES = ['barak', 'elon', 'shamgar'];
  * Must match ABORTED_BY_USER_MESSAGE in netlify/functions/lib/db.ts exactly
  * (asserted by tests/shared-constants.test.js)
  * - used to recognize an aborted call's log row (see deriveRoleStates), so
- * it renders with the distinct "Aborted" badge instead of the generic
- * "Call failed" one.
+ * it renders with the distinct "aborted" badge instead of the generic
+ * "call failed" one.
  */
 const ABORTED_BY_USER_MESSAGE = 'Aborted by user before this call could complete.';
+
+/**
+ * Must match NO_MODEL_USED in netlify/functions/lib/db.ts exactly (asserted
+ * by tests/shared-constants.test.js) - the model_used on the abort
+ * endpoint's rows, where no model ran. It is not a model id, so the call
+ * log prints it as written (see formatModelCellHtml): shortModelName()
+ * would read the "n/" as a vendor prefix and print "a".
+ */
+const NO_MODEL_USED = 'n/a';
 
 // The six marker constants below must match their exports in
 // netlify/functions/lib/openrouter.ts exactly - used by deriveRoleStates()
 // and renderCallLog() to tell a discarded-but-recovered attempt (the role
 // went on to succeed or is still trying a further tier) from a
 // discarded-and-fatal one (the chain had nothing left to try), and by
-// renderCallLog() to pick the right badge for each. There is no import to keep them in step - this file is served as
-// plain static JS with no build step - so tests/shared-constants.test.js
-// asserts the two sets match instead. Add a marker there, add it here.
+// renderCallLog() to pick the right badge for each. There is no import to
+// keep them in step - this file is served as plain static JS with no build
+// step - so tests/shared-constants.test.js asserts the two sets match
+// instead. Add a marker there, add it here.
 //
 // "DEGENERATE" in these names is an umbrella for the whole content-quality
 // class - it covers a response cut off at the token cap as well as one
@@ -448,6 +459,21 @@ function formatTokenBreakdown(promptTokens, completionTokens) {
   return `${promptTokens.toLocaleString()}&nbsp;in&nbsp;/ ${completionTokens.toLocaleString()}&nbsp;out`;
 }
 
+/**
+ * Renders the call log's Model cell: the shortened id for the table layout,
+ * with the full id on hover, and the full id for the card layout.
+ *
+ * NO_MODEL_USED is not a model id, so it is printed once as it stands, with
+ * nothing to hover for: there is no longer form to reveal.
+ *
+ * @param {string} modelUsed
+ * @returns {string} HTML.
+ */
+function formatModelCellHtml(modelUsed) {
+  if (modelUsed === NO_MODEL_USED) return modelUsed;
+  return `<abbr class="col-short" title="${modelUsed}">${shortModelName(modelUsed)}</abbr><span class="col-full">${modelUsed}</span>`;
+}
+
 /** Words for ordinalWord(), indexed by the number they spell. */
 const ORDINAL_WORDS = ['zeroth', 'first', 'second', 'third', 'fourth', 'fifth'];
 /**
@@ -674,8 +700,9 @@ function updateHistoryLockState() {
  * Persisting is not just bookkeeping - it does two jobs, and telling the
  * in-flight calls to stop is the more important one. Aborting a fetch()
  * client-side cannot stop the Netlify invocation it was talking to, so the
- * persisted row is the only channel there is: each running call polls for
- * it between attempts and stops itself (isTrialAborted in db.ts). Second,
+ * persisted row is the only channel there is: each running call checks for
+ * it before each attempt and as each one ends, and stops itself
+ * (isTrialAborted in db.ts). Second,
  * it makes the abort durable, so the sidebar reflects it on a later visit
  * and a stray success or failure logged after the fact can't make an
  * aborted run look like an ordinary one.
@@ -778,8 +805,9 @@ async function abortCurrentTrial() {
 // model, but while the agent calls were still synchronous functions - and
 // has since been overtaken by evidence: every clean run behind this
 // project's reliability record was actually made at 4 concurrent, not 3,
-// so there is no demonstrated problem left to solve. A bounded dispatch plus the stagger is still a sensible
-// thing to keep pointed at the per-IP limiter.
+// so there is no demonstrated problem left to solve. A bounded dispatch
+// plus the stagger is still a sensible thing to keep pointed at the per-IP
+// limiter.
 /**
  * Stagger between trigger POSTs within one phase: the role at index N is
  * triggered N times this many ms after the phase starts, at the earliest.
@@ -870,10 +898,10 @@ function sleep(ms, signal) {
  * config.background in each) - the fix for a verified, load-bearing
  * problem: Netlify's real free-tier synchronous function limit is 10
  * seconds, while every real OpenRouter call measured on this project at
- * the time had taken 8-18s+ per attempt, before any retry. A standard invocation could
- * not reliably survive that gap no matter how the internal retry/timeout
- * budget was tuned. Background Functions get up to 15 minutes instead -
- * but the platform responds 202 immediately and runs the handler
+ * the time had taken 8-18s+ per attempt, before any retry. A standard
+ * invocation could not reliably survive that gap no matter how the
+ * internal retry/timeout budget was tuned. Background Functions get up to
+ * 15 minutes instead - but the platform responds 202 immediately and runs the handler
  * asynchronously, so its real return value never reaches this fetch()
  * call the way a normal synchronous function's did. Calling a role now
  * has two separate steps: triggerAgent() fires the request and reports
@@ -911,10 +939,10 @@ async function triggerAgent(url, signal) {
   // A non-2xx this early can only be a platform-level rejection rather
   // than anything from this app's own handler code, since a Background
   // Function's own application-level outcome never reaches this response
-  // at all. Two real causes, both seen on this project: Netlify's per-IP
-  // rate limiter (see the rateLimit config on the agent Background
-  // Functions), and a routing failure - an immediate 404 on every call,
-  // which happened when the function files were renamed and netlify.toml's
+  // at all. Two causes: Netlify's per-IP rate limiter (see the rateLimit
+  // config on the agent Background Functions - declared, but never yet
+  // tripped), and a routing failure - an immediate 404 on every call, seen
+  // on this project when the function files were renamed and netlify.toml's
   // redirect targets still pointed at the old names. The second looks
   // nothing like the first, so don't read every non-2xx here as rate
   // limiting.
@@ -1038,16 +1066,17 @@ function deriveRoleStates(data) {
       if (isRetriedMarkerLog(log)) {
         // Not a terminal outcome - the escalation chain is still running
         // (see agentProgress above for what actually renders "currently
-        // trying X" while it does) - don't report a false "Call failed"
+        // trying X" while it does) - don't report a false "call failed"
         // for a role that's actually still in progress.
         continue;
       }
       // Two different rows can mean "the user stopped this": the one
       // abort.ts writes for every pending role at the moment Abort is
-      // clicked, and the one the call writes for itself when its own
-      // between-attempts abort check catches up (see ABORTED_MID_CALL_MARKER
-      // in openrouter.ts). Both are deliberate stops, not failures, so
-      // both get the "Aborted" treatment rather than a red "Call failed".
+      // clicked, and the one the call writes for itself once it notices -
+      // before its next attempt, as an attempt ends, or when a reply
+      // finishes after the abort (see ABORTED_MID_CALL_MARKER in
+      // openrouter.ts). Both are deliberate stops, not failures, so
+      // both get the "aborted" treatment rather than a red "call failed".
       const abortedMidCall = typeof log.errorMessage === 'string' && log.errorMessage.startsWith(ABORTED_MID_CALL_MARKER);
       store[log.agentRole] =
         log.errorMessage === ABORTED_BY_USER_MESSAGE || abortedMidCall
@@ -1074,7 +1103,7 @@ function deriveRoleStates(data) {
  * but this constant stayed at its old value (150s) - a real, observed
  * consequence was a role that genuinely succeeded server-side (verified
  * directly in the DB) still showing as unresolved on the client because
- * polling gave up first. A role that still hasn't resolved by the new
+ * polling gave up first. A role that still hasn't resolved by this
  * timeout either genuinely failed in a way this page can't see (the
  * disclosed site-gate/call-cap gap documented in
  * representative-background.ts/judge-background.ts - a rejection there is
@@ -1562,7 +1591,7 @@ function buildAgentStatusBody(entry, role, verb) {
     const wrap = document.createElement('div');
     const badge = document.createElement('span');
     badge.className = 'badge badge-aborted';
-    badge.textContent = 'Aborted';
+    badge.textContent = 'aborted';
     wrap.appendChild(badge);
     const note = document.createElement('p');
     note.className = 'card-body dim';
@@ -1575,7 +1604,7 @@ function buildAgentStatusBody(entry, role, verb) {
     const wrap = document.createElement('div');
     const badge = document.createElement('span');
     badge.className = 'badge badge-fail';
-    badge.textContent = 'Call failed';
+    badge.textContent = 'call failed';
     wrap.appendChild(badge);
     const err = document.createElement('p');
     err.className = 'card-body dim';
@@ -1594,7 +1623,7 @@ function buildAgentStatusBody(entry, role, verb) {
     const wrap = document.createElement('div');
     const badge = document.createElement('span');
     badge.className = 'badge badge-fail';
-    badge.textContent = 'No response yet';
+    badge.textContent = 'no response yet';
     wrap.appendChild(badge);
     const err = document.createElement('p');
     err.className = 'card-body dim';
@@ -1607,7 +1636,7 @@ function buildAgentStatusBody(entry, role, verb) {
 }
 
 /**
- * Adds a "Truncated" badge and note to a card whose result hit the token
+ * Adds a "truncated" badge and note to a card whose result hit the token
  * cap. Does nothing otherwise.
  *
  * Shared by both card types, appended after their normal success content -
@@ -1621,7 +1650,7 @@ function appendTruncationNotice(card, entry) {
   if (!isTruncated(entry)) return;
   const badge = document.createElement('span');
   badge.className = 'badge badge-warn';
-  badge.textContent = 'Truncated';
+  badge.textContent = 'truncated';
   card.appendChild(badge);
   const note = document.createElement('p');
   note.className = 'card-body dim';
@@ -2053,10 +2082,11 @@ function formatAgentName(role) {
 /**
  * Formats a duration as "12,345 ms", or a dash when none was recorded.
  *
- * null specifically for rows logged before the duration_ms column
- * existed (see ApiCallLogRecord in types.ts) - shown as a plain dash
- * rather than a fabricated 0, which would misleadingly read as an
- * instant response.
+ * null on a row that timed no attempt - the abort endpoint's rows, and a
+ * call that stopped on an abort before its next attempt - and on rows
+ * logged before the duration_ms column existed (see ApiCallLogRecord in
+ * types.ts). Shown as a plain dash rather than a fabricated 0, which would
+ * misleadingly read as an instant response.
  *
  * @param {number | null | undefined} durationMs
  * @returns {string}
@@ -2108,27 +2138,35 @@ function renderCallLog() {
     // exactly why a six-minute stall left nothing to read here afterward.
     const isTransientRetried = err.startsWith(TRANSIENT_RETRIED_MARKER);
     const isAbortedMidCall = err.startsWith(ABORTED_MID_CALL_MARKER);
-    // The content-quality markers cover two genuinely different failures,
-    // and calling both of them "Degenerated" was simply inaccurate: a
-    // response that ran into the token cap was cut off, not incoherent.
-    // openrouter.ts writes this exact phrase for the cap case (and quotes
-    // the offending text instead for the two degeneration detectors), so
-    // it is the honest discriminator between them. Same literal-string
-    // coupling as the markers themselves.
+    // The row the abort endpoint writes for each role still pending when
+    // Abort is clicked. It records the request to stop, not a model call -
+    // no model, no tokens - so it is shown as that, in the same grey as the
+    // sidebar's aborted badge, rather than as a red failure.
+    const isAbortRequest = entry.errorMessage === ABORTED_BY_USER_MESSAGE;
+    // The content-quality markers cover two different ways an attempt
+    // ends, and calling both of them "degenerated" was simply inaccurate:
+    // one ran into the token cap, the other stopped on its own and a
+    // detector flagged it. (The capped kind is usually a repetition loop
+    // too - see the NAMING note in openrouter.ts - but the cap, not a
+    // detector, is what stopped it.) openrouter.ts writes this exact phrase
+    // for the cap case (and quotes the offending text instead for the two
+    // degeneration detectors), so it is the honest discriminator between
+    // them. Same literal-string coupling as the markers themselves.
     const hitTokenCap = err.includes('max_tokens limit');
 
-    if (isDegenerateRetried || isHttpErrorEscalated || isTransientRetried) {
-      // Dims the whole row - a visual cue that this failure wasn't fatal
-      // and the same call likely went on to succeed on a later row.
-      tr.classList.add('row-degenerated-retried');
+    if (isDegenerateRetried || isHttpErrorEscalated || isTransientRetried || isAbortRequest) {
+      // Dims the whole row: a failure that wasn't fatal, the same call
+      // likely going on to succeed on a later row, or the record of an abort
+      // request, which the role's own last row follows.
+      tr.classList.add('row-dimmed');
     }
 
     // A response still truncated after every attempt the escalation chain
     // allows is now a real failure (openrouter.ts), correctly shown via
     // the status column below - this badge only still fires for historical
-    // rows recorded before that change, where the log genuinely says 'success' with a
-    // completion that's an exact multiple of the cap (1x from an older,
-    // single-attempt truncation, or 2x from a retry that also truncated
+    // rows recorded before that change, where the log genuinely says
+    // 'success' with a completion that's an exact multiple of the cap (1x
+    // from an older, single-attempt truncation, or 2x from a retry that also truncated
     // before this fix existed). Same reasoning and formula as isTruncated().
     const wasTruncated =
       entry.status === 'success' &&
@@ -2147,33 +2185,40 @@ function renderCallLog() {
     `;
 
     let statusCellHtml;
-    if (isDegenerateRetried) {
+    if (isAbortRequest) {
+      statusCellHtml = `<span class="badge badge-aborted">abort requested</span>`;
+    } else if (isDegenerateRetried) {
       const caption = isRetriedSameModel ? 'retried with the same model' : 'escalated to a different model';
       statusCellHtml = `
         <div class="cell-stack">
-          <span class="badge badge-warn">${hitTokenCap ? 'Truncated' : 'Degenerated'}</span>
+          <span class="badge badge-warn">${hitTokenCap ? 'truncated' : 'degenerated'}</span>
           <div class="status-caption">(${caption})</div>
         </div>
       `;
     } else if (isHttpErrorEscalated) {
       statusCellHtml = `
         <div class="cell-stack">
-          <span class="badge badge-warn">Escalated</span>
+          <span class="badge badge-warn">escalated</span>
           <div class="status-caption">(model error, escalated to a different model)</div>
         </div>
       `;
     } else if (isTransientRetried) {
       statusCellHtml = `
         <div class="cell-stack">
-          <span class="badge badge-warn">No response</span>
+          <span class="badge badge-warn">no response</span>
           <div class="status-caption">(timed out or refused, retried)</div>
         </div>
       `;
     } else if (isAbortedMidCall) {
+      // The call's last row after an abort: it stopped before an attempt, an
+      // attempt that failed was not retried, or a reply that finished was
+      // not saved (see ABORTED_MID_CALL_MARKER in openrouter.ts). The row's
+      // message, shown on the agent's card, says which; the caption fits
+      // all three.
       statusCellHtml = `
         <div class="cell-stack">
-          <span class="badge badge-warn">Aborted</span>
-          <div class="status-caption">(stopped mid-call by the user)</div>
+          <span class="badge badge-warn">aborted</span>
+          <div class="status-caption">(the user aborted the trial)</div>
         </div>
       `;
     } else if (isDegenerateFinal) {
@@ -2183,7 +2228,7 @@ function renderCallLog() {
       // priciest: tier 4 is actually cheaper per call than tier 3 - see
       // the pricing note in openrouter.ts. What makes this red is that the
       // chain is out of options, not what the attempt cost.)
-      statusCellHtml = `<span class="badge badge-fail">${hitTokenCap ? 'Truncated' : 'Degenerated'}</span>`;
+      statusCellHtml = `<span class="badge badge-fail">${hitTokenCap ? 'truncated' : 'degenerated'}</span>`;
     } else {
       const statusBadge = entry.status === 'success' ? 'badge-ok' : 'badge-fail';
       statusCellHtml = `
@@ -2200,7 +2245,7 @@ function renderCallLog() {
     tr.innerHTML = `
       <td data-label="Agent">${formatAgentName(entry.agentRole)}</td>
       <td data-label="Type">${formatCallTypeHtml(entry.callType)}</td>
-      <td data-label="Model"><abbr class="col-short" title="${entry.modelUsed}">${shortModelName(entry.modelUsed)}</abbr><span class="col-full">${entry.modelUsed}</span></td>
+      <td data-label="Model">${formatModelCellHtml(entry.modelUsed)}</td>
       <td data-label="Tokens">${tokens}</td>
       <td data-label="Cost">${formatCost(entry.cost)}</td>
       <td data-label="Duration">${formatDuration(entry.durationMs)}</td>
@@ -2224,9 +2269,9 @@ function renderCallLog() {
  * elapsed time for the trial - representatives/judges within a phase run
  * concurrently, so those two numbers are expected to differ; the label
  * below says "compute time" specifically to avoid implying otherwise.
- * Rows logged before the duration_ms column existed have a null value
- * (see formatDuration) and are simply skipped in this sum rather than
- * treated as 0, so an old trial's total doesn't silently understate.
+ * A row with no duration (see formatDuration) is skipped in this sum
+ * rather than treated as 0: it timed no attempt, or predates the
+ * duration_ms column.
  */
 function renderCallLogTotals() {
   let totalPromptTokens = 0;
@@ -2271,7 +2316,7 @@ function renderCallLogTotals() {
 
 /**
  * How old a trial that never completed must be before the sidebar calls
- * it "Interrupted" rather than "In progress".
+ * it "interrupted" rather than "in progress".
  *
  * This once assumed TOTAL_BUDGET_MS (openrouter.ts) was ~26s, and so that a
  * whole trial finishes in a few minutes. TOTAL_BUDGET_MS is 650000ms now -
@@ -2281,10 +2326,11 @@ function renderCallLogTotals() {
  * end. Both phases run all of their roles concurrently - the
  * representatives are not a 3-slot pool that makes the 4th wait for a free
  * slot, which would push the worst case to ~32.5 min (see the comment on
- * MAX_CONCURRENT_CALLS above). Kept at 40 minutes: real margin above that (not just enough to
- * scrape by, consistent with every other budget in this app), so a trial
+ * MAX_CONCURRENT_CALLS above). Kept at 40 minutes: real margin above that
+ * (not just enough to scrape by, consistent with every other budget in
+ * this app), so a trial
  * that's actually still working - however slowly - doesn't get mislabeled
- * "Interrupted" in the history sidebar before it's had a real chance to
+ * "interrupted" in the history sidebar before it's had a real chance to
  * finish.
  */
 const INTERRUPTED_THRESHOLD_MS = 40 * 60 * 1000;
@@ -2307,8 +2353,8 @@ const TOTAL_EXPECTED_RESULTS = REPRESENTATIVE_ROLES.length + JUDGE_ROLES.length;
 
 /**
  * Returns the status shown for a trial in the run-history sidebar - one of
- * "Completed", "Completed — missing N of 7", "Aborted", "Aborted (N of 7
- * completed)", "Interrupted" or "In progress…".
+ * "completed", "completed — missing N of 7", "aborted", "aborted (N of 7
+ * completed)", "interrupted" or "in progress…".
  *
  * @param {TrialSummary} trial
  * @returns {string}
@@ -2316,16 +2362,16 @@ const TOTAL_EXPECTED_RESULTS = REPRESENTATIVE_ROLES.length + JUDGE_ROLES.length;
 function trialStatusLabel(trial) {
   const missing = TOTAL_EXPECTED_RESULTS - (trial.resultCount ?? 0);
   if (trial.wasAborted) {
-    return trial.status === 'completed' ? `Aborted (${trial.resultCount ?? 0} of ${TOTAL_EXPECTED_RESULTS} completed)` : 'Aborted';
+    return trial.status === 'completed' ? `aborted (${trial.resultCount ?? 0} of ${TOTAL_EXPECTED_RESULTS} completed)` : 'aborted';
   }
   if (trial.status === 'completed') {
-    return missing > 0 ? `Completed — missing ${missing} of ${TOTAL_EXPECTED_RESULTS}` : 'Completed';
+    return missing > 0 ? `completed — missing ${missing} of ${TOTAL_EXPECTED_RESULTS}` : 'completed';
   }
   const ageMs = Date.now() - new Date(trial.createdAt).getTime();
   if (ageMs > INTERRUPTED_THRESHOLD_MS) {
-    return 'Interrupted';
+    return 'interrupted';
   }
-  return 'In progress…';
+  return 'in progress…';
 }
 
 /**

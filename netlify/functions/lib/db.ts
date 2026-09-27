@@ -18,9 +18,10 @@ import type {
 // stopped waiting on this call, at the user's request") rather than a claim
 // about what happened server-side - the browser cannot cancel the
 // Background Function running that role, so it may still finish the
-// attempt it is on and log that attempt's real outcome. (It checks for
-// this row between attempts and stops there - see isTrialAborted below -
-// and never saves a result into an aborted trial.) Both rows are
+// attempt it is on, and then logs that attempt as its final, aborted row,
+// with the attempt's real tokens and cost. (It checks for this row before
+// each attempt and as each one ends, and stops there - see isTrialAborted
+// below - and never saves a result into an aborted trial.) Both rows are
 // legitimate; this schema already allows multiple api_call_logs rows per
 // role per trial (each retry attempt already produces its own row).
 //
@@ -28,6 +29,12 @@ import type {
 // the same way hadFailures already is, by checking api_call_logs for this
 // exact marker, rather than adding a new stored status value.
 export const ABORTED_BY_USER_MESSAGE = 'Aborted by user before this call could complete.';
+
+// The model_used the abort endpoint writes on its rows: no model ran for
+// them. app.js keeps its own copy (NO_MODEL_USED) to show this value as
+// written rather than as a model id - asserted identical by
+// tests/shared-constants.test.js.
+export const NO_MODEL_USED = 'n/a';
 
 export async function createTrial(caseCode: string): Promise<TrialRecord> {
   const supabase = getSupabaseClient();
@@ -53,7 +60,7 @@ export interface TrialSummary extends TrialRecord {
   // here, not an exception - so a label driven by this would fire on most
   // runs and stop meaning anything. (It once did: the label used to read
   // "Completed - with failures" and was driven by exactly this flag. It
-  // now reads "Completed - missing N of 7" and is driven by resultCount
+  // now reads `completed — missing N of 7` and is driven by resultCount
   // below, which is what the sidebar actually uses.)
   hadFailures: boolean;
   wasAborted: boolean;
@@ -220,9 +227,11 @@ export async function getFullTrial(trialId: string) {
       status: row.status as CallStatus,
       errorMessage: row.error_message,
       timestamp: row.timestamp,
-      // Nullable for rows logged before this column existed - the
-      // frontend shows a plain "—" for those rather than a fabricated 0,
-      // which would misleadingly read as an instant response.
+      // Null on a row that timed no attempt - the abort endpoint's rows,
+      // and a call that stopped on an abort before its next attempt - and
+      // on rows logged before this column existed. The frontend shows a
+      // plain "—" for those rather than a fabricated 0, which would
+      // misleadingly read as an instant response.
       durationMs: row.duration_ms ?? null,
     })),
   };
@@ -281,10 +290,10 @@ export async function upsertJudgeRuling(params: {
 // Called from openrouter.ts's onAttemptStart callback the moment each
 // attempt begins, so a client polling mid-call sees the real current
 // model/attempt rather than only learning about it once that attempt is
-// later discarded or kept. Errors are swallowed by the caller (see the
-// onAttemptStart wiring in representative-background.ts/judge-
-// background.ts), not here - this is a best-effort live-progress signal,
-// never allowed to interrupt the actual retry logic.
+// later discarded or kept. Errors are thrown here and swallowed by
+// callOpenRouter(), which catches a failing onAttemptStart callback and
+// carries on - this is a best-effort live-progress signal, never allowed
+// to interrupt the actual retry logic.
 export async function upsertAgentProgress(params: {
   trialId: string;
   role: string;
@@ -372,7 +381,10 @@ export async function isGlobalCallCapExceeded(): Promise<{ exceeded: boolean; co
   const { count, error } = await supabase
     .from('api_call_logs')
     .select('*', { count: 'exact', head: true })
-    .gte('timestamp', since);
+    .gte('timestamp', since)
+    // The abort endpoint's rows record a request to stop, not a model call,
+    // so they do not count against the cap.
+    .neq('model_used', NO_MODEL_USED);
 
   if (error) {
     // Fail open: a Supabase hiccup here must not take the whole app down.
@@ -386,9 +398,12 @@ export async function isGlobalCallCapExceeded(): Promise<{ exceeded: boolean; co
 }
 
 // Has the user aborted this trial? Checked by the agent Background
-// Functions between attempts (see the isAborted callback on
-// callOpenRouter) so an abandoned trial stops costing real money, and once
-// more before a result is saved, so an aborted trial never gains one.
+// Functions before each attempt and as each failed attempt is recorded
+// (see the isAborted callback on callOpenRouter), so an abandoned trial
+// stops costing real money; again once a call succeeds, so a reply that
+// finished after the abort is logged as aborted (finishedAfterAbort in
+// openrouter.ts); and once more before a result is saved, so an aborted
+// trial never gains one.
 //
 // abort.ts writes one row carrying exactly ABORTED_BY_USER_MESSAGE per
 // role that was still pending when the user clicked Abort, which makes
@@ -433,9 +448,9 @@ export async function logApiCall(params: {
   cost: number;
   status: CallStatus;
   errorMessage?: string | null;
-  // Optional: an abort (see abort.ts) has no real generation time to
-  // report, since it's logging the fact of a client-side cancellation,
-  // not a completed attempt.
+  // Optional: a row that timed no attempt has none to report - the abort
+  // endpoint's rows (see abort.ts), which record a request to stop, and a
+  // call that stopped on an abort before starting its next attempt.
   durationMs?: number | null;
   // The model's reply, word for word, for any attempt that got one -
   // including every discarded one. Kept for audit and diagnosis, never

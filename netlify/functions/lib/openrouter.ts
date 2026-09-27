@@ -167,17 +167,21 @@ export interface OpenRouterMessage {
 // Large, tier 2's original model), 7 succeeded and 1 truncated on both of
 // its own attempts too. Rather than one fallback, this is a genuine
 // escalation chain - each tier a different model, reached once the tier
-// before it is done - which usually means it
-// spent every attempt allowed it, on truncation, degeneration or a slow
-// transient failure, but not always: a plain HTTP error (a removed model
-// id, say) escalates immediately and forfeits that tier's remaining
-// attempts, since re-asking a model that just 404'd cannot help. The last two tiers are deliberately from two
-// different companies, not two models in the same family, so a
-// shared-vendor quirk can't explain a failure that makes it that far.
-// Every tier also gets more token headroom than the one before it - some
-// truncations may be genuinely-long-but-coherent content hitting an
-// arbitrary ceiling, not only degeneration, and a bigger cap directly
-// fixes that case regardless of which model is generating. Reached rarely
+// before it is done - which usually means it spent every attempt allowed
+// it, on truncation, degeneration or a slow transient failure, but not
+// always: a plain HTTP error (a removed model id, say) escalates
+// immediately and forfeits that tier's remaining attempts, since
+// re-asking a model that just 404'd cannot help. The last two tiers are
+// deliberately from two different companies, not two models in the same
+// family, so a shared-vendor quirk can't explain a failure that makes it
+// that far.
+// Every tier also gets more token headroom than the one before it, as a
+// safeguard in case a sound response ever runs past the cap. None has been
+// seen to: all 48 capped replies whose text was stored, as of 2026-09-27,
+// are repetition loops that ran until the cap stopped them, and no tier-1
+// reply that finished on its own had gone past 1,147 of its 1,400 tokens.
+// For a loop, a bigger cap only means a longer loop; what recovers it is
+// the fresh attempt itself, on the same model or the next. Reached rarely
 // enough, given how many tiers already stand before it, that the real
 // cost stays small despite the later tiers being far pricier than the
 // default - see pricing.ts for the real numbers.
@@ -289,9 +293,10 @@ function detectDegenerateRun(content: string): { degenerate: boolean; runLength:
 // frequency_penalty/presence_penalty work, and it had been shipping
 // undetected the whole time since.
 //
-// It flags a text on any of four verbatim-repetition patterns:
+// It flags a text on any of four verbatim-repetition patterns in its
+// sentences, and two more in its clauses (see CLAUSE_SPLIT below):
 //   1. the same sentence twice in a row;
-//   2. a long sentence (15+ words) twice anywhere in the text;
+//   2. a long sentence (18+ words) twice anywhere in the text;
 //   3. any sentence 3+ times anywhere in the text;
 //   4. a passage of 3+ consecutive sentences (12+ words) that appears again
 //      later, word for word.
@@ -324,16 +329,37 @@ function detectDegenerateRun(content: string): { degenerate: boolean; runLength:
 //   knowledge of what must be done and the courage to do it.") and
 //   occasionally a structural line ("We will grant this point for the sake
 //   of argument and proceed to the next test.") - flagged, on the same
-//   priority. Run over the same 830 texts, the four rules flag 149 (18%,
-//   and 12 of the 70 saved since the first version shipped), against 30
-//   for the first version.
+//   priority. Run over the same 830 texts, the four rules, with the
+//   long-sentence minimum then at 15, flagged 149 (18%, and 12 of the 70
+//   saved since the first version shipped), against 30 for the first
+//   version.
+// - Measured on live output later on 2026-09-27: 20 local trials of
+//   daenerys_targaryen, grey_worm and barak, every one of the 105 replies
+//   read. Of the 84 that stopped on their own, the rules rejected 24: 15
+//   degenerate and 9 sound, 8 of those 9 on a 16-22 word sentence stated
+//   twice (a callback, a bookend, Barak restating each test's question as
+//   its heading). Every degenerate reply was rejected except two that
+//   repeat nothing - a persona slip and a self-contradicting ruling - which
+//   no repetition rule can see. The long-sentence minimum was then raised
+//   from 15 to 18 words: re-scored, that clears 2 of the 9 with no
+//   degenerate reply lost, and the 24 older stored texts it stops flagging
+//   were all read and are all sound. 19 would be one word too far: a
+//   looping closing in the stored corpus turns on an 18-word sentence.
+// - Measured again at 18 words the same day: 16 more trials, every one of
+//   the 74 replies read. Of the 60 that stopped on their own, the rules
+//   rejected 12: 10 degenerate and 2 sound. They missed one degenerate
+//   reply - a daenerys_targaryen closing re-emitting a 16-word sentence
+//   after a single sentence in between, which the 15-word minimum would
+//   have caught. That is the recall the 18-word minimum gives up, and the
+//   first live case of it.
 // Deliberate rhetorical repetition does NOT trip this: real anaphora
 // repeats an opening phrase and then continues differently ("I ask you to
 // consider the scale..." / "I ask you to consider the evidence..."), which
-// produces different whole sentences and is therefore invisible here -
-// unlike the earlier, abandoned 5-word phrase heuristic, which flagged
-// exactly that pattern as a false positive. Only verbatim whole-sentence
-// repetition counts.
+// produces different whole sentences and is therefore invisible to the
+// sentence rules - unlike the earlier, abandoned 5-word phrase heuristic,
+// which flagged exactly that pattern as a false positive. The clause rules
+// below are the exception: an opening that ends at a comma is a clause of
+// its own, and three copies of it close together are flagged.
 //
 // What it does not catch: near-verbatim looping, where each copy differs
 // by a word or two ("Jon Snow's actions" / "his actions"). Matching that
@@ -341,22 +367,24 @@ function detectDegenerateRun(content: string): { degenerate: boolean; runLength:
 // anaphora risk, and has not been built.
 //
 // It works on real output, not just on the corpus it was calibrated
-// against. It has caught at least eleven natural live cases, all on the
-// tier-1 default model (counted from api_call_logs on 2026-09-27). The
-// first seven, under the original 4-copy rule, repeated a sentence 4 to 8
-// times: five in local testing on the day it shipped (tyrion_lannister
-// twice, grey_worm three times), then two on the deployed site the next
-// day - grey_worm again, at 4 repeats, and later the first catch on a
-// judge (shamgar, 5 repeats). The first production catch shows what a
-// miss costs: the response had finish_reason=stop at 604 tokens, so
-// without this check it would have been saved and shown as a perfectly
-// ordinary successful argument. Four more came late on 2026-09-26 (UTC):
-// barak (a sentence 4 times), grey_worm (a 17-word sentence 4 times), and
-// daenerys_targaryen and elon (an 18-word and a 40-word sentence, twice
-// each) - those last two caught only by the widened rules.
-// The older run-on check above has caught two, both grey_worm, both on the
-// tier-2 model of the time, at 180 and 84 words - far past the 40-word
-// line, and the 84-word one was read in full and confirmed degenerate.
+// against: it catches natural live cases, in local testing and on the
+// deployed site alike. Its first live catches were all on the tier-1
+// default model. The first seven, under the original 4-copy rule,
+// repeated a sentence 4 to 8 times: five in local testing on the day it
+// shipped (tyrion_lannister twice, grey_worm three times), then two on the
+// deployed site the next day - grey_worm again, at 4 repeats, and later
+// the first catch on a judge (shamgar, 5 repeats). The first production
+// catch shows what a miss costs: the response had finish_reason=stop at
+// 604 tokens, so without this check it would have been saved and shown as
+// a perfectly ordinary successful argument. Four more came late on
+// 2026-09-26 (UTC): barak (a sentence 4 times), grey_worm (a 17-word
+// sentence 4 times), and daenerys_targaryen and elon (an 18-word and a
+// 40-word sentence, twice each) - those last two caught only by the
+// widened rules. The targeted trials of 2026-09-27 above added many more.
+// The older run-on check above had its first two live catches on
+// grey_worm, both on the tier-2 model of the time, at 180 and 84 words -
+// far past the 40-word line, and the 84-word one was read in full and
+// confirmed degenerate.
 //
 // On false positives: the thresholds above knowingly accept some (a
 // refrain, a structural line), in exchange for missing as little as
@@ -368,14 +396,57 @@ function detectDegenerateRun(content: string): { degenerate: boolean; runLength:
 // exists, it shows a full sentence repeated verbatim, which deliberate
 // anaphora cannot produce - it varies the continuation, so the whole
 // sentences differ. That is the reason to think anaphora is safe from it;
-// it is not a measurement of precision.
+// it is not a measurement of precision. The two live runs above are: of
+// the replies these rules rejected in the 20-trial run, 15 of 24 were
+// degenerate with the long-sentence minimum at 15, and 15 of 22 at 18;
+// in the 16-trial run, at 18, 10 of 12.
 const REPEATED_SENTENCE_THRESHOLD = 3;
 const CONSECUTIVE_REPEAT_THRESHOLD = 2;
-const LONG_SENTENCE_WORDS = 15;
+const LONG_SENTENCE_WORDS = 18;
 const LONG_SENTENCE_REPEAT_THRESHOLD = 2;
 const MIN_WORDS_FOR_REPEAT_CHECK = 5;
 const REPEATED_PASSAGE_SENTENCES = 3;
 const MIN_WORDS_FOR_REPEATED_PASSAGE = 12;
+
+// The same checks one level down, on clauses: the text cut at commas,
+// semicolons and colons as well as at sentence ends. A loop can repeat a
+// clause without ever ending a sentence - "...and who had seen the
+// destruction she would choose to cause, and who had seen the destruction
+// she would choose to cause, ..." 84 times over in a stored grey_worm reply
+// (2026-08-29) - which the sentence rules read as one long sentence and
+// the run-on check never sees, since every comma resets its count. That
+// one ran into the token cap and was discarded as truncated; the same
+// loop ending on its own would have been saved as a success.
+//
+// Two rules, calibrated on 2026-09-27 against the 692 of 844 stored texts
+// the rules above pass:
+//   1. the same clause (5+ words) twice in a row - matches exactly one of
+//      the 692, that loop;
+//   2. the same clause (6+ words) 3 times, the third copy no more than 6
+//      clauses after the first - matches 5: that loop again, two
+//      daenerys_targaryen closings saved as successes on 2026-09-20 that
+//      loop a clause with small variations
+//      ("...and to render a verdict that reflects the reality of what
+//      happened in that throne room" three times over), and two sound but
+//      repetitive enumerations ("He knew that if he did not act, more would
+//      die. He knew that if he did not act, the realm would suffer...").
+//      Those two are accepted false positives, on the priority above:
+//      anaphora whose shared opening ends at a comma looks, clause by
+//      clause, exactly like a loop.
+// With them, and the long-sentence minimum at 15 as it then was, the
+// detector flagged 157 of the 844 texts (18.6%), against 152 without; with
+// the minimum at 18 it flags 133 (15.8%).
+// Copies spread across a text are left alone: a thesis line restated at
+// the start and the end, or a phrase quoted from the Question for
+// Judgment ("the presence or absence of safer alternatives"), repeats 3
+// times far apart in sound arguments. A 5-word clause 3 times close
+// together is left alone too - Barak's "He could have attempted to detain
+// Daenerys, but he chose not to" three times over is deliberate.
+const CLAUSE_SPLIT = /[.!?;:,]+/;
+const MIN_WORDS_FOR_CLAUSE_IN_A_ROW = 5;
+const MIN_WORDS_FOR_CLAUSE_CLUSTER = 6;
+const CLAUSE_CLUSTER_COPIES = 3;
+const CLAUSE_CLUSTER_SPAN = 6;
 
 function normalizeSentenceForRepeatCheck(sentence: string): string {
   return sentence.trim().toLowerCase().replace(/\s+/g, ' ').replace(/[^\w\s]/g, '');
@@ -465,6 +536,47 @@ function detectRepeatedSentences(content: string): { degenerate: boolean; reason
     };
   }
 
+  // Clause rules last, so a loop the sentence rules already name is
+  // reported in sentences.
+  const clauses = content.split(CLAUSE_SPLIT).map(normalizeSentenceForRepeatCheck).filter((c) => wordCount(c) > 0);
+  const clauseTotal = clauses.length;
+  let clauseRun = 1;
+  let longestClauseRun = 1;
+  let clauseRunEnd = 0;
+  for (let i = 1; i < clauseTotal; i++) {
+    clauseRun = clauses[i] === clauses[i - 1] && wordCount(clauses[i]) >= MIN_WORDS_FOR_CLAUSE_IN_A_ROW ? clauseRun + 1 : 1;
+    if (clauseRun > longestClauseRun) {
+      longestClauseRun = clauseRun;
+      clauseRunEnd = i;
+    }
+  }
+  if (longestClauseRun >= CONSECUTIVE_REPEAT_THRESHOLD) {
+    const from = clauseRunEnd - longestClauseRun + 1;
+    return {
+      degenerate: true,
+      reason: `repeated the same clause ${longestClauseRun} times in a row (clauses ${span(from, longestClauseRun)} of ${clauseTotal}) ${quote(clauses[clauseRunEnd])}`,
+    };
+  }
+
+  const clausePositions = new Map<string, number[]>();
+  clauses.forEach((c, i) => {
+    if (wordCount(c) < MIN_WORDS_FOR_CLAUSE_CLUSTER) return;
+    clausePositions.set(c, [...(clausePositions.get(c) ?? []), i]);
+  });
+  for (const [clause, at] of clausePositions) {
+    for (let k = 0; k + CLAUSE_CLUSTER_COPIES <= at.length; k++) {
+      const copies = at.slice(k, k + CLAUSE_CLUSTER_COPIES);
+      if (copies[copies.length - 1] - copies[0] > CLAUSE_CLUSTER_SPAN) continue;
+      const words = wordCount(clause);
+      const labels = copies.map((i) => String(i + 1));
+      const list = `${labels.slice(0, -1).join(', ')} and ${labels[labels.length - 1]}`;
+      return {
+        degenerate: true,
+        reason: `repeated ${aOrAn(words)} ${words}-word clause ${copies.length} times close together (clauses ${list} of ${clauseTotal}) ${quote(clause)}`,
+      };
+    }
+  }
+
   return { degenerate: false, reason: '' };
 }
 
@@ -495,9 +607,9 @@ const CONCISENESS_REMINDER: OpenRouterMessage = {
 // into whichever attempt was eventually kept, and so does a call that
 // stops itself because the trial was aborted - the whole point being that
 // a reader of the call log can see that a role needed a fallback at all,
-// not just its final outcome. All six marker prefixes below are duplicated as literal strings
-// in app.js (same pattern as ABORTED_BY_USER_MESSAGE, which is defined in
-// db.ts and copied there too) so the frontend can tell a
+// not just its final outcome. All six marker prefixes below are
+// duplicated as literal strings in app.js (same pattern as
+// ABORTED_BY_USER_MESSAGE, which is defined in db.ts and copied there too) so the frontend can tell a
 // discarded-but-recovered attempt from a discarded-and-fatal one without
 // any shared module between the two. Adding a marker here means adding it
 // there as well. No build step catches a mismatch, but
@@ -508,21 +620,24 @@ const CONCISENESS_REMINDER: OpenRouterMessage = {
 // three constants is an umbrella for the whole content-quality class, NOT
 // the narrower failure the detectors above look for. It covers both
 //   - truncation: finish_reason === 'length'. The model was still going
-//     when max_tokens stopped it. The prose is usually fine; an external
-//     limit cut it off. Not a quality failure at all.
+//     when max_tokens stopped it. That says how the attempt ended, not
+//     what the text was like - though a capped reply is usually a
+//     repetition loop that ran until the cap stopped it (all 48 whose text
+//     was stored, as of 2026-09-27).
 //   - degeneration proper: detectDegenerateRun / detectRepeatedSentences.
 //     The model finished on its own and produced unusable text.
-// Those are orthogonal, not nested - each occurs without the other, and a
-// repetition loop that runs until it hits the cap is both at once. The
-// umbrella name is a holdover from when the run-on detector was the only
-// content check there was.
+// They are told apart by how the attempt ended: the detectors only run on
+// a reply that stopped on its own, and a reply that hits the cap is
+// reported as truncated whatever it contains. The umbrella name is a
+// holdover from when the run-on detector was the only content check there
+// was.
 //
 // The names are deliberately NOT being corrected: these exact strings are
 // persisted into api_call_logs.error_message on every historical row, so
 // they are effectively a wire format, and renaming them would either break
 // the rendering of past trials or mean carrying both spellings forever.
 // The distinction is made where it actually reaches a reader instead -
-// renderCallLog() in app.js picks its badge ("Truncated" vs "Degenerated")
+// renderCallLog() in app.js picks its badge (`truncated` vs `degenerated`)
 // from the reason text, since only the cap case says "max_tokens limit".
 export const DEGENERATE_RETRIED_SAME_MODEL_MARKER = '[degenerate-retried-same-model]';
 export const DEGENERATE_RETRIED_DIFF_MODEL_MARKER = '[degenerate-retried-diff-model]';
@@ -549,8 +664,30 @@ export const TRANSIENT_RETRIED_MARKER = '[transient-retried]';
 // running server-side. A Background Function cannot be cancelled by the
 // client, so the only way to stop spending real money on an abandoned
 // trial is for the call itself to notice and bail - see the isAborted
-// callback on callOpenRouter().
+// callback on callOpenRouter(). It ends the role's row sequence in one of
+// three ways: the call stopped before starting an attempt ("Stopped before
+// attempt N"); an attempt that failed while the abort landed is not
+// retried; or a reply that finished after it is not saved
+// (finishedAfterAbort below). In every case the call makes no further
+// request.
 export const ABORTED_MID_CALL_MARKER = '[aborted-mid-call]';
+
+/**
+ * A successful result whose trial was aborted while the call was running,
+ * turned into the aborted row it now is. The reply ran and was paid for,
+ * so it keeps its tokens, cost, duration and text for the log; it is just
+ * not a success any more, since nothing will be saved. Any other result
+ * is returned unchanged.
+ */
+export function finishedAfterAbort(result: OpenRouterResult): OpenRouterResult {
+  if (result.status !== 'success') return result;
+  return {
+    ...result,
+    status: 'failed',
+    content: undefined,
+    errorMessage: `${ABORTED_MID_CALL_MARKER} Finished after the user aborted this trial: the reply was complete, but it was not saved.`,
+  };
+}
 
 // The four markers above that mean "this attempt was thrown away and the
 // chain went on to another one" - a row carrying one of them is never a
@@ -608,7 +745,9 @@ export interface OpenRouterResult {
   // actually reports on), not the cumulative time across every attempt
   // in the chain - consistent with promptTokens/completionTokens/cost
   // above, which are likewise this attempt's own, not a running total.
-  durationMs: number;
+  // Absent when the result is not an attempt at all: a call that stopped
+  // before starting one because the trial had been aborted.
+  durationMs?: number;
   // Attempts discarded before this result was reached, whatever discarded
   // them - truncation/degeneration, a plain HTTP failure at that tier, or a
   // transient failure. Each one gets its own logApiCall() row alongside
@@ -665,10 +804,13 @@ export async function callOpenRouter(
   // Same fire-and-forget-tolerant contract as onDiscardedAttempt: awaited,
   // but a rejection here must never block or fail the real call.
   onAttemptStart?: (info: AttemptStartInfo) => Promise<void> | void,
-  // Checked before every attempt (including the first). Returning true
+  // Checked before every attempt (including the first), and again as each
+  // failed attempt is recorded (see recordFailedAttemptAndAdvance), so an
+  // attempt that fails as the abort lands is not retried. Returning true
   // means the user aborted this trial while this call was still running,
   // and the chain stops immediately instead of spending more real money on
-  // a result nobody is waiting for any more.
+  // a result nobody is waiting for any more. A reply that succeeds after
+  // the abort is caught by the agent handler instead (finishedAfterAbort).
   //
   // This exists because a Netlify Background Function genuinely cannot be
   // cancelled from the browser: the client gets its 202 the instant the
@@ -782,8 +924,35 @@ export async function callOpenRouter(
     // is pointless) or for truncation/degeneracy (a real generation that
     // genuinely used its turn).
     allowFastRetry?: boolean;
-  }): Promise<{ canContinue: boolean; allTiersExhausted: boolean }> {
+  }): Promise<{ canContinue: boolean; allTiersExhausted: boolean; aborted?: OpenRouterResult }> {
     const attemptDurationMs = Date.now() - lastAttemptStartedAt;
+
+    // An abort that landed while this attempt was running ends the call
+    // here, with this attempt as its final row - checked before anything
+    // is logged as "re-tried" or "escalated", since neither will now
+    // happen. The attempt keeps its real tokens, cost and reply: it ran
+    // and was paid for. Every caller returns `aborted` as the result.
+    if (await checkAborted()) {
+      const r = opts.reason.replace(/\.$/, '');
+      const what = /^This attempt /.test(r) ? r : /^(was|did|failed|returned) /.test(r) ? `This attempt ${r}` : `This attempt failed: ${r}`;
+      console.warn(`[openrouter] ${label}: aborted by user while an attempt was running - not retrying.`);
+      return {
+        canContinue: false,
+        allTiersExhausted: false,
+        aborted: {
+          status: 'failed',
+          model: opts.model,
+          promptTokens: opts.usage?.promptTokens ?? 0,
+          completionTokens: opts.usage?.completionTokens ?? 0,
+          totalTokens: opts.usage?.totalTokens ?? 0,
+          cost: opts.cost ?? 0,
+          errorMessage: `${ABORTED_MID_CALL_MARKER} ${what}. Not retried: the user aborted this trial while it was running. Nothing was saved.`,
+          discardedAttempts,
+          durationMs: attemptDurationMs,
+          responseText: opts.responseText,
+        },
+      };
+    }
 
     // A fast bounce from an otherwise-working model: retry it without
     // spending one of this tier's real attempts, so a burst rate limit
@@ -870,10 +1039,24 @@ export async function callOpenRouter(
   }
 
   while (remainingMs() >= MIN_REMAINING_TO_ATTEMPT_MS) {
+    // Reached with no attempt in progress: before the first one, or after
+    // a backoff pause. (An abort that lands while an attempt is running is
+    // caught when that attempt is recorded - see recordFailedAttemptAndAdvance
+    // - or, after a success, by the agent handler before it logs the reply.)
+    // The row this returns is not an attempt, so it has no duration and no
+    // tokens; it used to carry the previous attempt's duration again, which
+    // the call log's total then counted twice.
+    //
+    // A request already in flight is never cancelled, deliberately. This
+    // app does not stream, and OpenRouter documents that cancelling a
+    // non-streaming request does not stop the model or its billing - "you
+    // will be billed for the complete response" - so an abort cannot save
+    // that money, only lose track of it. The attempt is left to finish and
+    // is logged truthfully, and nothing further is requested.
     if (await checkAborted()) {
       const message = `${ABORTED_MID_CALL_MARKER} Stopped before attempt ${attempt + 1}: the user aborted this trial while the call was still running server-side. Nothing further was requested and nothing was saved.`;
       console.warn(`[openrouter] ${label}: aborted by user mid-call - stopping the chain rather than spending further budget.`);
-      return failure(lastAttemptModel, message, lastUsage, discardedAttempts, Date.now() - lastAttemptStartedAt);
+      return failure(lastAttemptModel, message, undefined, discardedAttempts);
     }
     attempt++;
     lastAttemptStartedAt = Date.now();
@@ -991,6 +1174,7 @@ export async function callOpenRouter(
             reason: 'was rate limited (HTTP 429)',
             allowFastRetry: true,
           });
+          if (next.aborted) return next.aborted;
           // The pause comes after the attempt is recorded, never before:
           // recordFailedAttemptAndAdvance() times the attempt, and a backoff
           // taken first was counted as part of it - inflating the logged
@@ -1035,6 +1219,7 @@ export async function callOpenRouter(
             reason: `failed upstream (HTTP ${response.status})`,
             allowFastRetry: true,
           });
+          if (next.aborted) return next.aborted;
           if (next.canContinue) {
             await backoff(attempt);
             continue;
@@ -1075,6 +1260,7 @@ export async function callOpenRouter(
           // us it does not exist.
           skipRestOfTier: true,
         });
+        if (next.aborted) return next.aborted;
         if (next.canContinue) continue;
         return failure(attemptModel, message, undefined, discardedAttempts, Date.now() - lastAttemptStartedAt, { tierIndex, tierCount: tiers.length });
       }
@@ -1107,6 +1293,7 @@ export async function callOpenRouter(
             usage: lastUsage,
             allowFastRetry: true,
           });
+          if (next.aborted) return next.aborted;
           if (next.canContinue) {
             await backoff(attempt);
             continue;
@@ -1172,6 +1359,7 @@ export async function callOpenRouter(
           cost: calculateCost(servingModel, promptTokens, completionTokens),
           responseText: content,
         });
+        if (next.aborted) return next.aborted;
         if (next.canContinue) continue;
         // Still bad (truncated or degenerate) after using every attempt at
         // every tier (or there was no budget left for another) - neither
@@ -1251,6 +1439,7 @@ export async function callOpenRouter(
           // same-model retry rather than an immediate escalation.
           allowFastRetry: true,
         });
+        if (next.aborted) return next.aborted;
         if (next.canContinue) {
           // backoff()'s delay exists to avoid hammering a rate limiter that
           // will keep refusing for a moment - a real reason to wait after
@@ -1294,7 +1483,7 @@ function failure(
   errorMessage: string,
   usage?: { promptTokens: number; completionTokens: number; totalTokens: number },
   discardedAttempts?: DiscardedAttempt[],
-  durationMs = 0,
+  durationMs?: number,
   tierContext?: { tierIndex: number; tierCount: number }
 ): OpenRouterResult {
   return {

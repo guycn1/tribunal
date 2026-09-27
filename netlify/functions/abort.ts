@@ -4,7 +4,7 @@ import { json } from './lib/response';
 import { extractParams } from './lib/extractParams';
 import { REPRESENTATIVES } from './lib/representatives';
 import { JUDGES } from './lib/judges';
-import { logApiCall, ABORTED_BY_USER_MESSAGE } from './lib/db';
+import { logApiCall, ABORTED_BY_USER_MESSAGE, NO_MODEL_USED } from './lib/db';
 
 // POST /api/trials/:id/abort
 // Body: { roles: string[] } - the agent roles still pending (loading, or
@@ -15,15 +15,20 @@ import { logApiCall, ABORTED_BY_USER_MESSAGE } from './lib/db';
 // in db.ts), which does two separate jobs:
 //
 //   1. It makes the abort visible and persistent, so a trial the user
-//      deliberately stopped reads as "Aborted" in the run-history sidebar
+//      deliberately stopped reads as `aborted` in the run-history sidebar
 //      rather than as a generic failure - or as a falsely-clean success, if
 //      an abandoned call happens to finish anyway.
 //   2. It is also the ONLY durable, server-visible signal that the abort
 //      happened, and the agent Background Functions poll for it: the
 //      browser has no way to cancel a Background Function, so each
-//      in-flight call checks isTrialAborted() between attempts and stops
-//      itself, and checks once more before saving a result (see the
-//      isAborted callback on callOpenRouter, and isTrialAborted in db.ts).
+//      in-flight call checks isTrialAborted() before each attempt and as
+//      each one ends, and stops itself, and checks again before saving a
+//      result (see the isAborted callback on callOpenRouter, and
+//      isTrialAborted in db.ts).
+//
+// These rows record a request to stop, not a model call: the call log
+// shows them as `abort requested`, and they do not count against the
+// site-wide call cap (isGlobalCallCapExceeded in db.ts).
 //
 // So this call does stop server-side work, just indirectly - by leaving a
 // record the running calls notice, not by cancelling anything. It cannot
@@ -59,7 +64,7 @@ const rawHandler: Handler = async (event) => {
       trialId: id,
       agentRole: role,
       callType,
-      modelUsed: 'n/a',
+      modelUsed: NO_MODEL_USED,
       promptTokens: 0,
       completionTokens: 0,
       totalTokens: 0,

@@ -5,7 +5,7 @@ import { extractParams } from './lib/extractParams';
 import { getChargeSheet } from './lib/chargeSheet';
 import { REPRESENTATIVES } from './lib/representatives';
 import { buildRepresentativeMessages } from './lib/prompts';
-import { callOpenRouter } from './lib/openrouter';
+import { callOpenRouter, finishedAfterAbort } from './lib/openrouter';
 import { getModelForRole, AGENT_MAX_TOKENS } from './lib/models';
 import { getTrial, upsertRepresentativeArgument, logApiCall, upsertAgentProgress, isGlobalCallCapExceeded, isTrialAborted, GLOBAL_CALL_CAP } from './lib/db';
 import { isSiteGateOk } from './lib/siteGate';
@@ -83,7 +83,7 @@ const rawHandler: Handler = async (event) => {
   // That is what lets a client polling GET /api/trials/:id see the
   // escalation happening live, mid-call, instead of only learning about it
   // once this role's result is already final.
-  const result = await callOpenRouter(
+  let result = await callOpenRouter(
     getModelForRole(repRole),
     messages,
     MAX_TOKENS,
@@ -125,6 +125,11 @@ const rawHandler: Handler = async (event) => {
     () => isTrialAborted(id)
   );
 
+  // A reply that finished after the user aborted the trial is logged as
+  // what it now is - aborted, and not saved - rather than as a success; see
+  // finishedAfterAbort in openrouter.ts.
+  if (result.status === 'success' && (await isTrialAborted(id))) result = finishedAfterAbort(result);
+
   await logApiCall({
     trialId: id,
     agentRole: repRole,
@@ -149,7 +154,7 @@ const rawHandler: Handler = async (event) => {
   // and a role the client never listed as pending would otherwise leave no
   // trace at all). What an aborted trial must NOT get is a saved result -
   // quietly resurrecting an argument minutes after the user stopped the
-  // trial would contradict both the abort row and the sidebar's "Aborted"
+  // trial would contradict both the abort row and the sidebar's `aborted`
   // badge. Re-checked here rather than inferred from the result, since the
   // call may well have completed in the window before the abort landed.
   if (await isTrialAborted(id)) {

@@ -22,10 +22,15 @@
  *      opening one from history, and the call-log refresh after a run all
  *      used to let a network failure escape as an uncaught rejection, so a
  *      click appeared to do nothing and the error reached only the console.
- *   4. The call log must say what actually happened: a capped response is
- *      "Truncated" and an incoherent one "Degenerated", every cell carries
- *      its column name for the narrow card layout, and a model id is
- *      shortened by rule without losing the date stamp.
+ *   4. The call log must say what actually happened: a response the token
+ *      cap stopped is "truncated" and one a detector flagged
+ *      "degenerated"; an abort endpoint's row reads "abort requested",
+ *      dimmed and uncaptioned, with its model printed as "n/a" rather than
+ *      shortened like a model id; every cell carries its column name for
+ *      the narrow card layout; and a model id is shortened by rule without
+ *      losing the date stamp.
+ *   5. Every badge label, on the agent cards as in the call log, reads in
+ *      lowercase in the text itself.
  */
 
 const { installDom, loadApp } = require('./support/load-app');
@@ -54,7 +59,7 @@ console.log('\n=== app.js executes cleanly (catches a TDZ-class load crash) ==='
 let app;
 try {
   // Hand back exactly the pieces under test from app.js's own top-level scope.
-  app = loadApp(['state', 'el', 'renderRepresentatives', 'renderJudges', 'renderCallLog', 'agentCardSignature', 'shortModelName', 'REPRESENTATIVE_ROLES', 'JUDGE_ROLES', 'beginTrial', 'loadTrial']);
+  app = loadApp(['state', 'el', 'renderRepresentatives', 'renderJudges', 'renderCallLog', 'agentCardSignature', 'shortModelName', 'REPRESENTATIVE_ROLES', 'JUDGE_ROLES', 'beginTrial', 'loadTrial', 'buildAgentStatusBody', 'appendTruncationNotice']);
   check('top-level code ran with no error', true);
 } catch (error) {
   check('top-level code ran with no error', false, error.message);
@@ -126,8 +131,9 @@ check('no stale card survives a trial change', beforeTrial.every((c, i) => c !==
 
 console.log('\n=== Call log distinguishes a truncation from a degeneration ===');
 // Both come through the same content-quality marker, but they are different
-// failures: one ran into the token cap, the other produced incoherent text.
-// Labelling a capped response "Degenerated" was simply inaccurate.
+// failures: one ran into the token cap, the other stopped on its own and a
+// detector flagged it. Labelling a capped response "degenerated" was simply
+// inaccurate.
 const { renderCallLog } = app;
 /**
  * Renders a one-row call log for a representative whose only logged attempt
@@ -152,17 +158,105 @@ function statusTextFor(errorMessage, status = 'failed') {
   return row ? row.innerHTML : '';
 }
 
+/**
+ * Whether `html` holds a badge reading exactly `label`. Matching the badge
+ * itself rather than the word anywhere in the row, since a caption or an
+ * error message can contain the same word.
+ *
+ * @param {string} html
+ * @param {string} label
+ * @returns {boolean}
+ */
+function hasBadge(html, label) {
+  return [...html.matchAll(/<span class="badge [\w-]+">([^<]*)<\/span>/g)].some((m) => m[1] === label);
+}
+
 const truncatedHtml = statusTextFor('[degenerate-retried-same-model] This attempt hit the max_tokens limit before finishing naturally - re-tried with the same model.');
-check('a capped response is labelled "Truncated"', /Truncated/.test(truncatedHtml) && !/Degenerated/.test(truncatedHtml), truncatedHtml.slice(0, 160));
+check('a capped response is labelled "truncated"', hasBadge(truncatedHtml, 'truncated') && !hasBadge(truncatedHtml, 'degenerated'), truncatedHtml.slice(0, 160));
 
 const degenerateHtml = statusTextFor('[degenerate-retried-same-model] This attempt repeated the same sentence 5 times ("i had no other way...") - re-tried with the same model.');
-check('a looping response is still labelled "Degenerated"', /Degenerated/.test(degenerateHtml) && !/Truncated/.test(degenerateHtml), degenerateHtml.slice(0, 160));
+check('a looping response is still labelled "degenerated"', hasBadge(degenerateHtml, 'degenerated') && !hasBadge(degenerateHtml, 'truncated'), degenerateHtml.slice(0, 160));
 
 const runOnHtml = statusTextFor('[degenerate-final] Every model tier was tried (4 in total, ending with google/gemini-2.5-pro) and none produced a usable response - the final attempt collapsed into a 62-word run with no punctuation ("she chose to burn...").');
-check('a final run-on failure is labelled "Degenerated"', /Degenerated/.test(runOnHtml) && !/Truncated/.test(runOnHtml), runOnHtml.slice(0, 160));
+check('a final run-on failure is labelled "degenerated"', hasBadge(runOnHtml, 'degenerated') && !hasBadge(runOnHtml, 'truncated'), runOnHtml.slice(0, 160));
 
 const finalCapHtml = statusTextFor('[degenerate-final] Every model tier was tried (4 in total, ending with google/gemini-2.5-pro) and none produced a usable response - the final attempt hit the max_tokens limit before finishing naturally. Nothing was saved.');
-check('a final capped failure is labelled "Truncated"', /Truncated/.test(finalCapHtml) && !/Degenerated/.test(finalCapHtml), finalCapHtml.slice(0, 160));
+check('a final capped failure is labelled "truncated"', hasBadge(finalCapHtml, 'truncated') && !hasBadge(finalCapHtml, 'degenerated'), finalCapHtml.slice(0, 160));
+
+console.log('\n=== Agent-card badges read in lowercase, like the call log and sidebar ===');
+// Every badge in the app starts lowercase, so the three views read as one
+// set. Each card state that shows a badge is built and its text compared
+// exactly.
+{
+  const { buildAgentStatusBody, appendTruncationNotice } = app;
+  /**
+   * The text of every badge directly inside `node`.
+   *
+   * @param {{children: {className: string, textContent: string}[]}} node
+   * @returns {string[]}
+   */
+  const badgeTexts = (node) => node.children.filter((c) => /\bbadge\b/.test(c.className)).map((c) => c.textContent);
+  const cases = [
+    ['an aborted call', buildAgentStatusBody({ status: 'aborted' }, 'jon_snow', 'Arguing'), 'aborted'],
+    ['a failed call', buildAgentStatusBody({ status: 'failed', error: 'HTTP 402' }, 'jon_snow', 'Arguing'), 'call failed'],
+    ['a call the page stopped waiting on', buildAgentStatusBody({ status: 'timeout', error: 'no reply' }, 'jon_snow', 'Arguing'), 'no response yet'],
+  ];
+  state.maxTokens = 1400;
+  const truncatedCard = document.createElement('div');
+  appendTruncationNotice(truncatedCard, { status: 'success', tokens: { completion: 1400 } });
+  cases.push(['a historical truncated result', truncatedCard, 'truncated']);
+  for (const [what, node, expected] of cases) {
+    const texts = badgeTexts(node);
+    check(`${what} shows the "${expected}" badge`, texts.length === 1 && texts[0] === expected, JSON.stringify(texts));
+  }
+}
+
+console.log('\n=== An abort row\'s model reads "n/a", not a shortened "a" ===');
+// The abort endpoint logs "n/a" as the model of every row it writes. Run
+// through shortModelName(), its "n/" looks like a vendor prefix and the cell
+// read "a". It is not a model id, so it is printed as it stands, with no
+// <abbr> and no tooltip - there is no longer form to reveal.
+{
+  /**
+   * Renders a one-row call log and returns that row's Model cell contents.
+   *
+   * @param {string} modelUsed
+   * @returns {string}
+   */
+  const modelCellFor = (modelUsed) => {
+    state.callLog = [{
+      agentRole: 'jon_snow', callType: 'representative', modelUsed,
+      promptTokens: 0, completionTokens: 0, totalTokens: 0, cost: 0,
+      status: 'failed', errorMessage: 'Aborted by user before this call could complete.',
+      durationMs: null, timestamp: new Date().toISOString(),
+    }];
+    renderCallLog();
+    const row = el.callLogBody.children[0];
+    const match = (row ? row.innerHTML : '').match(/<td data-label="Model">([\s\S]*?)<\/td>/);
+    return match ? match[1].trim() : '';
+  };
+  const naCell = modelCellFor('n/a');
+  // The same row's status: a request to stop, not a failure.
+  const abortRow = (el.callLogBody.children[0] || {}).innerHTML || '';
+  check('the abort endpoint\'s row reads "abort requested", in grey', /<span class="badge badge-aborted">abort requested<\/span>/.test(abortRow) && !/badge-fail/.test(abortRow), abortRow.slice(abortRow.indexOf('Status'), abortRow.indexOf('Status') + 200));
+  check('with no caption under it, and dimmed', !/status-caption/.test(abortRow.slice(abortRow.indexOf('data-label="Status"'))) && el.callLogBody.children[0].classList.contains('row-dimmed'));
+  /**
+   * Whether a one-row call log for the given error message is dimmed.
+   * @param {string} errorMessage
+   * @returns {boolean}
+   */
+  const dimmed = (errorMessage) => {
+    state.callLog = [{ agentRole: 'jon_snow', callType: 'representative', modelUsed: 'mistralai/mistral-small-24b-instruct-2501', promptTokens: 1000, completionTokens: 400, totalTokens: 1400, cost: 0.0001, status: 'failed', errorMessage, durationMs: 9000, timestamp: new Date().toISOString() }];
+    renderCallLog();
+    return el.callLogBody.children[0].classList.contains('row-dimmed');
+  };
+  check('a discarded attempt that was retried is dimmed', dimmed('[degenerate-retried-same-model] This attempt hit the max_tokens limit before finishing naturally - re-tried with the same model.'));
+  check('but the role\'s own aborted row, its outcome, is not', !dimmed('[aborted-mid-call] Finished after the user aborted this trial: the reply was complete, but it was not saved.'));
+  check('the Model cell reads exactly "n/a"', naCell === 'n/a', naCell);
+  check('with no <abbr> or tooltip', !/<abbr|title=/.test(naCell), naCell);
+  const realCell = modelCellFor('mistralai/mistral-small-24b-instruct-2501');
+  check('a real model id is still shortened, with the full id on hover', realCell.includes('<abbr class="col-short" title="mistralai/mistral-small-24b-instruct-2501">mistral-small-24b-2501</abbr>'), realCell);
+}
 
 console.log('\n=== Every call-log cell carries the label its card layout needs ===');
 // Below 720px the table becomes one card per call, and each cell prints its

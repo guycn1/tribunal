@@ -11,9 +11,9 @@
      deliberate exception: .model-name is 0.92em, so a model id shrinks
      relative to whatever line it sits in rather than against the root -
      it appears in contexts at different sizes and should stay
-     proportional to each. Lengths that
-     should NOT track type size - hairline borders, radii, fixed
-     structural spacing, breakpoints - stay in px on purpose. */
+     proportional to each. Lengths that should NOT track type size -
+     hairline borders, radii, fixed structural spacing, breakpoints - stay
+     in px on purpose. */
   font-size: 90%;
 
   --bg: #14171c;
@@ -250,8 +250,8 @@ body {
 }
 
 /* White rather than the theme's gold accent (item 2 of CLAUDE.md's
-   sidebar/scrollbar/card polish backlog) - .active
-   (below) has two classes vs. this rule's one, so it naturally wins on
+   sidebar/scrollbar/card polish backlog) - .active (below) has two
+   classes vs. this rule's one, so it naturally wins on
    specificity alone when an entry is both the active one and currently
    hovered, without needing a combined :hover.active selector. */
 .history-item:hover {
@@ -766,9 +766,8 @@ body {
    in current Chrome and Edge nothing in this block applies - not the 8px
    width, not the thumb colour, not the :active tier. Safari was not
    tested. History, worth reading before touching this again
-   (2026-09-04): a non-zero
-   width here was found to have an undocumented-to-us side effect in
-   Firefox 153/154 - per Firefox's own 153 release notes, "rules with
+   (2026-09-04): a non-zero width here was found to have an
+   undocumented-to-us side effect in Firefox 153/154 - per Firefox's own 153 release notes, "rules with
    non-zero width/height disable overlay scrollbars for the affected
    container" - which had been silently forcing Firefox into classic,
    always-visible scrollbar rendering this whole time, unbeknownst to
@@ -835,35 +834,57 @@ body {
 .badge {
   display: inline-block;
   border-radius: 999px;
-  /* Vertical padding is deliberately uneven, and the total is still 6px so
-     the pill's height is unchanged. Symmetric padding centres the LINE BOX,
-     which is not the same as centring the text you can see: this font
-     reserves 12px above the baseline and 3px below it at this size, so the
-     baseline sits 4.5px lower in the box than the visible ink implies, and
-     every badge rendered ~1.5px low inside its own pill. Shifting 1px of
-     padding from the top to the bottom lifts the line box by half that
-     difference.
-     It cannot be exact for every badge at once, because how far the ink
-     sits from the baseline depends on the letters: a word with no ascender
-     and no descender ("success") sat 1.51px low, one with an ascender but
-     no descender ("Truncated", "failed") 0.51px. Both families occur about
-     equally often here, so this splits the difference and leaves either at
-     ~0.5px - about 2% of the pill's height, against 7% before.
-     The badge's own font-size is a rem value and is never overridden per
-     breakpoint, so this one rule is the whole fix: measured identical at
-     1100px, 700px and 400px, in the table, in the card layout, on the
-     agent cards and in the sidebar. */
-  padding: 2px 10px 4px;
+  /* Fallback only - see the @supports block below, which every current
+     browser takes. Symmetric padding centres the line box, not the text,
+     and where the text lands in that box depends on the font: the page
+     uses the system font stack, so Windows draws badges in Segoe UI (tall
+     ascent, text sits 1-2px low) and Android in Roboto (balanced, text
+     roughly centred). No fixed padding is right for both. */
+  padding: 3px 10px;
   font-size: 0.75rem;
-  /* white-space: normal lets a multi-word badge (e.g. "No response yet")
+  /* Keeps a badge that wraps onto two lines compact. With the text-box trim
+     below, it changes only the gap between wrapped lines, not a one-line
+     pill's height; without the trim it also sets that height, about 1.1em
+     plus the 6px of padding. */
+  line-height: 1.1;
+  /* white-space: normal lets a multi-word badge (e.g. "no response yet")
      wrap between words when its column is narrow. Deliberately no
      word-break: break-word here, unlike earlier - that broke single-word
-     badges like "Degenerated" mid-character ("Degenerat" / "ed") the
+     badges like "degenerated" mid-character ("degenerat" / "ed") the
      moment the column got tight, which reads as broken rather than
      responsive. overflow-wrap: break-word on the parent <td> is still
      there as a last-resort fallback for a genuinely unbreakable string,
      but no real badge text here needs it. */
   white-space: normal;
+}
+
+/* Centres badge text the same way whatever font the device draws it in.
+   text-box trims the badge's content down to the band between the
+   baseline and the top of a capital letter, so the padding is measured
+   from the letters themselves rather than from the font's own (and
+   font-specific) ascent and descent. Rendered in Edge, Firefox and WebKit
+   (Safari's engine), every call-log and sidebar label sits within 0.25px
+   of the same place in Segoe UI (Windows) as in Roboto (Android).
+   The bottom padding is 0.1em - 0.4px larger than the top: 0.1em sets the
+   pill's centre halfway between the middle of a capital letter and the
+   middle of a lowercase one, and the 0.4px, split across top and bottom,
+   lowers the text 0.2px from there, which looked better centred on
+   screen. Every badge label is lowercase, some with an ascender and no
+   descender ("truncated", "failed", "aborted") and the rest with a
+   descender ("degenerated") or neither ("success"). Measured by their ink
+   in Edge, the first family sits ~0.5-0.6px above the pill's centre and
+   the second ~0.6px below it, a descender pulling the ink box down
+   further than the letters' bodies; "no response", with a descender and
+   no ascender to balance it, measures ~1.8px low. Rendering snaps to the
+   screen's pixel grid, so sub-pixel changes here show only approximately.
+   The total, 0.8em + 6px plus a capital's height (~0.7em), makes a
+   one-line pill about 1.5em + 6px tall (22px at the default text size)
+   whatever the line-height. */
+@supports (text-box: trim-both cap alphabetic) {
+  .badge {
+    text-box: trim-both cap alphabetic;
+    padding: calc(0.35em + 3.2px) 10px calc(0.45em + 2.8px);
+  }
 }
 
 .badge-ok {
@@ -896,10 +917,9 @@ body {
    .model-chain is the shared class for both (the still-loading model line
    in buildAgentStatusBody() and the post-success "Answered by:" line in
    buildRepresentativeCard()/buildJudgeCard()), so one rule covers both
-   cases. A plain border-top
-   would read as a harsh, abrupt cutoff against the surrounding
-   prose - ::before with a gradient background instead tapers to
-   transparent at both ends, positioned in the gap padding-top opens up
+   cases. A plain border-top would read as a harsh, abrupt cutoff against
+   the surrounding prose - ::before with a gradient background instead
+   tapers to transparent at both ends, positioned in the gap padding-top opens up
    above the text (position: relative on .model-chain gives ::before's
    absolute positioning something to anchor to). */
 .model-chain {
@@ -1072,13 +1092,16 @@ table.call-log tfoot tr.call-log-total-row td {
    kinds qualify, all matched in renderCallLog() in app.js: truncated or
    degenerate content (DEGENERATE_RETRIED_*_MARKER), a plain HTTP failure
    that escalated to the next tier (HTTP_ERROR_ESCALATED_MARKER), and a
-   transient failure that was retried (TRANSIENT_RETRIED_MARKER). An abort
-   caught mid-call is deliberately NOT dimmed - it is a deliberate stop,
-   not a recovered failure. Dimmed to signal the failure wasn't fatal,
-   distinct from a [degenerate-final] row (nothing left to try - the last
-   tier failing too, or no time budget for another), which deliberately
-   stays at full opacity since that outcome genuinely is fatal. */
-table.call-log tbody tr.row-degenerated-retried {
+   transient failure that was retried (TRANSIENT_RETRIED_MARKER). Dimmed to
+   signal the failure wasn't fatal, distinct from a [degenerate-final] row
+   (nothing left to try - the last tier failing too, or no time budget for
+   another), which deliberately stays at full opacity since that outcome
+   genuinely is fatal.
+   The abort endpoint's "abort requested" rows are dimmed too: they record
+   the request to stop, not an outcome, and the role's own last row
+   follows. That last row - [aborted-mid-call], when the call was still
+   running - is the role's outcome, so it stays at full opacity. */
+table.call-log tbody tr.row-dimmed {
   opacity: 0.53;
 }
 
@@ -1276,9 +1299,8 @@ table.call-log .col-full {
     /* Just under the value it labels (0.74rem), so the label still reads as
        subordinate - but that is carried by the dim colour, the uppercase and
        the letter-spacing, not by being conspicuously tiny. It was 0.66rem
-       from the day this layout was written until it was raised to this,
-       which rendered at
-       10.56px then and 9.50px once :root dropped to 90%: the same
+       from the day this layout was written, which rendered at 10.56px
+       then and 9.50px once :root dropped to 90%: the same
        declaration, a pixel smaller, and at this size a pixel is ten per
        cent. This restores roughly the original appearance without opting
        the label out of that deliberate global scale-down. The 92px gutter

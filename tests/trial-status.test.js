@@ -1,7 +1,8 @@
 /**
  * @file Regression tests for when a trial is marked completed -
  * markTrialCompletedIfJudgingDone() in netlify/functions/lib/db.ts, and the
- * judge endpoint that calls it.
+ * judge endpoint that calls it - and for how the agent endpoints and the
+ * site-wide call cap treat an aborted trial.
  *
  * Run with `npm test`. No network: the backend is compiled from the real
  * source with the project's own tsc, the Supabase client it imports is
@@ -23,6 +24,12 @@
  *      ones included, so they can be audited in full - and the trial
  *      endpoint never sends that text to the page. A database the column
  *      has not reached yet still gets every row, without the text.
+ *   4. An aborted trial gains nothing: a ruling or argument that finishes
+ *      after the abort is logged once, as aborted, and never saved; the
+ *      trial is not marked completed; and a call aborted before it starts
+ *      logs a row with no duration.
+ *   5. The abort endpoint's rows do not count against the site-wide call
+ *      cap, while real calls still reach it.
  */
 
 const { compileBackend } = require('./support/compile-backend');
@@ -46,9 +53,9 @@ function check(name, condition, detail) {
   }
 }
 
-const backend = compileBackend(['lib/db.ts', 'lib/openrouter.ts', 'judge-background.ts', 'trial.ts']);
+const backend = compileBackend(['lib/db.ts', 'lib/openrouter.ts', 'judge-background.ts', 'representative-background.ts', 'trial.ts']);
 useFakeSupabase(backend.outDir);
-const { markTrialCompletedIfJudgingDone, ABORTED_BY_USER_MESSAGE } = backend.load('lib/db.js');
+const { markTrialCompletedIfJudgingDone, ABORTED_BY_USER_MESSAGE, isGlobalCallCapExceeded, GLOBAL_CALL_CAP, NO_MODEL_USED } = backend.load('lib/db.js');
 const markers = backend.load('lib/openrouter.js');
 
 /**
@@ -121,11 +128,13 @@ const GOOD_RULING = 'VERDICT: justified\n\nThe record shows a surrendered city b
  * @param {string | string[]} scenario.reply The model's reply text, or one
  *   per attempt in order (the last one repeats).
  * @param {boolean} [scenario.aborted] Whether the trial was aborted first.
+ * @param {boolean} [scenario.abortDuringCall] Whether the abort lands while
+ *   the model is generating its reply, as in trial a02b8215.
  * @param {Record<string, string[]>} [scenario.missingColumns] Columns the
  *   database does not have yet - see fakeSupabase.
  * @returns {Promise<{status: number, tables: object, writes: object[]}>}
  */
-async function runJudge({ reply, aborted = false, missingColumns }) {
+async function runJudge({ reply, aborted = false, abortDuringCall = false, missingColumns }) {
   const replies = Array.isArray(reply) ? [...reply] : [reply];
   const logs = [judgeRow('elon', null, TRIAL_ID), judgeRow('shamgar', null, TRIAL_ID)];
   if (aborted) logs.push({ ...judgeRow('barak', ABORTED_BY_USER_MESSAGE, TRIAL_ID) });
@@ -138,14 +147,17 @@ async function runJudge({ reply, aborted = false, missingColumns }) {
     agent_progress: [],
   }, { missingColumns });
   global.fakeSupabase = fake.client;
-  global.fetch = async (_url, request) => ({
-    ok: true, status: 200, headers: new Map(),
-    json: async () => ({
-      model: JSON.parse(request.body).model,
-      choices: [{ message: { content: replies.length > 1 ? replies.shift() : replies[0] }, finish_reason: 'stop' }],
-      usage: { prompt_tokens: 3000, completion_tokens: 200, total_tokens: 3200 },
-    }),
-  });
+  global.fetch = async (_url, request) => {
+    if (abortDuringCall) fake.tables.api_call_logs.push({ ...judgeRow('barak', ABORTED_BY_USER_MESSAGE, TRIAL_ID) });
+    return {
+      ok: true, status: 200, headers: new Map(),
+      json: async () => ({
+        model: JSON.parse(request.body).model,
+        choices: [{ message: { content: replies.length > 1 ? replies.shift() : replies[0] }, finish_reason: 'stop' }],
+        usage: { prompt_tokens: 3000, completion_tokens: 200, total_tokens: 3200 },
+      }),
+    };
+  };
   const response = await quietly(() => judgeHandler({
     httpMethod: 'POST', path: `/.netlify/functions/judge-background/${TRIAL_ID}/barak`, headers: {}, queryStringParameters: {},
   }, {}));
@@ -158,6 +170,7 @@ process.env.OPENROUTER_API_KEY = 'test-key';
 process.env.NETLIFY_DEV = 'true';
 const { handler: judgeHandler } = backend.load('judge-background.js');
 const { handler: trialHandler } = backend.load('trial.js');
+const { handler: representativeHandler } = backend.load('representative-background.js');
 // A judge reply the repetition check discards: one sentence twice in a row.
 const LOOPED_RULING = 'VERDICT: justified\n\nThe bells had rung before the fire. He had no lawful authority to strike her down. He had no lawful authority to strike her down.';
 
@@ -222,6 +235,33 @@ async function main() {
   check('does not mark the trial completed', !r.completed, JSON.stringify(r.updates));
   check('does not throw', r.threw === null, String(r.threw));
 
+  say('\n=== The call cap counts model calls, not abort requests ===');
+  {
+    const now = new Date().toISOString();
+    const call = { status: 'success', model_used: 'mistralai/mistral-small-24b-instruct-2501', timestamp: now };
+    const abortRequest = { status: 'failed', model_used: NO_MODEL_USED, error_message: ABORTED_BY_USER_MESSAGE, timestamp: now };
+    /**
+     * Runs the real cap check against the given log rows, with the local-dev
+     * exemption this suite otherwise relies on switched off.
+     * @param {object[]} rows
+     * @returns {Promise<{exceeded: boolean, count: number}>}
+     */
+    const capWith = async (rows) => {
+      global.fakeSupabase = fakeSupabase({ api_call_logs: rows }).client;
+      const saved = process.env.NETLIFY_DEV;
+      delete process.env.NETLIFY_DEV;
+      try {
+        return await isGlobalCallCapExceeded();
+      } finally {
+        process.env.NETLIFY_DEV = saved;
+      }
+    };
+    const below = await capWith([...Array(GLOBAL_CALL_CAP - 1).fill(call), ...Array(8).fill(abortRequest)]);
+    check('abort rows do not push the count to the cap', !below.exceeded && below.count === GLOBAL_CALL_CAP - 1, JSON.stringify(below));
+    const at = await capWith(Array(GLOBAL_CALL_CAP).fill(call));
+    check('real calls still reach it', at.exceeded && at.count === GLOBAL_CALL_CAP, JSON.stringify(at));
+  }
+
   say('\n=== The judge endpoint: ruling saved first, then the trial completed ===');
   let j = await runJudge({ reply: GOOD_RULING });
   const rulingAt = j.writes.findIndex((w) => w.table === 'judge_rulings');
@@ -240,6 +280,53 @@ async function main() {
   j = await runJudge({ reply: GOOD_RULING, aborted: true });
   check('no ruling is written into it', j.tables.judge_rulings.length === 0, JSON.stringify(j.tables.judge_rulings));
   check('it is not marked completed', j.tables.trials[0].status === 'created', j.tables.trials[0].status);
+
+  say('\n=== The judge endpoint: a ruling that finishes after the abort ===');
+  // Trial a02b8215 (2026-09-21): replies that finished after the abort were
+  // logged as successes, then quietly thrown away.
+  j = await runJudge({ reply: GOOD_RULING, abortDuringCall: true });
+  const lateRows = j.tables.api_call_logs.filter((row) => row.agent_role === 'barak' && row.error_message !== ABORTED_BY_USER_MESSAGE);
+  check('it is logged once, as aborted rather than success', lateRows.length === 1 && lateRows[0].status === 'failed' && /^\[aborted-mid-call\] Finished after the user aborted this trial/.test(lateRows[0].error_message), JSON.stringify(lateRows.map((r) => [r.status, r.error_message])));
+  check('with the reply and its cost kept for audit', lateRows.length === 1 && lateRows[0].response_text === GOOD_RULING && lateRows[0].completion_tokens === 200 && lateRows[0].cost > 0);
+  check('and no ruling is saved', j.tables.judge_rulings.length === 0, JSON.stringify(j.tables.judge_rulings));
+  check('nor the trial marked completed', j.tables.trials[0].status === 'created', j.tables.trials[0].status);
+
+  say('\n=== The representative endpoint: an argument that finishes after the abort ===');
+  {
+    const ARGUMENT = 'Honorable Tribunal, the bells had rung before the fire, and he acted to stop the next one.';
+    const fake = fakeSupabase({
+      case_definitions: [CASE_ROW],
+      trials: [{ id: TRIAL_ID, case_code: 'T-001', status: 'created' }],
+      representative_arguments: [],
+      judge_rulings: [],
+      api_call_logs: [],
+      agent_progress: [],
+    });
+    global.fakeSupabase = fake.client;
+    global.fetch = async (_url, request) => {
+      fake.tables.api_call_logs.push({ ...judgeRow('grey_worm', ABORTED_BY_USER_MESSAGE, TRIAL_ID, 'representative') });
+      return {
+        ok: true, status: 200, headers: new Map(),
+        json: async () => ({
+          model: JSON.parse(request.body).model,
+          choices: [{ message: { content: ARGUMENT }, finish_reason: 'stop' }],
+          usage: { prompt_tokens: 1000, completion_tokens: 60, total_tokens: 1060 },
+        }),
+      };
+    };
+    await quietly(() => representativeHandler({
+      httpMethod: 'POST', path: `/.netlify/functions/representative-background/${TRIAL_ID}/grey_worm`, headers: {}, queryStringParameters: {},
+    }, {}));
+    const rows = fake.tables.api_call_logs.filter((row) => row.agent_role === 'grey_worm' && row.error_message !== ABORTED_BY_USER_MESSAGE);
+    check('it is logged once, as aborted rather than success', rows.length === 1 && rows[0].status === 'failed' && /^\[aborted-mid-call\] Finished after the user aborted this trial/.test(rows[0].error_message), JSON.stringify(rows.map((r) => [r.status, r.error_message])));
+    check('and no argument is saved', fake.tables.representative_arguments.length === 0, JSON.stringify(fake.tables.representative_arguments));
+  }
+
+  say('\n=== The judge endpoint: a call aborted before it starts ===');
+  j = await runJudge({ reply: GOOD_RULING, aborted: true });
+  const stopRows = j.tables.api_call_logs.filter((row) => row.agent_role === 'barak' && row.error_message !== ABORTED_BY_USER_MESSAGE);
+  check('its row says it stopped before attempt 1', stopRows.length === 1 && /Stopped before attempt 1/.test(stopRows[0].error_message), JSON.stringify(stopRows.map((r) => r.error_message)));
+  check('and carries no duration, since no attempt ran', stopRows.length === 1 && stopRows[0].duration_ms === null, stopRows.length ? String(stopRows[0].duration_ms) : 'no row');
 
   say('\n=== Every reply is kept for audit, and the page never sees it ===');
   j = await runJudge({ reply: [LOOPED_RULING, GOOD_RULING] });

@@ -207,7 +207,9 @@ async function main() {
   // ======================================================== README: endpoints
   console.log('\n=== README: the endpoint table matches netlify.toml and the handlers ===');
   const api = section(README, '### API endpoints');
-  const rows = [...api.matchAll(/^\| `(GET|POST|PUT|PATCH|DELETE)` \| `([^`]+)` \| `([\w-]+)\.ts` \| (.*) \|$/gm)]
+  // Each row names its function at the start of its description
+  // ("`abort.ts`: Takes ..."), not in a column of its own.
+  const rows = [...api.matchAll(/^\| `(GET|POST|PUT|PATCH|DELETE)` \| `([^`]+)` \| `([\w-]+)\.ts`: (.*) \|$/gm)]
     .map((m) => ({ method: m[1], path: m[2], fn: m[3], text: m[4] }));
   const redirects = [...TOML.matchAll(/from = "([^"]+)"\s*\n\s*to = "\/\.netlify\/functions\/([\w-]+)[^"]*"/g)].map((m) => ({ path: m[1], fn: m[2] }));
   check('the endpoint table has rows', rows.length > 0);
@@ -485,6 +487,31 @@ async function main() {
     check(`a ${n}-sentence passage repeated is caught`, !(await acceptedFirstTime(passageTwice(n))));
     check(`a ${n - 1}-sentence passage repeated is not`, await acceptedFirstTime(passageTwice(n - 1)));
   }
+
+  // The two clause rules. Each copy of a clause sits in a different
+  // sentence, so no sentence rule can fire.
+  const clusterClaims = [...README.matchAll(/a clause of (\d+)\+ words (\d+) times close together/g)].map((m) => `${m[1]}/${m[2]}`);
+  // Stated wherever the clause rules are, not merely somewhere in README.
+  const inARowClauseClaims = README.match(/the same clause twice in a row, or a clause of/g) || [];
+  check('a clause twice in a row is stated as a rule, wherever the clause rules are', inARowClauseClaims.length > 0 && inARowClauseClaims.length === clusterClaims.length, `${inARowClauseClaims.length} of ${clusterClaims.length}`);
+  check('a clause twice in a row is caught', !(await acceptedFirstTime(`${filler(1)} He had seen the city burn, he had seen the city burn, and he acted. ${filler(2)}`)));
+  check('and the same clause twice apart is not', await acceptedFirstTime(`He had seen the city burn, and he acted. ${filler(1)} He had seen the city burn, and he waited.`));
+  check('the clause-cluster thresholds are stated, the same everywhere', clusterClaims.length > 0 && clusterClaims.every((c) => c === clusterClaims[0]), clusterClaims.join(', '));
+  if (clusterClaims.length) {
+    const [words, copies] = clusterClaims[0].split('/').map(Number);
+    /** A clause of exactly `count` words. @param {number} count */
+    const clauseOf = (count) => Array.from({ length: count }, (_, i) => `part${i}`).join(' ');
+    /**
+     * `times` copies of a `count`-word clause, one clause apart, each in a
+     * sentence of its own.
+     * @param {number} count
+     * @param {number} times
+     */
+    const cluster = (count, times) => Array.from({ length: times }, (_, i) => `${clauseOf(count)}, then ${i}.`).join(' ');
+    check(`a ${words}-word clause ${copies} times close together is caught`, !(await acceptedFirstTime(cluster(words, copies))));
+    check(`a ${words - 1}-word clause ${copies} times close together is not`, await acceptedFirstTime(cluster(words - 1, copies)));
+    check(`a ${words}-word clause ${copies - 1} times close together is not`, await acceptedFirstTime(cluster(words, copies - 1)));
+  }
   const fastClaims = [...README.matchAll(/under (\d+) seconds/g)].map((m) => Number(m[1]));
   check('the fast-failure threshold is stated, the same everywhere', fastClaims.length > 0 && fastClaims.every((n) => n === fastClaims[0]), fastClaims.join(', '));
   if (fastClaims.length) {
@@ -595,8 +622,8 @@ async function main() {
   check('every badge in the sidebar table is one app.js renders', minus(documentedSidebar, sidebar).length === 0, minus(documentedSidebar, sidebar).join(', '));
   if (Number.isFinite(threshold)) {
     const labelAt = (minutes) => app.trialStatusLabel({ wasAborted: false, status: 'created', resultCount: 0, createdAt: new Date(Date.now() - minutes * 60000).toISOString() });
-    check(`a run is "In progress" just under ${threshold} minutes`, labelAt(threshold - 0.1) === 'In progress…', labelAt(threshold - 0.1));
-    check(`and "Interrupted" just over`, labelAt(threshold + 0.1) === 'Interrupted', labelAt(threshold + 0.1));
+    check(`a run is "in progress" just under ${threshold} minutes`, labelAt(threshold - 0.1) === 'in progress…', labelAt(threshold - 0.1));
+    check(`and "interrupted" just over`, labelAt(threshold + 0.1) === 'interrupted', labelAt(threshold + 0.1));
     check(`"over ${threshold} minutes old" agrees`, sidebarSection.includes(`over ${threshold} minutes old`));
   }
   const budgetMs = Number((OPENROUTER_SRC.match(/const TOTAL_BUDGET_MS = (\d+);/) || [])[1]);
@@ -630,7 +657,8 @@ async function main() {
   const required = ENV_EXAMPLE.split(/\n\s*\n/).filter((block) => /\(required\)/.test(block)).flatMap((block) => [...block.matchAll(/^([A-Z][A-Z0-9_]+)=/gm)].map((m) => m[1]));
   const toFillIn = [...(local.match(/# fill in ([A-Z0-9_, ]+)/) || ['', ''])[1].matchAll(/[A-Z][A-Z0-9_]+/g)].map((m) => m[0]);
   check('README asks for exactly the required variables', required.length > 0 && minus(required, toFillIn).length === 0 && minus(toFillIn, required).length === 0, `required: ${required}, README: ${toFillIn}`);
-  check('the bundler is esbuild, as the tech stack says', /esbuild/.test(section(README, '## Tech stack')) && /node_bundler = "esbuild"/.test(TOML));
+  const threeTier = README.split('\n').find((line) => line.startsWith('Three-tier:')) || '';
+  check('the bundler is esbuild, as the architecture line says', /bundled by esbuild/.test(threeTier) && /node_bundler = "esbuild"/.test(TOML), threeTier || 'no "Three-tier:" line in README');
 
   // ======================================================== paths named anywhere
   console.log('\n=== README and SPEC.md: every file they name exists ===');
