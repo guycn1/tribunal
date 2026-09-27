@@ -179,8 +179,8 @@ const JUDGE_ROLES = ['barak', 'elon', 'shamgar'];
  * Must match ABORTED_BY_USER_MESSAGE in netlify/functions/lib/db.ts exactly
  * (asserted by tests/shared-constants.test.js)
  * - used to recognize an aborted call's log row (see deriveRoleStates), so
- * it renders with the distinct "Aborted" badge instead of the generic
- * "Call failed" one.
+ * it renders with the distinct "aborted" badge instead of the generic
+ * "call failed" one.
  */
 const ABORTED_BY_USER_MESSAGE = 'Aborted by user before this call could complete.';
 
@@ -1038,7 +1038,7 @@ function deriveRoleStates(data) {
       if (isRetriedMarkerLog(log)) {
         // Not a terminal outcome - the escalation chain is still running
         // (see agentProgress above for what actually renders "currently
-        // trying X" while it does) - don't report a false "Call failed"
+        // trying X" while it does) - don't report a false "call failed"
         // for a role that's actually still in progress.
         continue;
       }
@@ -1047,7 +1047,7 @@ function deriveRoleStates(data) {
       // clicked, and the one the call writes for itself when its own
       // between-attempts abort check catches up (see ABORTED_MID_CALL_MARKER
       // in openrouter.ts). Both are deliberate stops, not failures, so
-      // both get the "Aborted" treatment rather than a red "Call failed".
+      // both get the "aborted" treatment rather than a red "call failed".
       const abortedMidCall = typeof log.errorMessage === 'string' && log.errorMessage.startsWith(ABORTED_MID_CALL_MARKER);
       store[log.agentRole] =
         log.errorMessage === ABORTED_BY_USER_MESSAGE || abortedMidCall
@@ -1562,7 +1562,7 @@ function buildAgentStatusBody(entry, role, verb) {
     const wrap = document.createElement('div');
     const badge = document.createElement('span');
     badge.className = 'badge badge-aborted';
-    badge.textContent = 'Aborted';
+    badge.textContent = 'aborted';
     wrap.appendChild(badge);
     const note = document.createElement('p');
     note.className = 'card-body dim';
@@ -1575,7 +1575,7 @@ function buildAgentStatusBody(entry, role, verb) {
     const wrap = document.createElement('div');
     const badge = document.createElement('span');
     badge.className = 'badge badge-fail';
-    badge.textContent = 'Call failed';
+    badge.textContent = 'call failed';
     wrap.appendChild(badge);
     const err = document.createElement('p');
     err.className = 'card-body dim';
@@ -1594,7 +1594,7 @@ function buildAgentStatusBody(entry, role, verb) {
     const wrap = document.createElement('div');
     const badge = document.createElement('span');
     badge.className = 'badge badge-fail';
-    badge.textContent = 'No response yet';
+    badge.textContent = 'no response yet';
     wrap.appendChild(badge);
     const err = document.createElement('p');
     err.className = 'card-body dim';
@@ -1607,7 +1607,7 @@ function buildAgentStatusBody(entry, role, verb) {
 }
 
 /**
- * Adds a "Truncated" badge and note to a card whose result hit the token
+ * Adds a "truncated" badge and note to a card whose result hit the token
  * cap. Does nothing otherwise.
  *
  * Shared by both card types, appended after their normal success content -
@@ -1621,7 +1621,7 @@ function appendTruncationNotice(card, entry) {
   if (!isTruncated(entry)) return;
   const badge = document.createElement('span');
   badge.className = 'badge badge-warn';
-  badge.textContent = 'Truncated';
+  badge.textContent = 'truncated';
   card.appendChild(badge);
   const note = document.createElement('p');
   note.className = 'card-body dim';

@@ -54,7 +54,7 @@ console.log('\n=== app.js executes cleanly (catches a TDZ-class load crash) ==='
 let app;
 try {
   // Hand back exactly the pieces under test from app.js's own top-level scope.
-  app = loadApp(['state', 'el', 'renderRepresentatives', 'renderJudges', 'renderCallLog', 'agentCardSignature', 'shortModelName', 'REPRESENTATIVE_ROLES', 'JUDGE_ROLES', 'beginTrial', 'loadTrial']);
+  app = loadApp(['state', 'el', 'renderRepresentatives', 'renderJudges', 'renderCallLog', 'agentCardSignature', 'shortModelName', 'REPRESENTATIVE_ROLES', 'JUDGE_ROLES', 'beginTrial', 'loadTrial', 'buildAgentStatusBody', 'appendTruncationNotice']);
   check('top-level code ran with no error', true);
 } catch (error) {
   check('top-level code ran with no error', false, error.message);
@@ -176,6 +176,34 @@ check('a final run-on failure is labelled "degenerated"', hasBadge(runOnHtml, 'd
 
 const finalCapHtml = statusTextFor('[degenerate-final] Every model tier was tried (4 in total, ending with google/gemini-2.5-pro) and none produced a usable response - the final attempt hit the max_tokens limit before finishing naturally. Nothing was saved.');
 check('a final capped failure is labelled "truncated"', hasBadge(finalCapHtml, 'truncated') && !hasBadge(finalCapHtml, 'degenerated'), finalCapHtml.slice(0, 160));
+
+console.log('\n=== Agent-card badges read in lowercase, like the call log and sidebar ===');
+// Every badge in the app starts lowercase, so the three views read as one
+// set. Each card state that shows a badge is built and its text compared
+// exactly.
+{
+  const { buildAgentStatusBody, appendTruncationNotice } = app;
+  /**
+   * The text of every badge directly inside `node`.
+   *
+   * @param {{children: {className: string, textContent: string}[]}} node
+   * @returns {string[]}
+   */
+  const badgeTexts = (node) => node.children.filter((c) => /\bbadge\b/.test(c.className)).map((c) => c.textContent);
+  const cases = [
+    ['an aborted call', buildAgentStatusBody({ status: 'aborted' }, 'jon_snow', 'Arguing'), 'aborted'],
+    ['a failed call', buildAgentStatusBody({ status: 'failed', error: 'HTTP 402' }, 'jon_snow', 'Arguing'), 'call failed'],
+    ['a call the page stopped waiting on', buildAgentStatusBody({ status: 'timeout', error: 'no reply' }, 'jon_snow', 'Arguing'), 'no response yet'],
+  ];
+  state.maxTokens = 1400;
+  const truncatedCard = document.createElement('div');
+  appendTruncationNotice(truncatedCard, { status: 'success', tokens: { completion: 1400 } });
+  cases.push(['a historical truncated result', truncatedCard, 'truncated']);
+  for (const [what, node, expected] of cases) {
+    const texts = badgeTexts(node);
+    check(`${what} shows the "${expected}" badge`, texts.length === 1 && texts[0] === expected, JSON.stringify(texts));
+  }
+}
 
 console.log('\n=== Every call-log cell carries the label its card layout needs ===');
 // Below 720px the table becomes one card per call, and each cell prints its

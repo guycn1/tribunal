@@ -16,7 +16,7 @@
  * the frontend matches on the prefix to decide what a row means. A marker
  * that exists on the backend but is missing or misspelled in app.js falls
  * straight past isRetriedMarkerLog()'s guard in deriveRoleStates() and lands
- * in the terminal-failure branch, so an agent card reads "Call failed" while
+ * in the terminal-failure branch, so an agent card reads "call failed" while
  * its escalation chain is still running and about to succeed. That is the
  * exact bug 197609b and c1155f3 were written to fix, it fails silently, and
  * it only shows on the escalation path - the path a developer sees least.
@@ -86,7 +86,7 @@ const onlyFrontend = [...frontendMarkers.keys()].filter((k) => !backendMarkers.h
 check(
   'every backend marker is declared in app.js',
   onlyBackend.length === 0,
-  `missing from app.js: ${onlyBackend.join(', ')} - a discarded attempt carrying one of these would be shown as a terminal "Call failed"`
+  `missing from app.js: ${onlyBackend.join(', ')} - a discarded attempt carrying one of these would be shown as a terminal "call failed"`
 );
 check(
   'app.js declares no marker the backend does not',
@@ -104,7 +104,7 @@ console.log('\n=== Both sides agree which markers are retries, not outcomes ==='
 
 // A row carrying one of these is not a role's final outcome. The frontend
 // uses its list (isRetriedMarkerLog) to keep polling a role instead of
-// showing "Call failed"; the backend uses its own (RETRIED_ATTEMPT_MARKERS)
+// showing "call failed"; the backend uses its own (RETRIED_ATTEMPT_MARKERS)
 // to decide when every judge has finished and the trial is complete. If the
 // two disagree, one side calls a role finished while the other is still
 // waiting on it.
@@ -129,7 +129,7 @@ check('ABORTED_BY_USER_MESSAGE found in app.js', Boolean(abortFrontend));
 check(
   'ABORTED_BY_USER_MESSAGE is identical in both',
   Boolean(abortBackend) && abortBackend === abortFrontend,
-  `db.ts '${abortBackend}' vs app.js '${abortFrontend}' - deriveRoleStates() compares this by exact equality to show "Aborted" rather than "Call failed"`
+  `db.ts '${abortBackend}' vs app.js '${abortFrontend}' - deriveRoleStates() compares this by exact equality to show "aborted" rather than "call failed"`
 );
 
 // --- 3. Spinner duration: app.js <-> styles.css --------------------------

@@ -843,7 +843,7 @@ body {
      roughly centred). No fixed padding is right for both. */
   padding: 3px 10px;
   font-size: 0.75rem;
-  /* white-space: normal lets a multi-word badge (e.g. "No response yet")
+  /* white-space: normal lets a multi-word badge (e.g. "no response yet")
      wrap between words when its column is narrow. Deliberately no
      word-break: break-word here, unlike earlier - that broke single-word
      badges like "degenerated" mid-character ("degenerat" / "ed") the
@@ -863,9 +863,9 @@ body {
    Segoe UI (Windows) as in Roboto (Android).
    The bottom padding is 0.1em larger than the top, which sets the pill's
    centre halfway between the middle of a capital letter and the middle
-   of a lowercase one. The call-log and sidebar labels are lowercase, some
-   with an ascender and no descender ("truncated", "failed") and the rest
-   with a descender or neither ("degenerated", "success"), so this splits
+   of a lowercase one. Every badge label is lowercase, some with an
+   ascender and no descender ("truncated", "failed") and the rest with a
+   descender or neither ("degenerated", "success"), so this splits
    the difference: measured, the first family's ink sits ~0.7px above the
    pill's centre and the second's ~0.5px below. The one outlier is "no
    response", with a descender and no ascender to balance it, ~1.7px low;
