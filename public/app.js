@@ -2132,6 +2132,11 @@ function renderCallLog() {
     // exactly why a six-minute stall left nothing to read here afterward.
     const isTransientRetried = err.startsWith(TRANSIENT_RETRIED_MARKER);
     const isAbortedMidCall = err.startsWith(ABORTED_MID_CALL_MARKER);
+    // The row the abort endpoint writes for each role still pending when
+    // Abort is clicked. It records the request to stop, not a model call -
+    // no model, no tokens - so it is shown as that, in the same grey as the
+    // sidebar's aborted badge, rather than as a red failure.
+    const isAbortRequest = entry.errorMessage === ABORTED_BY_USER_MESSAGE;
     // The content-quality markers cover two different ways an attempt
     // ends, and calling both of them "degenerated" was simply inaccurate:
     // one ran into the token cap, the other stopped on its own and a
@@ -2173,7 +2178,14 @@ function renderCallLog() {
     `;
 
     let statusCellHtml;
-    if (isDegenerateRetried) {
+    if (isAbortRequest) {
+      statusCellHtml = `
+        <div class="cell-stack">
+          <span class="badge badge-aborted">abort requested</span>
+          <div class="status-caption">(Abort clicked)</div>
+        </div>
+      `;
+    } else if (isDegenerateRetried) {
       const caption = isRetriedSameModel ? 'retried with the same model' : 'escalated to a different model';
       statusCellHtml = `
         <div class="cell-stack">

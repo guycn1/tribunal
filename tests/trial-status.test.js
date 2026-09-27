@@ -48,7 +48,7 @@ function check(name, condition, detail) {
 
 const backend = compileBackend(['lib/db.ts', 'lib/openrouter.ts', 'judge-background.ts', 'representative-background.ts', 'trial.ts']);
 useFakeSupabase(backend.outDir);
-const { markTrialCompletedIfJudgingDone, ABORTED_BY_USER_MESSAGE } = backend.load('lib/db.js');
+const { markTrialCompletedIfJudgingDone, ABORTED_BY_USER_MESSAGE, isGlobalCallCapExceeded, GLOBAL_CALL_CAP, NO_MODEL_USED } = backend.load('lib/db.js');
 const markers = backend.load('lib/openrouter.js');
 
 /**
@@ -227,6 +227,33 @@ async function main() {
   r = await quietly(() => runCompletion([judgeRow('barak', null), judgeRow('elon', null), judgeRow('shamgar', null)], { failReads: true }));
   check('does not mark the trial completed', !r.completed, JSON.stringify(r.updates));
   check('does not throw', r.threw === null, String(r.threw));
+
+  say('\n=== The call cap counts model calls, not abort requests ===');
+  {
+    const now = new Date().toISOString();
+    const call = { status: 'success', model_used: 'mistralai/mistral-small-24b-instruct-2501', timestamp: now };
+    const abortRequest = { status: 'failed', model_used: NO_MODEL_USED, error_message: ABORTED_BY_USER_MESSAGE, timestamp: now };
+    /**
+     * Runs the real cap check against the given log rows, with the local-dev
+     * exemption this suite otherwise relies on switched off.
+     * @param {object[]} rows
+     * @returns {Promise<{exceeded: boolean, count: number}>}
+     */
+    const capWith = async (rows) => {
+      global.fakeSupabase = fakeSupabase({ api_call_logs: rows }).client;
+      const saved = process.env.NETLIFY_DEV;
+      delete process.env.NETLIFY_DEV;
+      try {
+        return await isGlobalCallCapExceeded();
+      } finally {
+        process.env.NETLIFY_DEV = saved;
+      }
+    };
+    const below = await capWith([...Array(GLOBAL_CALL_CAP - 1).fill(call), ...Array(8).fill(abortRequest)]);
+    check('abort rows do not push the count to the cap', !below.exceeded && below.count === GLOBAL_CALL_CAP - 1, JSON.stringify(below));
+    const at = await capWith(Array(GLOBAL_CALL_CAP).fill(call));
+    check('real calls still reach it', at.exceeded && at.count === GLOBAL_CALL_CAP, JSON.stringify(at));
+  }
 
   say('\n=== The judge endpoint: ruling saved first, then the trial completed ===');
   let j = await runJudge({ reply: GOOD_RULING });

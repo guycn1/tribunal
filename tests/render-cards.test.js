@@ -232,6 +232,9 @@ console.log('\n=== An abort row\'s model reads "n/a", not a shortened "a" ===');
     return match ? match[1].trim() : '';
   };
   const naCell = modelCellFor('n/a');
+  // The same row's status: a request to stop, not a failure.
+  const abortRow = (el.callLogBody.children[0] || {}).innerHTML || '';
+  check('the abort endpoint\'s row reads "abort requested", in grey', /<span class="badge badge-aborted">abort requested<\/span>/.test(abortRow) && !/badge-fail/.test(abortRow), abortRow.slice(abortRow.indexOf('Status'), abortRow.indexOf('Status') + 200));
   check('the Model cell reads exactly "n/a"', naCell === 'n/a', naCell);
   check('with no <abbr> or tooltip', !/<abbr|title=/.test(naCell), naCell);
   const realCell = modelCellFor('mistralai/mistral-small-24b-instruct-2501');

@@ -378,7 +378,10 @@ export async function isGlobalCallCapExceeded(): Promise<{ exceeded: boolean; co
   const { count, error } = await supabase
     .from('api_call_logs')
     .select('*', { count: 'exact', head: true })
-    .gte('timestamp', since);
+    .gte('timestamp', since)
+    // The abort endpoint's rows record a request to stop, not a model call,
+    // so they do not count against the cap.
+    .neq('model_used', NO_MODEL_USED);
 
   if (error) {
     // Fail open: a Supabase hiccup here must not take the whole app down.
