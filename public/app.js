@@ -2196,10 +2196,15 @@ function renderCallLog() {
         </div>
       `;
     } else if (isAbortedMidCall) {
+      // The call's last row after an abort: it stopped before an attempt, an
+      // attempt that failed was not retried, or a reply that finished was
+      // not saved (see ABORTED_MID_CALL_MARKER in openrouter.ts). The row's
+      // message, shown on the agent's card, says which; the caption fits
+      // all three.
       statusCellHtml = `
         <div class="cell-stack">
           <span class="badge badge-warn">aborted</span>
-          <div class="status-caption">(stopped mid-call by the user)</div>
+          <div class="status-caption">(the user aborted the trial)</div>
         </div>
       `;
     } else if (isDegenerateFinal) {

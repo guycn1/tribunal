@@ -651,8 +651,30 @@ export const TRANSIENT_RETRIED_MARKER = '[transient-retried]';
 // running server-side. A Background Function cannot be cancelled by the
 // client, so the only way to stop spending real money on an abandoned
 // trial is for the call itself to notice and bail - see the isAborted
-// callback on callOpenRouter().
+// callback on callOpenRouter(). It ends the role's row sequence in one of
+// three ways: the call stopped before starting an attempt ("Stopped before
+// attempt N"); an attempt that failed while the abort landed is not
+// retried; or a reply that finished after it is not saved
+// (finishedAfterAbort below). In every case the call makes no further
+// request.
 export const ABORTED_MID_CALL_MARKER = '[aborted-mid-call]';
+
+/**
+ * A successful result whose trial was aborted while the call was running,
+ * turned into the aborted row it now is. The reply ran and was paid for,
+ * so it keeps its tokens, cost, duration and text for the log; it is just
+ * not a success any more, since nothing will be saved. Any other result
+ * is returned unchanged.
+ */
+export function finishedAfterAbort(result: OpenRouterResult): OpenRouterResult {
+  if (result.status !== 'success') return result;
+  return {
+    ...result,
+    status: 'failed',
+    content: undefined,
+    errorMessage: `${ABORTED_MID_CALL_MARKER} Finished after the user aborted this trial: the reply was complete, but it was not saved.`,
+  };
+}
 
 // The four markers above that mean "this attempt was thrown away and the
 // chain went on to another one" - a row carrying one of them is never a
@@ -710,7 +732,9 @@ export interface OpenRouterResult {
   // actually reports on), not the cumulative time across every attempt
   // in the chain - consistent with promptTokens/completionTokens/cost
   // above, which are likewise this attempt's own, not a running total.
-  durationMs: number;
+  // Absent when the result is not an attempt at all: a call that stopped
+  // before starting one because the trial had been aborted.
+  durationMs?: number;
   // Attempts discarded before this result was reached, whatever discarded
   // them - truncation/degeneration, a plain HTTP failure at that tier, or a
   // transient failure. Each one gets its own logApiCall() row alongside
@@ -884,8 +908,35 @@ export async function callOpenRouter(
     // is pointless) or for truncation/degeneracy (a real generation that
     // genuinely used its turn).
     allowFastRetry?: boolean;
-  }): Promise<{ canContinue: boolean; allTiersExhausted: boolean }> {
+  }): Promise<{ canContinue: boolean; allTiersExhausted: boolean; aborted?: OpenRouterResult }> {
     const attemptDurationMs = Date.now() - lastAttemptStartedAt;
+
+    // An abort that landed while this attempt was running ends the call
+    // here, with this attempt as its final row - checked before anything
+    // is logged as "re-tried" or "escalated", since neither will now
+    // happen. The attempt keeps its real tokens, cost and reply: it ran
+    // and was paid for. Every caller returns `aborted` as the result.
+    if (await checkAborted()) {
+      const r = opts.reason.replace(/\.$/, '');
+      const what = /^This attempt /.test(r) ? r : /^(was|did|failed|returned) /.test(r) ? `This attempt ${r}` : `This attempt failed: ${r}`;
+      console.warn(`[openrouter] ${label}: aborted by user while an attempt was running - not retrying.`);
+      return {
+        canContinue: false,
+        allTiersExhausted: false,
+        aborted: {
+          status: 'failed',
+          model: opts.model,
+          promptTokens: opts.usage?.promptTokens ?? 0,
+          completionTokens: opts.usage?.completionTokens ?? 0,
+          totalTokens: opts.usage?.totalTokens ?? 0,
+          cost: opts.cost ?? 0,
+          errorMessage: `${ABORTED_MID_CALL_MARKER} ${what}. Not retried: the user aborted this trial while it was running. Nothing was saved.`,
+          discardedAttempts,
+          durationMs: attemptDurationMs,
+          responseText: opts.responseText,
+        },
+      };
+    }
 
     // A fast bounce from an otherwise-working model: retry it without
     // spending one of this tier's real attempts, so a burst rate limit
@@ -972,10 +1023,24 @@ export async function callOpenRouter(
   }
 
   while (remainingMs() >= MIN_REMAINING_TO_ATTEMPT_MS) {
+    // Reached with no attempt in progress: before the first one, or after
+    // a backoff pause. (An abort that lands while an attempt is running is
+    // caught when that attempt is recorded - see recordFailedAttemptAndAdvance
+    // - or, after a success, by the agent handler before it logs the reply.)
+    // The row this returns is not an attempt, so it has no duration and no
+    // tokens; it used to carry the previous attempt's duration again, which
+    // the call log's total then counted twice.
+    //
+    // A request already in flight is never cancelled, deliberately. This
+    // app does not stream, and OpenRouter documents that cancelling a
+    // non-streaming request does not stop the model or its billing - "you
+    // will be billed for the complete response" - so an abort cannot save
+    // that money, only lose track of it. The attempt is left to finish and
+    // is logged truthfully, and nothing further is requested.
     if (await checkAborted()) {
       const message = `${ABORTED_MID_CALL_MARKER} Stopped before attempt ${attempt + 1}: the user aborted this trial while the call was still running server-side. Nothing further was requested and nothing was saved.`;
       console.warn(`[openrouter] ${label}: aborted by user mid-call - stopping the chain rather than spending further budget.`);
-      return failure(lastAttemptModel, message, lastUsage, discardedAttempts, Date.now() - lastAttemptStartedAt);
+      return failure(lastAttemptModel, message, undefined, discardedAttempts);
     }
     attempt++;
     lastAttemptStartedAt = Date.now();
@@ -1093,6 +1158,7 @@ export async function callOpenRouter(
             reason: 'was rate limited (HTTP 429)',
             allowFastRetry: true,
           });
+          if (next.aborted) return next.aborted;
           // The pause comes after the attempt is recorded, never before:
           // recordFailedAttemptAndAdvance() times the attempt, and a backoff
           // taken first was counted as part of it - inflating the logged
@@ -1137,6 +1203,7 @@ export async function callOpenRouter(
             reason: `failed upstream (HTTP ${response.status})`,
             allowFastRetry: true,
           });
+          if (next.aborted) return next.aborted;
           if (next.canContinue) {
             await backoff(attempt);
             continue;
@@ -1177,6 +1244,7 @@ export async function callOpenRouter(
           // us it does not exist.
           skipRestOfTier: true,
         });
+        if (next.aborted) return next.aborted;
         if (next.canContinue) continue;
         return failure(attemptModel, message, undefined, discardedAttempts, Date.now() - lastAttemptStartedAt, { tierIndex, tierCount: tiers.length });
       }
@@ -1209,6 +1277,7 @@ export async function callOpenRouter(
             usage: lastUsage,
             allowFastRetry: true,
           });
+          if (next.aborted) return next.aborted;
           if (next.canContinue) {
             await backoff(attempt);
             continue;
@@ -1274,6 +1343,7 @@ export async function callOpenRouter(
           cost: calculateCost(servingModel, promptTokens, completionTokens),
           responseText: content,
         });
+        if (next.aborted) return next.aborted;
         if (next.canContinue) continue;
         // Still bad (truncated or degenerate) after using every attempt at
         // every tier (or there was no budget left for another) - neither
@@ -1353,6 +1423,7 @@ export async function callOpenRouter(
           // same-model retry rather than an immediate escalation.
           allowFastRetry: true,
         });
+        if (next.aborted) return next.aborted;
         if (next.canContinue) {
           // backoff()'s delay exists to avoid hammering a rate limiter that
           // will keep refusing for a moment - a real reason to wait after
@@ -1396,7 +1467,7 @@ function failure(
   errorMessage: string,
   usage?: { promptTokens: number; completionTokens: number; totalTokens: number },
   discardedAttempts?: DiscardedAttempt[],
-  durationMs = 0,
+  durationMs?: number,
   tierContext?: { tierIndex: number; tierCount: number }
 ): OpenRouterResult {
   return {

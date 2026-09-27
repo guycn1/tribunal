@@ -21,7 +21,7 @@ const { compileBackend } = require('./support/compile-backend');
 
 const backend = compileBackend(['lib/openrouter.ts']);
 process.env.OPENROUTER_API_KEY = 'test-key';
-const { callOpenRouter } = backend.load('lib/openrouter.js');
+const { callOpenRouter, finishedAfterAbort } = backend.load('lib/openrouter.js');
 
 /** Tier 1 of the escalation chain - the default, and cheapest, model. */
 const DEFAULT = 'mistralai/mistral-small-24b-instruct-2501';
@@ -338,6 +338,58 @@ async function main() {
     check('made no further attempt after the abort', calls.length === 1, JSON.stringify(calls));
     check('reported as an abort, not a generic failure', r.status === 'failed' && r.errorMessage.startsWith('[aborted-mid-call]'), r.errorMessage);
     check('never reached a costlier tier', !calls.includes(TIER2), JSON.stringify(calls));
+  });
+
+  // ------------------------------------------------------------------ 8b
+  await test('An abort during a run gives the call log one honest last row', async () => {
+    // Trial a02b8215 (2026-09-21): aborted 4s in, while all four attempts
+    // were generating. Two ran into the token cap after the abort and were
+    // logged "re-tried with the same model" - a retry that never happened -
+    // followed by a "Stopped before attempt 2" row carrying the previous
+    // attempt's duration again.
+    const TRUNCATED = 'He had seen the city burn and '.repeat(40);
+    let userAborted = false;
+    let calls = 0;
+    global.fetch = async () => { calls++; userAborted = true; return reply(DEFAULT, TRUNCATED, 'length', 1400); };
+    const cut = await callOpenRouter(DEFAULT, [{ role: 'user', content: 'hi' }], 1400, 'rep:test', undefined, undefined, () => userAborted);
+    check('an attempt failing as the abort lands is not logged as re-tried', (cut.discardedAttempts || []).length === 0, JSON.stringify(cut.discardedAttempts));
+    check('it is the call\'s one final row, saying it was not retried', cut.status === 'failed' && /^\[aborted-mid-call\] This attempt hit the max_tokens limit.*Not retried: the user aborted this trial/.test(cut.errorMessage), cut.errorMessage);
+    check('and it keeps the attempt\'s real tokens, cost and reply', cut.completionTokens === 1400 && cut.cost > 0 && cut.responseText === TRUNCATED, `${cut.completionTokens} / ${cut.cost}`);
+    check('with the attempt\'s own duration', typeof cut.durationMs === 'number', String(cut.durationMs));
+    check('and no second request is made', calls === 1, String(calls));
+
+    // A transient failure as the abort lands reads the same way.
+    userAborted = false;
+    global.fetch = async () => { userAborted = true; return rateLimited(); };
+    const limited = await callOpenRouter(DEFAULT, [{ role: 'user', content: 'hi' }], 1400, 'rep:test', undefined, undefined, () => userAborted);
+    check('a rate limit as the abort lands is not retried either', (limited.discardedAttempts || []).length === 0 && /^\[aborted-mid-call\] This attempt was rate limited \(HTTP 429\)\. Not retried/.test(limited.errorMessage), limited.errorMessage);
+    // Every other failure an attempt can end in, the same way.
+    const endings = {
+      'a timeout': () => throwTimeout(),
+      'an upstream 5xx': () => ({ ok: false, status: 503, headers: new Map(), text: async () => '{}' }),
+      'a removed model': () => notFound(DEFAULT),
+      'an empty reply': () => reply(DEFAULT, ''),
+    };
+    for (const [what, respond] of Object.entries(endings)) {
+      userAborted = false;
+      global.fetch = async () => { userAborted = true; return respond(); };
+      const r = await callOpenRouter(DEFAULT, [{ role: 'user', content: 'hi' }], 1400, 'rep:test', undefined, undefined, () => userAborted);
+      check(`${what} as the abort lands is not retried either`, (r.discardedAttempts || []).length === 0 && /^\[aborted-mid-call\] This attempt .*\. Not retried/.test(r.errorMessage), r.errorMessage);
+    }
+
+    // Stopping before any attempt is not an attempt: no duration, no tokens.
+    calls = 0;
+    global.fetch = async () => { calls++; return reply(DEFAULT, CLEAN); };
+    const before = await callOpenRouter(DEFAULT, [{ role: 'user', content: 'hi' }], 1400, 'rep:test', undefined, undefined, () => true);
+    check('a call aborted before its first attempt sends nothing', calls === 0, String(calls));
+    check('and its row has no duration and no tokens', before.durationMs === undefined && before.totalTokens === 0 && /Stopped before attempt 1/.test(before.errorMessage), `${before.durationMs} / ${before.totalTokens}`);
+
+    // A reply that finished after the abort: logged as aborted, not success.
+    const done = finishedAfterAbort({ status: 'success', content: CLEAN, responseText: CLEAN, model: DEFAULT, promptTokens: 1000, completionTokens: 400, totalTokens: 1400, cost: 0.0001, durationMs: 9000 });
+    check('a reply finished after the abort is not a success', done.status === 'failed' && done.content === undefined && /^\[aborted-mid-call\] Finished after the user aborted this trial/.test(done.errorMessage), done.errorMessage);
+    check('but keeps what it cost', done.completionTokens === 400 && done.cost === 0.0001 && done.durationMs === 9000 && done.responseText === CLEAN);
+    const failedAlready = { status: 'failed', model: DEFAULT, promptTokens: 0, completionTokens: 0, totalTokens: 0, cost: 0, errorMessage: 'OpenRouter account is out of credits (HTTP 402): x', durationMs: 100 };
+    check('a result that already failed is left as it is', finishedAfterAbort(failedAlready) === failedAlready);
   });
 
   // ------------------------------------------------------------------ 9
