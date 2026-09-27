@@ -2109,7 +2109,7 @@ function renderCallLog() {
     const isTransientRetried = err.startsWith(TRANSIENT_RETRIED_MARKER);
     const isAbortedMidCall = err.startsWith(ABORTED_MID_CALL_MARKER);
     // The content-quality markers cover two genuinely different failures,
-    // and calling both of them "Degenerated" was simply inaccurate: a
+    // and calling both of them "degenerated" was simply inaccurate: a
     // response that ran into the token cap was cut off, not incoherent.
     // openrouter.ts writes this exact phrase for the cap case (and quotes
     // the offending text instead for the two degeneration detectors), so
@@ -2151,28 +2151,28 @@ function renderCallLog() {
       const caption = isRetriedSameModel ? 'retried with the same model' : 'escalated to a different model';
       statusCellHtml = `
         <div class="cell-stack">
-          <span class="badge badge-warn">${hitTokenCap ? 'Truncated' : 'Degenerated'}</span>
+          <span class="badge badge-warn">${hitTokenCap ? 'truncated' : 'degenerated'}</span>
           <div class="status-caption">(${caption})</div>
         </div>
       `;
     } else if (isHttpErrorEscalated) {
       statusCellHtml = `
         <div class="cell-stack">
-          <span class="badge badge-warn">Escalated</span>
+          <span class="badge badge-warn">escalated</span>
           <div class="status-caption">(model error, escalated to a different model)</div>
         </div>
       `;
     } else if (isTransientRetried) {
       statusCellHtml = `
         <div class="cell-stack">
-          <span class="badge badge-warn">No response</span>
+          <span class="badge badge-warn">no response</span>
           <div class="status-caption">(timed out or refused, retried)</div>
         </div>
       `;
     } else if (isAbortedMidCall) {
       statusCellHtml = `
         <div class="cell-stack">
-          <span class="badge badge-warn">Aborted</span>
+          <span class="badge badge-warn">aborted</span>
           <div class="status-caption">(stopped mid-call by the user)</div>
         </div>
       `;
@@ -2183,7 +2183,7 @@ function renderCallLog() {
       // priciest: tier 4 is actually cheaper per call than tier 3 - see
       // the pricing note in openrouter.ts. What makes this red is that the
       // chain is out of options, not what the attempt cost.)
-      statusCellHtml = `<span class="badge badge-fail">${hitTokenCap ? 'Truncated' : 'Degenerated'}</span>`;
+      statusCellHtml = `<span class="badge badge-fail">${hitTokenCap ? 'truncated' : 'degenerated'}</span>`;
     } else {
       const statusBadge = entry.status === 'success' ? 'badge-ok' : 'badge-fail';
       statusCellHtml = `
@@ -2271,7 +2271,7 @@ function renderCallLogTotals() {
 
 /**
  * How old a trial that never completed must be before the sidebar calls
- * it "Interrupted" rather than "In progress".
+ * it "interrupted" rather than "in progress".
  *
  * This once assumed TOTAL_BUDGET_MS (openrouter.ts) was ~26s, and so that a
  * whole trial finishes in a few minutes. TOTAL_BUDGET_MS is 650000ms now -
@@ -2284,7 +2284,7 @@ function renderCallLogTotals() {
  * MAX_CONCURRENT_CALLS above). Kept at 40 minutes: real margin above that (not just enough to
  * scrape by, consistent with every other budget in this app), so a trial
  * that's actually still working - however slowly - doesn't get mislabeled
- * "Interrupted" in the history sidebar before it's had a real chance to
+ * "interrupted" in the history sidebar before it's had a real chance to
  * finish.
  */
 const INTERRUPTED_THRESHOLD_MS = 40 * 60 * 1000;
@@ -2307,8 +2307,8 @@ const TOTAL_EXPECTED_RESULTS = REPRESENTATIVE_ROLES.length + JUDGE_ROLES.length;
 
 /**
  * Returns the status shown for a trial in the run-history sidebar - one of
- * "Completed", "Completed — missing N of 7", "Aborted", "Aborted (N of 7
- * completed)", "Interrupted" or "In progress…".
+ * "completed", "completed — missing N of 7", "aborted", "aborted (N of 7
+ * completed)", "interrupted" or "in progress…".
  *
  * @param {TrialSummary} trial
  * @returns {string}
@@ -2316,16 +2316,16 @@ const TOTAL_EXPECTED_RESULTS = REPRESENTATIVE_ROLES.length + JUDGE_ROLES.length;
 function trialStatusLabel(trial) {
   const missing = TOTAL_EXPECTED_RESULTS - (trial.resultCount ?? 0);
   if (trial.wasAborted) {
-    return trial.status === 'completed' ? `Aborted (${trial.resultCount ?? 0} of ${TOTAL_EXPECTED_RESULTS} completed)` : 'Aborted';
+    return trial.status === 'completed' ? `aborted (${trial.resultCount ?? 0} of ${TOTAL_EXPECTED_RESULTS} completed)` : 'aborted';
   }
   if (trial.status === 'completed') {
-    return missing > 0 ? `Completed — missing ${missing} of ${TOTAL_EXPECTED_RESULTS}` : 'Completed';
+    return missing > 0 ? `completed — missing ${missing} of ${TOTAL_EXPECTED_RESULTS}` : 'completed';
   }
   const ageMs = Date.now() - new Date(trial.createdAt).getTime();
   if (ageMs > INTERRUPTED_THRESHOLD_MS) {
-    return 'Interrupted';
+    return 'interrupted';
   }
-  return 'In progress…';
+  return 'in progress…';
 }
 
 /**

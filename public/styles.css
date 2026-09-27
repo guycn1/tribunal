@@ -835,35 +835,48 @@ body {
 .badge {
   display: inline-block;
   border-radius: 999px;
-  /* Vertical padding is deliberately uneven, and the total is still 6px so
-     the pill's height is unchanged. Symmetric padding centres the LINE BOX,
-     which is not the same as centring the text you can see: this font
-     reserves 12px above the baseline and 3px below it at this size, so the
-     baseline sits 4.5px lower in the box than the visible ink implies, and
-     every badge rendered ~1.5px low inside its own pill. Shifting 1px of
-     padding from the top to the bottom lifts the line box by half that
-     difference.
-     It cannot be exact for every badge at once, because how far the ink
-     sits from the baseline depends on the letters: a word with no ascender
-     and no descender ("success") sat 1.51px low, one with an ascender but
-     no descender ("Truncated", "failed") 0.51px. Both families occur about
-     equally often here, so this splits the difference and leaves either at
-     ~0.5px - about 2% of the pill's height, against 7% before.
-     The badge's own font-size is a rem value and is never overridden per
-     breakpoint, so this one rule is the whole fix: measured identical at
-     1100px, 700px and 400px, in the table, in the card layout, on the
-     agent cards and in the sidebar. */
-  padding: 2px 10px 4px;
+  /* Fallback only - see the @supports block below, which every current
+     browser takes. Symmetric padding centres the line box, not the text,
+     and where the text lands in that box depends on the font: the page
+     uses the system font stack, so Windows draws badges in Segoe UI (tall
+     ascent, text sits 1-2px low) and Android in Roboto (balanced, text
+     roughly centred). No fixed padding is right for both. */
+  padding: 3px 10px;
   font-size: 0.75rem;
   /* white-space: normal lets a multi-word badge (e.g. "No response yet")
      wrap between words when its column is narrow. Deliberately no
      word-break: break-word here, unlike earlier - that broke single-word
-     badges like "Degenerated" mid-character ("Degenerat" / "ed") the
+     badges like "degenerated" mid-character ("degenerat" / "ed") the
      moment the column got tight, which reads as broken rather than
      responsive. overflow-wrap: break-word on the parent <td> is still
      there as a last-resort fallback for a genuinely unbreakable string,
      but no real badge text here needs it. */
   white-space: normal;
+}
+
+/* Centres badge text the same way whatever font the device draws it in.
+   text-box trims the badge's content down to the band between the
+   baseline and the top of a capital letter, so the padding is measured
+   from the letters themselves rather than from the font's own (and
+   font-specific) ascent and descent. Rendered in Edge and Firefox, every
+   call-log and sidebar label sits within 0.25px of the same place in
+   Segoe UI (Windows) as in Roboto (Android).
+   The bottom padding is 0.1em larger than the top, which sets the pill's
+   centre halfway between the middle of a capital letter and the middle
+   of a lowercase one. The call-log and sidebar labels are lowercase, some
+   with an ascender and no descender ("truncated", "failed") and the rest
+   with a descender or neither ("degenerated", "success"), so this splits
+   the difference: measured, the first family's ink sits ~0.7px above the
+   pill's centre and the second's ~0.5px below. The one outlier is "no
+   response", with a descender and no ascender to balance it, ~1.7px low;
+   its letter bodies sit as centred as every other badge's.
+   The total, 0.8em + 6px plus a capital's height (~0.7em), keeps the pill
+   the height it has without the trim: a 1.5em line plus 3px either side. */
+@supports (text-box: trim-both cap alphabetic) {
+  .badge {
+    text-box: trim-both cap alphabetic;
+    padding: calc(0.35em + 3px) 10px calc(0.45em + 3px);
+  }
 }
 
 .badge-ok {

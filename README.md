@@ -75,14 +75,14 @@ One row per real model attempt, including attempts that were discarded in favour
 | --- | --- | --- |
 | `success` | green | The attempt returned usable content and was kept — for a judge, that includes a `VERDICT` line. This is the text shown on that agent's card. The one exception: a result that arrives after its trial was aborted is logged as a success but not saved. |
 | `failed` | red | Either a real attempt that ended the call (the agent's card reads "Call failed") — every tier or the time budget used up, a failure no retry can fix such as the account running out of credits, or a judge reply with no `VERDICT` line — or the marker row the abort endpoint writes for a role that was still pending when the user stopped the trial — recognisable by a model of `n/a` and zero tokens, and the agent's card reads "Aborted" rather than "Call failed" for that one. |
-| `Truncated` | amber | `finish_reason === 'length'` — the model was still writing when it hit that tier's token cap. Retried or escalated; the caption says which. |
-| `Degenerated` | amber | A detector fired on text that finished *on its own*: a 40+ word run with no punctuation, or verbatim repetition (the same whole sentence twice in a row, a sentence of 15+ words twice, any sentence 3+ times, or a passage of 3+ sentences repeated word for word). Retried or escalated; the caption says which. |
-| `Truncated` | red | The same cap hit, with nothing left to fall back to: on the final tier, or with no time budget left for another. Nothing was saved. |
-| `Degenerated` | red | The same detector hit, with nothing left to fall back to. Nothing was saved. |
-| `Escalated` | amber | A plain HTTP failure from that tier's own model (e.g. a removed model id returning 404). Skips the tier's remaining attempts, since re-asking a model that just 404'd is pointless. On the last tier there is nowhere to escalate, so the same failure ends the call and shows as `failed`. |
-| `No response` | amber | A transient failure — a timeout or network error, HTTP 429, a 5xx, or a 200 carrying no content. Retried on the same model, or escalated once the tier's attempts are used up. Coming back in under 10 seconds *can* make the retry free — not counted against the tier's attempts — but only for the first few at each tier, and only with enough time budget left to try again; past that a fast failure costs an attempt like any other. |
-| `Aborted` | amber | The chain stopped itself between attempts because the trial was aborted while it was still running server-side. |
-| `truncated` | amber | Legacy only: shown *next to* a green `success` on historical rows recorded before truncation became a real failure. New trials never produce it. |
+| `truncated` | amber | `finish_reason === 'length'` — the model was still writing when it hit that tier's token cap. Retried or escalated; the caption says which. |
+| `degenerated` | amber | A detector fired on text that finished *on its own*: a 40+ word run with no punctuation, or verbatim repetition (the same whole sentence twice in a row, a sentence of 15+ words twice, any sentence 3+ times, or a passage of 3+ sentences repeated word for word). Retried or escalated; the caption says which. |
+| `truncated` | red | The same cap hit, with nothing left to fall back to: on the final tier, or with no time budget left for another. Nothing was saved. |
+| `degenerated` | red | The same detector hit, with nothing left to fall back to. Nothing was saved. |
+| `escalated` | amber | A plain HTTP failure from that tier's own model (e.g. a removed model id returning 404). Skips the tier's remaining attempts, since re-asking a model that just 404'd is pointless. On the last tier there is nowhere to escalate, so the same failure ends the call and shows as `failed`. |
+| `no response` | amber | A transient failure — a timeout or network error, HTTP 429, a 5xx, or a 200 carrying no content. Retried on the same model, or escalated once the tier's attempts are used up. Coming back in under 10 seconds *can* make the retry free — not counted against the tier's attempts — but only for the first few at each tier, and only with enough time budget left to try again; past that a fast failure costs an attempt like any other. |
+| `aborted` | amber | The chain stopped itself between attempts because the trial was aborted while it was still running server-side. |
+| `truncated` | amber | Legacy only: a second badge shown *next to* a green `success` on historical rows recorded before truncation became a real failure. New trials never produce it. |
 
 Truncation and degeneration are separate failures rather than nested ones — a capped response is usually coherent prose that simply got cut off, while a degenerate one finished naturally and produced unusable text. A repetition loop that runs until it hits the cap is both at once.
 
@@ -92,12 +92,12 @@ One badge per trial, summarising the whole run.
 
 | Badge | Colour | What triggered it |
 | --- | --- | --- |
-| `Completed` | green | Finished, with all 7 of 7 results saved. |
-| `Completed — missing N of 7` | amber | Finished, but fewer than 7 results were saved: some agent's call failed for good (every tier or the time budget used up, a failure no retry can fix, or a judge reply with no `VERDICT` line), or never ran because its trigger request was rejected or never got through. |
-| `Aborted` | grey | Stopped by the user before the trial reached completion. |
-| `Aborted (N of 7 completed)` | grey | Stopped by the user, but the trial had already been marked complete — the count says how much survived. |
-| `In progress…` | slate | Not finished, not aborted, and under 40 minutes old — presumably still running. |
-| `Interrupted` | red | Not finished, not aborted, and over 40 minutes old, so it is treated as never going to finish — a dev-server restart mid-run, say, or the page closed before the judges were started (the browser starts each phase). The threshold is sized above the genuine worst case: a full four-tier escalation for every representative, then the same again for every judge — about 22 minutes. |
+| `completed` | green | Finished, with all 7 of 7 results saved. |
+| `completed — missing N of 7` | amber | Finished, but fewer than 7 results were saved: some agent's call failed for good (every tier or the time budget used up, a failure no retry can fix, or a judge reply with no `VERDICT` line), or never ran because its trigger request was rejected or never got through. |
+| `aborted` | grey | Stopped by the user before the trial reached completion. |
+| `aborted (N of 7 completed)` | grey | Stopped by the user, but the trial had already been marked complete — the count says how much survived. |
+| `in progress…` | slate | Not finished, not aborted, and under 40 minutes old — presumably still running. |
+| `interrupted` | red | Not finished, not aborted, and over 40 minutes old, so it is treated as never going to finish — a dev-server restart mid-run, say, or the page closed before the judges were started (the browser starts each phase). The threshold is sized above the genuine worst case: a full four-tier escalation for every representative, then the same again for every judge — about 22 minutes. |
 
 "Missing N" counts results that actually persisted, **not** whether any individual call ever failed along the way. A transient failure that the retry recovered from is a real logged attempt, not a flaw in the outcome — labelling the run on that basis would mark almost every trial as damaged. The call log still shows every attempt in full.
 

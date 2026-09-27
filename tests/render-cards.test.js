@@ -23,7 +23,7 @@
  *      used to let a network failure escape as an uncaught rejection, so a
  *      click appeared to do nothing and the error reached only the console.
  *   4. The call log must say what actually happened: a capped response is
- *      "Truncated" and an incoherent one "Degenerated", every cell carries
+ *      "truncated" and an incoherent one "degenerated", every cell carries
  *      its column name for the narrow card layout, and a model id is
  *      shortened by rule without losing the date stamp.
  */
@@ -127,7 +127,7 @@ check('no stale card survives a trial change', beforeTrial.every((c, i) => c !==
 console.log('\n=== Call log distinguishes a truncation from a degeneration ===');
 // Both come through the same content-quality marker, but they are different
 // failures: one ran into the token cap, the other produced incoherent text.
-// Labelling a capped response "Degenerated" was simply inaccurate.
+// Labelling a capped response "degenerated" was simply inaccurate.
 const { renderCallLog } = app;
 /**
  * Renders a one-row call log for a representative whose only logged attempt
@@ -152,17 +152,30 @@ function statusTextFor(errorMessage, status = 'failed') {
   return row ? row.innerHTML : '';
 }
 
+/**
+ * Whether `html` holds a badge reading exactly `label`. Matching the badge
+ * itself rather than the word anywhere in the row, since a caption or an
+ * error message can contain the same word.
+ *
+ * @param {string} html
+ * @param {string} label
+ * @returns {boolean}
+ */
+function hasBadge(html, label) {
+  return [...html.matchAll(/<span class="badge [\w-]+">([^<]*)<\/span>/g)].some((m) => m[1] === label);
+}
+
 const truncatedHtml = statusTextFor('[degenerate-retried-same-model] This attempt hit the max_tokens limit before finishing naturally - re-tried with the same model.');
-check('a capped response is labelled "Truncated"', /Truncated/.test(truncatedHtml) && !/Degenerated/.test(truncatedHtml), truncatedHtml.slice(0, 160));
+check('a capped response is labelled "truncated"', hasBadge(truncatedHtml, 'truncated') && !hasBadge(truncatedHtml, 'degenerated'), truncatedHtml.slice(0, 160));
 
 const degenerateHtml = statusTextFor('[degenerate-retried-same-model] This attempt repeated the same sentence 5 times ("i had no other way...") - re-tried with the same model.');
-check('a looping response is still labelled "Degenerated"', /Degenerated/.test(degenerateHtml) && !/Truncated/.test(degenerateHtml), degenerateHtml.slice(0, 160));
+check('a looping response is still labelled "degenerated"', hasBadge(degenerateHtml, 'degenerated') && !hasBadge(degenerateHtml, 'truncated'), degenerateHtml.slice(0, 160));
 
 const runOnHtml = statusTextFor('[degenerate-final] Every model tier was tried (4 in total, ending with google/gemini-2.5-pro) and none produced a usable response - the final attempt collapsed into a 62-word run with no punctuation ("she chose to burn...").');
-check('a final run-on failure is labelled "Degenerated"', /Degenerated/.test(runOnHtml) && !/Truncated/.test(runOnHtml), runOnHtml.slice(0, 160));
+check('a final run-on failure is labelled "degenerated"', hasBadge(runOnHtml, 'degenerated') && !hasBadge(runOnHtml, 'truncated'), runOnHtml.slice(0, 160));
 
 const finalCapHtml = statusTextFor('[degenerate-final] Every model tier was tried (4 in total, ending with google/gemini-2.5-pro) and none produced a usable response - the final attempt hit the max_tokens limit before finishing naturally. Nothing was saved.');
-check('a final capped failure is labelled "Truncated"', /Truncated/.test(finalCapHtml) && !/Degenerated/.test(finalCapHtml), finalCapHtml.slice(0, 160));
+check('a final capped failure is labelled "truncated"', hasBadge(finalCapHtml, 'truncated') && !hasBadge(finalCapHtml, 'degenerated'), finalCapHtml.slice(0, 160));
 
 console.log('\n=== Every call-log cell carries the label its card layout needs ===');
 // Below 720px the table becomes one card per call, and each cell prints its
