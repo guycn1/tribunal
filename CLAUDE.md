@@ -379,7 +379,7 @@ Progress so far:
   - the third full documentation sweep (`32e7c0a`);
   - the commit that adds this entry.
 
-  No database change is needed: nothing since `0cd124c` adds or alters a column. The merge commit is the `--no-ff` commit on `main` directly after this entry's commit; `git log --first-parent main` names it. This entry was committed to `draft` ahead of the merge, so that right after it `main` and `draft` hold identical trees.
+  No database change is needed: nothing since `0cd124c` adds or alters a column. Merge commit `67f00f1`. This entry was committed to `draft` ahead of the merge, so that right after it `main` and `draft` held identical trees. **Confirmed live the same day**, on the user's go-ahead, by fetching the deployed site's public files over plain HTTPS: `app.js`, `styles.css` (both changed in this merge) and `index.html` all matched `main` byte for byte.
 
 ---
 
