@@ -205,6 +205,37 @@ console.log('\n=== Agent-card badges read in lowercase, like the call log and si
   }
 }
 
+console.log('\n=== An abort row\'s model reads "n/a", not a shortened "a" ===');
+// The abort endpoint logs "n/a" as the model of every row it writes. Run
+// through shortModelName(), its "n/" looks like a vendor prefix and the cell
+// read "a". It is not a model id, so it is printed as it stands, with no
+// <abbr> and no tooltip - there is no longer form to reveal.
+{
+  /**
+   * Renders a one-row call log and returns that row's Model cell contents.
+   *
+   * @param {string} modelUsed
+   * @returns {string}
+   */
+  const modelCellFor = (modelUsed) => {
+    state.callLog = [{
+      agentRole: 'jon_snow', callType: 'representative', modelUsed,
+      promptTokens: 0, completionTokens: 0, totalTokens: 0, cost: 0,
+      status: 'failed', errorMessage: 'Aborted by user before this call could complete.',
+      durationMs: null, timestamp: new Date().toISOString(),
+    }];
+    renderCallLog();
+    const row = el.callLogBody.children[0];
+    const match = (row ? row.innerHTML : '').match(/<td data-label="Model">([\s\S]*?)<\/td>/);
+    return match ? match[1].trim() : '';
+  };
+  const naCell = modelCellFor('n/a');
+  check('the Model cell reads exactly "n/a"', naCell === 'n/a', naCell);
+  check('with no <abbr> or tooltip', !/<abbr|title=/.test(naCell), naCell);
+  const realCell = modelCellFor('mistralai/mistral-small-24b-instruct-2501');
+  check('a real model id is still shortened, with the full id on hover', realCell.includes('<abbr class="col-short" title="mistralai/mistral-small-24b-instruct-2501">mistral-small-24b-2501</abbr>'), realCell);
+}
+
 console.log('\n=== Every call-log cell carries the label its card layout needs ===');
 // Below 720px the table becomes one card per call, and each cell prints its
 // own column name from data-label because the <thead> is hidden. A new

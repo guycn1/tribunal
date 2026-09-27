@@ -118,8 +118,8 @@ check(
   `app.js: ${[...frontendRetried].join(', ')} | openrouter.ts: ${[...backendRetried].join(', ')}`
 );
 
-// --- 2. ABORTED_BY_USER_MESSAGE: db.ts <-> app.js ------------------------
-console.log('\n=== The abort marker message agrees ===');
+// --- 2. ABORTED_BY_USER_MESSAGE and NO_MODEL_USED: db.ts <-> app.js -----
+console.log('\n=== The abort rows\' marker message and model agree ===');
 
 const abortRe = /(?:export\s+)?const\s+ABORTED_BY_USER_MESSAGE\s*=\s*'([^']*)'/;
 const abortBackend = (db.match(abortRe) || [])[1];
@@ -130,6 +130,19 @@ check(
   'ABORTED_BY_USER_MESSAGE is identical in both',
   Boolean(abortBackend) && abortBackend === abortFrontend,
   `db.ts '${abortBackend}' vs app.js '${abortFrontend}' - deriveRoleStates() compares this by exact equality to show "aborted" rather than "call failed"`
+);
+
+// The abort rows' model_used: app.js compares it by exact equality to print
+// it as written instead of shortening it like a model id ("n/a" -> "a").
+const noModelRe = /(?:export\s+)?const\s+NO_MODEL_USED\s*=\s*'([^']*)'/;
+const noModelBackend = (db.match(noModelRe) || [])[1];
+const noModelFrontend = (appJs.match(noModelRe) || [])[1];
+check('NO_MODEL_USED found in db.ts', Boolean(noModelBackend));
+check('NO_MODEL_USED found in app.js', Boolean(noModelFrontend));
+check(
+  'NO_MODEL_USED is identical in both',
+  Boolean(noModelBackend) && noModelBackend === noModelFrontend,
+  `db.ts '${noModelBackend}' vs app.js '${noModelFrontend}' - the call log would shorten the abort rows' model like a model id`
 );
 
 // --- 3. Spinner duration: app.js <-> styles.css --------------------------

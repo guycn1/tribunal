@@ -184,6 +184,15 @@ const JUDGE_ROLES = ['barak', 'elon', 'shamgar'];
  */
 const ABORTED_BY_USER_MESSAGE = 'Aborted by user before this call could complete.';
 
+/**
+ * Must match NO_MODEL_USED in netlify/functions/lib/db.ts exactly (asserted
+ * by tests/shared-constants.test.js) - the model_used on the abort
+ * endpoint's rows, where no model ran. It is not a model id, so the call
+ * log prints it as written (see formatModelCellHtml): shortModelName()
+ * would read the "n/" as a vendor prefix and print "a".
+ */
+const NO_MODEL_USED = 'n/a';
+
 // The six marker constants below must match their exports in
 // netlify/functions/lib/openrouter.ts exactly - used by deriveRoleStates()
 // and renderCallLog() to tell a discarded-but-recovered attempt (the role
@@ -446,6 +455,21 @@ function shortModelName(modelId) {
  */
 function formatTokenBreakdown(promptTokens, completionTokens) {
   return `${promptTokens.toLocaleString()}&nbsp;in&nbsp;/ ${completionTokens.toLocaleString()}&nbsp;out`;
+}
+
+/**
+ * Renders the call log's Model cell: the shortened id for the table layout,
+ * with the full id on hover, and the full id for the card layout.
+ *
+ * NO_MODEL_USED is not a model id, so it is printed once as it stands, with
+ * nothing to hover for: there is no longer form to reveal.
+ *
+ * @param {string} modelUsed
+ * @returns {string} HTML.
+ */
+function formatModelCellHtml(modelUsed) {
+  if (modelUsed === NO_MODEL_USED) return modelUsed;
+  return `<abbr class="col-short" title="${modelUsed}">${shortModelName(modelUsed)}</abbr><span class="col-full">${modelUsed}</span>`;
 }
 
 /** Words for ordinalWord(), indexed by the number they spell. */
@@ -2200,7 +2224,7 @@ function renderCallLog() {
     tr.innerHTML = `
       <td data-label="Agent">${formatAgentName(entry.agentRole)}</td>
       <td data-label="Type">${formatCallTypeHtml(entry.callType)}</td>
-      <td data-label="Model"><abbr class="col-short" title="${entry.modelUsed}">${shortModelName(entry.modelUsed)}</abbr><span class="col-full">${entry.modelUsed}</span></td>
+      <td data-label="Model">${formatModelCellHtml(entry.modelUsed)}</td>
       <td data-label="Tokens">${tokens}</td>
       <td data-label="Cost">${formatCost(entry.cost)}</td>
       <td data-label="Duration">${formatDuration(entry.durationMs)}</td>

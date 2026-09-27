@@ -29,6 +29,12 @@ import type {
 // exact marker, rather than adding a new stored status value.
 export const ABORTED_BY_USER_MESSAGE = 'Aborted by user before this call could complete.';
 
+// The model_used the abort endpoint writes on its rows: no model ran for
+// them. app.js keeps its own copy (NO_MODEL_USED) to show this value as
+// written rather than as a model id - asserted identical by
+// tests/shared-constants.test.js.
+export const NO_MODEL_USED = 'n/a';
+
 export async function createTrial(caseCode: string): Promise<TrialRecord> {
   const supabase = getSupabaseClient();
   const { data, error } = await supabase

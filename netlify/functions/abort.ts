@@ -4,7 +4,7 @@ import { json } from './lib/response';
 import { extractParams } from './lib/extractParams';
 import { REPRESENTATIVES } from './lib/representatives';
 import { JUDGES } from './lib/judges';
-import { logApiCall, ABORTED_BY_USER_MESSAGE } from './lib/db';
+import { logApiCall, ABORTED_BY_USER_MESSAGE, NO_MODEL_USED } from './lib/db';
 
 // POST /api/trials/:id/abort
 // Body: { roles: string[] } - the agent roles still pending (loading, or
@@ -59,7 +59,7 @@ const rawHandler: Handler = async (event) => {
       trialId: id,
       agentRole: role,
       callType,
-      modelUsed: 'n/a',
+      modelUsed: NO_MODEL_USED,
       promptTokens: 0,
       completionTokens: 0,
       totalTokens: 0,
