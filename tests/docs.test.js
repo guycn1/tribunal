@@ -487,6 +487,31 @@ async function main() {
     check(`a ${n}-sentence passage repeated is caught`, !(await acceptedFirstTime(passageTwice(n))));
     check(`a ${n - 1}-sentence passage repeated is not`, await acceptedFirstTime(passageTwice(n - 1)));
   }
+
+  // The two clause rules. Each copy of a clause sits in a different
+  // sentence, so no sentence rule can fire.
+  const clusterClaims = [...README.matchAll(/a clause of (\d+)\+ words (\d+) times close together/g)].map((m) => `${m[1]}/${m[2]}`);
+  // Stated wherever the clause rules are, not merely somewhere in README.
+  const inARowClauseClaims = README.match(/the same clause twice in a row, or a clause of/g) || [];
+  check('a clause twice in a row is stated as a rule, wherever the clause rules are', inARowClauseClaims.length > 0 && inARowClauseClaims.length === clusterClaims.length, `${inARowClauseClaims.length} of ${clusterClaims.length}`);
+  check('a clause twice in a row is caught', !(await acceptedFirstTime(`${filler(1)} He had seen the city burn, he had seen the city burn, and he acted. ${filler(2)}`)));
+  check('and the same clause twice apart is not', await acceptedFirstTime(`He had seen the city burn, and he acted. ${filler(1)} He had seen the city burn, and he waited.`));
+  check('the clause-cluster thresholds are stated, the same everywhere', clusterClaims.length > 0 && clusterClaims.every((c) => c === clusterClaims[0]), clusterClaims.join(', '));
+  if (clusterClaims.length) {
+    const [words, copies] = clusterClaims[0].split('/').map(Number);
+    /** A clause of exactly `count` words. @param {number} count */
+    const clauseOf = (count) => Array.from({ length: count }, (_, i) => `part${i}`).join(' ');
+    /**
+     * `times` copies of a `count`-word clause, one clause apart, each in a
+     * sentence of its own.
+     * @param {number} count
+     * @param {number} times
+     */
+    const cluster = (count, times) => Array.from({ length: times }, (_, i) => `${clauseOf(count)}, then ${i}.`).join(' ');
+    check(`a ${words}-word clause ${copies} times close together is caught`, !(await acceptedFirstTime(cluster(words, copies))));
+    check(`a ${words - 1}-word clause ${copies} times close together is not`, await acceptedFirstTime(cluster(words - 1, copies)));
+    check(`a ${words}-word clause ${copies - 1} times close together is not`, await acceptedFirstTime(cluster(words, copies - 1)));
+  }
   const fastClaims = [...README.matchAll(/under (\d+) seconds/g)].map((m) => Number(m[1]));
   check('the fast-failure threshold is stated, the same everywhere', fastClaims.length > 0 && fastClaims.every((n) => n === fastClaims[0]), fastClaims.join(', '));
   if (fastClaims.length) {

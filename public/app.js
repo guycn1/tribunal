@@ -2132,10 +2132,12 @@ function renderCallLog() {
     // exactly why a six-minute stall left nothing to read here afterward.
     const isTransientRetried = err.startsWith(TRANSIENT_RETRIED_MARKER);
     const isAbortedMidCall = err.startsWith(ABORTED_MID_CALL_MARKER);
-    // The content-quality markers cover two genuinely different failures,
-    // and calling both of them "degenerated" was simply inaccurate: a
-    // response that ran into the token cap was cut off, not incoherent.
-    // openrouter.ts writes this exact phrase for the cap case (and quotes
+    // The content-quality markers cover two different ways an attempt
+    // ends, and calling both of them "degenerated" was simply inaccurate:
+    // one ran into the token cap, the other stopped on its own and a
+    // detector flagged it. (The capped kind is usually a repetition loop
+    // too - see the NAMING note in openrouter.ts - but the cap, not a
+    // detector, is what stopped it.) openrouter.ts writes this exact phrase for the cap case (and quotes
     // the offending text instead for the two degeneration detectors), so
     // it is the honest discriminator between them. Same literal-string
     // coupling as the markers themselves.

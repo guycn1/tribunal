@@ -22,10 +22,11 @@
  *      opening one from history, and the call-log refresh after a run all
  *      used to let a network failure escape as an uncaught rejection, so a
  *      click appeared to do nothing and the error reached only the console.
- *   4. The call log must say what actually happened: a capped response is
- *      "truncated" and an incoherent one "degenerated", every cell carries
- *      its column name for the narrow card layout, and a model id is
- *      shortened by rule without losing the date stamp.
+ *   4. The call log must say what actually happened: a response the token
+ *      cap stopped is "truncated" and one a detector flagged
+ *      "degenerated", every cell carries its column name for the narrow
+ *      card layout, and a model id is shortened by rule without losing the
+ *      date stamp.
  */
 
 const { installDom, loadApp } = require('./support/load-app');
@@ -126,8 +127,9 @@ check('no stale card survives a trial change', beforeTrial.every((c, i) => c !==
 
 console.log('\n=== Call log distinguishes a truncation from a degeneration ===');
 // Both come through the same content-quality marker, but they are different
-// failures: one ran into the token cap, the other produced incoherent text.
-// Labelling a capped response "degenerated" was simply inaccurate.
+// failures: one ran into the token cap, the other stopped on its own and a
+// detector flagged it. Labelling a capped response "degenerated" was simply
+// inaccurate.
 const { renderCallLog } = app;
 /**
  * Renders a one-row call log for a representative whose only logged attempt

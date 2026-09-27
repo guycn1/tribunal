@@ -174,10 +174,13 @@ export interface OpenRouterMessage {
 // attempts, since re-asking a model that just 404'd cannot help. The last two tiers are deliberately from two
 // different companies, not two models in the same family, so a
 // shared-vendor quirk can't explain a failure that makes it that far.
-// Every tier also gets more token headroom than the one before it - some
-// truncations may be genuinely-long-but-coherent content hitting an
-// arbitrary ceiling, not only degeneration, and a bigger cap directly
-// fixes that case regardless of which model is generating. Reached rarely
+// Every tier also gets more token headroom than the one before it, as a
+// safeguard in case a sound response ever runs past the cap. None has been
+// seen to: all 13 capped replies whose text was stored, as of 2026-09-27,
+// are repetition loops that ran until the cap stopped them, and no tier-1
+// reply that finished on its own had gone past 1,147 of its 1,400 tokens.
+// For a loop, a bigger cap only means a longer loop; what recovers it is
+// the fresh attempt itself, on the same model or the next. Reached rarely
 // enough, given how many tiers already stand before it, that the real
 // cost stays small despite the later tiers being far pricier than the
 // default - see pricing.ts for the real numbers.
@@ -289,7 +292,8 @@ function detectDegenerateRun(content: string): { degenerate: boolean; runLength:
 // frequency_penalty/presence_penalty work, and it had been shipping
 // undetected the whole time since.
 //
-// It flags a text on any of four verbatim-repetition patterns:
+// It flags a text on any of four verbatim-repetition patterns in its
+// sentences, and two more in its clauses (see CLAUSE_SPLIT below):
 //   1. the same sentence twice in a row;
 //   2. a long sentence (15+ words) twice anywhere in the text;
 //   3. any sentence 3+ times anywhere in the text;
@@ -330,10 +334,11 @@ function detectDegenerateRun(content: string): { degenerate: boolean; runLength:
 // Deliberate rhetorical repetition does NOT trip this: real anaphora
 // repeats an opening phrase and then continues differently ("I ask you to
 // consider the scale..." / "I ask you to consider the evidence..."), which
-// produces different whole sentences and is therefore invisible here -
-// unlike the earlier, abandoned 5-word phrase heuristic, which flagged
-// exactly that pattern as a false positive. Only verbatim whole-sentence
-// repetition counts.
+// produces different whole sentences and is therefore invisible to the
+// sentence rules - unlike the earlier, abandoned 5-word phrase heuristic,
+// which flagged exactly that pattern as a false positive. The clause rules
+// below are the exception: an opening that ends at a comma is a clause of
+// its own, and three copies of it close together are flagged.
 //
 // What it does not catch: near-verbatim looping, where each copy differs
 // by a word or two ("Jon Snow's actions" / "his actions"). Matching that
@@ -376,6 +381,44 @@ const LONG_SENTENCE_REPEAT_THRESHOLD = 2;
 const MIN_WORDS_FOR_REPEAT_CHECK = 5;
 const REPEATED_PASSAGE_SENTENCES = 3;
 const MIN_WORDS_FOR_REPEATED_PASSAGE = 12;
+
+// The same checks one level down, on clauses: the text cut at commas,
+// semicolons and colons as well as at sentence ends. A loop can repeat a
+// clause without ever ending a sentence - "...and who had seen the
+// destruction she would choose to cause, and who had seen the destruction
+// she would choose to cause, ..." 84 times over in a stored grey_worm reply
+// (2026-08-29) - which the sentence rules read as one long sentence and
+// the run-on check never sees, since every comma resets its count. That
+// one ran into the token cap and was discarded as truncated; the same
+// loop ending on its own would have been saved as a success.
+//
+// Two rules, calibrated on 2026-09-27 against the 692 of 844 stored texts
+// the rules above pass:
+//   1. the same clause (5+ words) twice in a row - matches exactly one of
+//      the 692, that loop;
+//   2. the same clause (6+ words) 3 times, the third copy no more than 6
+//      clauses after the first - matches 5: that loop again, two daenerys_targaryen closings saved as
+//      successes on 2026-09-20 that loop a clause with small variations
+//      ("...and to render a verdict that reflects the reality of what
+//      happened in that throne room" three times over), and two sound but
+//      repetitive enumerations ("He knew that if he did not act, more would
+//      die. He knew that if he did not act, the realm would suffer...").
+//      Those two are accepted false positives, on the priority above:
+//      anaphora whose shared opening ends at a comma looks, clause by
+//      clause, exactly like a loop.
+// With them the detector flags 157 of the 844 texts (18.6%), against 152
+// without.
+// Copies spread across a text are left alone: a thesis line restated at
+// the start and the end, or a phrase quoted from the Question for
+// Judgment ("the presence or absence of safer alternatives"), repeats 3
+// times far apart in sound arguments. A 5-word clause 3 times close
+// together is left alone too - Barak's "He could have attempted to detain
+// Daenerys, but he chose not to" three times over is deliberate.
+const CLAUSE_SPLIT = /[.!?;:,]+/;
+const MIN_WORDS_FOR_CLAUSE_IN_A_ROW = 5;
+const MIN_WORDS_FOR_CLAUSE_CLUSTER = 6;
+const CLAUSE_CLUSTER_COPIES = 3;
+const CLAUSE_CLUSTER_SPAN = 6;
 
 function normalizeSentenceForRepeatCheck(sentence: string): string {
   return sentence.trim().toLowerCase().replace(/\s+/g, ' ').replace(/[^\w\s]/g, '');
@@ -465,6 +508,47 @@ function detectRepeatedSentences(content: string): { degenerate: boolean; reason
     };
   }
 
+  // Clause rules last, so a loop the sentence rules already name is
+  // reported in sentences.
+  const clauses = content.split(CLAUSE_SPLIT).map(normalizeSentenceForRepeatCheck).filter((c) => wordCount(c) > 0);
+  const clauseTotal = clauses.length;
+  let clauseRun = 1;
+  let longestClauseRun = 1;
+  let clauseRunEnd = 0;
+  for (let i = 1; i < clauseTotal; i++) {
+    clauseRun = clauses[i] === clauses[i - 1] && wordCount(clauses[i]) >= MIN_WORDS_FOR_CLAUSE_IN_A_ROW ? clauseRun + 1 : 1;
+    if (clauseRun > longestClauseRun) {
+      longestClauseRun = clauseRun;
+      clauseRunEnd = i;
+    }
+  }
+  if (longestClauseRun >= CONSECUTIVE_REPEAT_THRESHOLD) {
+    const from = clauseRunEnd - longestClauseRun + 1;
+    return {
+      degenerate: true,
+      reason: `repeated the same clause ${longestClauseRun} times in a row (clauses ${span(from, longestClauseRun)} of ${clauseTotal}) ${quote(clauses[clauseRunEnd])}`,
+    };
+  }
+
+  const clausePositions = new Map<string, number[]>();
+  clauses.forEach((c, i) => {
+    if (wordCount(c) < MIN_WORDS_FOR_CLAUSE_CLUSTER) return;
+    clausePositions.set(c, [...(clausePositions.get(c) ?? []), i]);
+  });
+  for (const [clause, at] of clausePositions) {
+    for (let k = 0; k + CLAUSE_CLUSTER_COPIES <= at.length; k++) {
+      const copies = at.slice(k, k + CLAUSE_CLUSTER_COPIES);
+      if (copies[copies.length - 1] - copies[0] > CLAUSE_CLUSTER_SPAN) continue;
+      const words = wordCount(clause);
+      const labels = copies.map((i) => String(i + 1));
+      const list = `${labels.slice(0, -1).join(', ')} and ${labels[labels.length - 1]}`;
+      return {
+        degenerate: true,
+        reason: `repeated ${aOrAn(words)} ${words}-word clause ${copies.length} times close together (clauses ${list} of ${clauseTotal}) ${quote(clause)}`,
+      };
+    }
+  }
+
   return { degenerate: false, reason: '' };
 }
 
@@ -508,13 +592,15 @@ const CONCISENESS_REMINDER: OpenRouterMessage = {
 // three constants is an umbrella for the whole content-quality class, NOT
 // the narrower failure the detectors above look for. It covers both
 //   - truncation: finish_reason === 'length'. The model was still going
-//     when max_tokens stopped it. The prose is usually fine; an external
-//     limit cut it off. Not a quality failure at all.
+//     when max_tokens stopped it. That says how the attempt ended, not
+//     what the text was like - though a capped reply is usually a
+//     repetition loop that ran until the cap stopped it (all 13 whose text
+//     was stored, as of 2026-09-27).
 //   - degeneration proper: detectDegenerateRun / detectRepeatedSentences.
 //     The model finished on its own and produced unusable text.
-// Those are orthogonal, not nested - each occurs without the other, and a
-// repetition loop that runs until it hits the cap is both at once. The
-// umbrella name is a holdover from when the run-on detector was the only
+// They are told apart by how the attempt ended: the detectors only run on
+// a reply that stopped on its own, and a reply that hits the cap is
+// reported as truncated whatever it contains. The umbrella name is a holdover from when the run-on detector was the only
 // content check there was.
 //
 // The names are deliberately NOT being corrected: these exact strings are

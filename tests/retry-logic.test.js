@@ -208,6 +208,24 @@ async function main() {
     const repeatedPassage = await verdict(`${passage} ${filler(4)} ${passage}`);
     check('a 3-sentence passage repeated later is caught', repeatedPassage !== null && /3-sentence passage word for word \(sentences 1-3 and 5-7 of 7\)/.test(repeatedPassage), repeatedPassage);
     check('a 2-sentence passage repeated later is not', (await verdict(`${filler(1)} ${filler(2)} ${filler(3)} ${filler(1)} ${filler(2)}`)) === null);
+
+    // Loops that never end a sentence, only a clause. Both are stored
+    // replies the sentence rules passed: a grey_worm reply (2026-08-29)
+    // looping one clause between commas, and a daenerys_targaryen closing
+    // saved as a success (2026-09-20), word for word.
+    const commaLoop = await verdict('He was a man who had seen the destruction she would choose to cause, ' + 'and who had seen the destruction she would choose to cause, '.repeat(6));
+    check('a clause looped between commas is caught', commaLoop !== null && /same clause 6 times in a row \(clauses 2-7 of 7\)/.test(commaLoop), commaLoop);
+    const loopedClosing = await verdict(`${filler(1)} I ask the Tribunal to consider the truth, and to render a verdict that reflects the reality of what happened in that throne room. I ask the Tribunal to consider the truth, and to render a verdict that reflects the reality of what happened in that throne room, and to consider the truth, and to render a verdict that reflects the reality of what happened in that throne room.`);
+    check('the looped closing saved on 2026-09-20 is now caught', loopedClosing !== null && /a 16-word clause 3 times close together \(clauses 3, 5 and 7 of 7\)/.test(loopedClosing), loopedClosing);
+    // Three copies of a clause, each in a different sentence, so no
+    // sentence rule can fire.
+    const CLAUSE6 = 'she would never stop the burning';
+    const close = await verdict(`${CLAUSE6}, then one. ${filler(1)} ${CLAUSE6}, then two. ${filler(2)} ${CLAUSE6}, then three.`);
+    check('a 6-word clause 3 times within 6 clauses is caught', close !== null && /a 6-word clause 3 times close together \(clauses 1, 4 and 7 of 8\)/.test(close), close);
+    check('the same 3 copies spread one clause wider are not', (await verdict(`${CLAUSE6}, then one. ${filler(1)} ${CLAUSE6}, then two. ${filler(2)} ${filler(3)} ${CLAUSE6}, then three.`)) === null);
+    check('a 5-word clause 3 times close together is not', (await verdict('she would never stop burning, then one. she would never stop burning, then two. she would never stop burning, then three.')) === null);
+    check('a clause twice close together is not', (await verdict(`${CLAUSE6}, then one. ${filler(1)} ${CLAUSE6}, then two.`)) === null);
+    check('a 4-word clause twice in a row is not', (await verdict(`${filler(1)} He saw the fire, he saw the fire, and he acted. ${filler(2)}`)) === null);
   });
 
   // ------------------------------------------------------------------ 3
