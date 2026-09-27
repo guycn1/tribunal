@@ -207,13 +207,10 @@ async function main() {
   // ======================================================== README: endpoints
   console.log('\n=== README: the endpoint table matches netlify.toml and the handlers ===');
   const api = section(README, '### API endpoints');
-  // A long path is an HTML code element with a zero-width space after /:id
-  // ("<code>/api/trials/:id&#8203;/abort</code>"), so it can wrap there
-  // inside one code box: GitHub hides a <br> inside <code> and strips <wbr>,
-  // and inside backticks the entity would print literally. It is dropped
-  // here before the path is compared.
-  const rows = [...api.matchAll(/^\| `(GET|POST|PUT|PATCH|DELETE)` \| (?:`([^`]+)`|<code>([^<]+)<\/code>) \| `([\w-]+)\.ts` \| (.*) \|$/gm)]
-    .map((m) => ({ method: m[1], path: m[2] || m[3].replace(/&#8203;/g, ''), fn: m[4], text: m[5] }));
+  // Each row names its function at the start of its description
+  // ("`abort.ts`: Takes ..."), not in a column of its own.
+  const rows = [...api.matchAll(/^\| `(GET|POST|PUT|PATCH|DELETE)` \| `([^`]+)` \| `([\w-]+)\.ts`: (.*) \|$/gm)]
+    .map((m) => ({ method: m[1], path: m[2], fn: m[3], text: m[4] }));
   const redirects = [...TOML.matchAll(/from = "([^"]+)"\s*\n\s*to = "\/\.netlify\/functions\/([\w-]+)[^"]*"/g)].map((m) => ({ path: m[1], fn: m[2] }));
   check('the endpoint table has rows', rows.length > 0);
   check('netlify.toml has routes', redirects.length > 0);

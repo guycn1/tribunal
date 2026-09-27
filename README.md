@@ -30,17 +30,17 @@ Every discarded attempt — including a timeout — gets logged as its own real 
 
 ### API endpoints
 
-Each route below is a rewrite in `netlify.toml` to one function in `netlify/functions/`. Everything this app's own code returns is JSON.
+Each route below is a rewrite in `netlify.toml` to one function in `netlify/functions/`, named at the start of its description. Everything this app's own code returns is JSON.
 
-| Method | Path | Function | What it does |
-| --- | --- | --- | --- |
-| `GET` | `/api/case` | `case.ts` | The fixed case record, the starting model for each role, and the shared completion-token cap. Read once when the page loads. |
-| `GET` | `/api/trials` | `trials.ts` | The 50 most recent trials, newest first, for the run-history sidebar — each with its status, how many of its 7 results were saved, whether it was aborted, and whether any attempt ever failed. |
-| `POST` | `/api/trials` | `trials.ts` | Creates a trial and returns it with the case record (`201`). Needs the site-gate header. Makes no model call. |
-| `GET` | `/api/trials/:id` | `trial.ts` | Everything recorded for one trial: the trial itself, the case record, its saved arguments and rulings, every call-log row (oldest first, without the stored reply text), and the attempt each role most recently started. Polled throughout a run, and read once to open a past trial. `404` for an unknown id. |
-| `POST` | <code>/api/trials/:id&#8203;/representatives/:role</code> | `representative-background.ts` | Runs one representative through the escalation chain and saves the argument, unless the trial has been aborted meanwhile. |
-| `POST` | <code>/api/trials/:id&#8203;/judges/:role</code> | `judge-background.ts` | Runs one judge on the case record plus whichever representative arguments were saved, and saves the ruling, unless the trial has been aborted meanwhile. Marks the trial completed once every judge has a final outcome. |
-| `POST` | <code>/api/trials/:id&#8203;/abort</code> | `abort.ts` | Takes `{ "roles": [...] }` — the roles still pending — records an abort for each one it recognises, and replies with the roles it recorded. The running calls check for it between attempts and stop. |
+| Method | Path | What it does |
+| --- | --- | --- |
+| `GET` | `/api/case` | `case.ts`: The fixed case record, the starting model for each role, and the shared completion-token cap. Read once when the page loads. |
+| `GET` | `/api/trials` | `trials.ts`: The 50 most recent trials, newest first, for the run-history sidebar — each with its status, how many of its 7 results were saved, whether it was aborted, and whether any attempt ever failed. |
+| `POST` | `/api/trials` | `trials.ts`: Creates a trial and returns it with the case record (`201`). Needs the site-gate header. Makes no model call. |
+| `GET` | `/api/trials/:id` | `trial.ts`: Everything recorded for one trial: the trial itself, the case record, its saved arguments and rulings, every call-log row (oldest first, without the stored reply text), and the attempt each role most recently started. Polled throughout a run, and read once to open a past trial. `404` for an unknown id. |
+| `POST` | `/api/trials/:id/representatives/:role` | `representative-background.ts`: Runs one representative through the escalation chain and saves the argument, unless the trial has been aborted meanwhile. |
+| `POST` | `/api/trials/:id/judges/:role` | `judge-background.ts`: Runs one judge on the case record plus whichever representative arguments were saved, and saves the ruling, unless the trial has been aborted meanwhile. Marks the trial completed once every judge has a final outcome. |
+| `POST` | `/api/trials/:id/abort` | `abort.ts`: Takes `{ "roles": [...] }` — the roles still pending — records an abort for each one it recognises, and replies with the roles it recorded. The running calls check for it between attempts and stop. |
 
 **The two agent endpoints behave differently from the rest.** They are the only ones that spend OpenRouter quota, and the only Background Functions: Netlify answers the POST with `202` as soon as the call is accepted and runs the handler afterwards, so nothing the handler returns ever reaches the browser, which learns the outcome by polling `GET /api/trials/:id`. The handler checks, in order, that the request is a POST naming a trial and a role, that the role is one it knows (`jon_snow`, `tyrion_lannister`, `daenerys_targaryen` or `grey_worm`; `barak`, `elon` or `shamgar`), the site-gate header, the site-wide call cap, and that the trial exists. Because of the `202`, a rejection at any of those steps never reaches the browser: the site-gate and call-cap rejections are written to Netlify's function logs, the others are not logged at all, and in the browser that role never resolves — its card says so once polling gives up, after about 12 minutes. Netlify's per-IP rate limit (45 requests per 5 minutes on each of the two, declared in each function's `config`) is enforced by the platform ahead of the handler, so a rejection there would reach the browser directly; it has never been tripped, so that path is untested in production. A judge's reply must contain a `VERDICT: justified` or `VERDICT: not justified` line, and one without it is logged as a failure rather than saved.
 
