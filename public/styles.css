@@ -861,21 +861,23 @@ body {
    font-specific) ascent and descent. Rendered in Edge, Firefox and WebKit
    (Safari's engine), every call-log and sidebar label sits within 0.25px
    of the same place in Segoe UI (Windows) as in Roboto (Android).
-   The bottom padding is 0.1em larger than the top, which sets the pill's
-   centre halfway between the middle of a capital letter and the middle
-   of a lowercase one. Every badge label is lowercase, some with an
-   ascender and no descender ("truncated", "failed") and the rest with a
-   descender or neither ("degenerated", "success"), so this splits
-   the difference: measured, the first family's ink sits ~0.7px above the
-   pill's centre and the second's ~0.5px below. The one outlier is "no
-   response", with a descender and no ascender to balance it, ~1.7px low;
-   its letter bodies sit as centred as every other badge's.
+   The bottom padding is 0.1em - 1px larger than the top: 0.1em sets the
+   pill's centre halfway between the middle of a capital letter and the
+   middle of a lowercase one, and the 1px, split across top and bottom,
+   lowers the text half a pixel from there, which looked better centred on
+   screen. Every badge label is lowercase, some with an ascender and no
+   descender ("truncated", "failed", "aborted") and the rest with a
+   descender or neither ("degenerated", "success"). Measured by their ink,
+   the first family sits within ~0.25px of the pill's centre and the
+   second ~1px below it, a descender pulling the ink box down further
+   than the letters' bodies; "no response", with a descender and no
+   ascender to balance it, measures ~2.2px low.
    The total, 0.8em + 6px plus a capital's height (~0.7em), keeps the pill
    the height it has without the trim: a 1.5em line plus 3px either side. */
 @supports (text-box: trim-both cap alphabetic) {
   .badge {
     text-box: trim-both cap alphabetic;
-    padding: calc(0.35em + 3px) 10px calc(0.45em + 3px);
+    padding: calc(0.35em + 3.5px) 10px calc(0.45em + 2.5px);
   }
 }
 
