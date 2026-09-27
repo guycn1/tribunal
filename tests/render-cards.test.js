@@ -235,6 +235,19 @@ console.log('\n=== An abort row\'s model reads "n/a", not a shortened "a" ===');
   // The same row's status: a request to stop, not a failure.
   const abortRow = (el.callLogBody.children[0] || {}).innerHTML || '';
   check('the abort endpoint\'s row reads "abort requested", in grey', /<span class="badge badge-aborted">abort requested<\/span>/.test(abortRow) && !/badge-fail/.test(abortRow), abortRow.slice(abortRow.indexOf('Status'), abortRow.indexOf('Status') + 200));
+  check('with no caption under it, and dimmed', !/status-caption/.test(abortRow.slice(abortRow.indexOf('data-label="Status"'))) && el.callLogBody.children[0].classList.contains('row-dimmed'));
+  /**
+   * Whether a one-row call log for the given error message is dimmed.
+   * @param {string} errorMessage
+   * @returns {boolean}
+   */
+  const dimmed = (errorMessage) => {
+    state.callLog = [{ agentRole: 'jon_snow', callType: 'representative', modelUsed: 'mistralai/mistral-small-24b-instruct-2501', promptTokens: 1000, completionTokens: 400, totalTokens: 1400, cost: 0.0001, status: 'failed', errorMessage, durationMs: 9000, timestamp: new Date().toISOString() }];
+    renderCallLog();
+    return el.callLogBody.children[0].classList.contains('row-dimmed');
+  };
+  check('a discarded attempt that was retried is dimmed', dimmed('[degenerate-retried-same-model] This attempt hit the max_tokens limit before finishing naturally - re-tried with the same model.'));
+  check('but the role\'s own aborted row, its outcome, is not', !dimmed('[aborted-mid-call] Finished after the user aborted this trial: the reply was complete, but it was not saved.'));
   check('the Model cell reads exactly "n/a"', naCell === 'n/a', naCell);
   check('with no <abbr> or tooltip', !/<abbr|title=/.test(naCell), naCell);
   const realCell = modelCellFor('mistralai/mistral-small-24b-instruct-2501');

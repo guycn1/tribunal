@@ -177,5 +177,18 @@ check(
   `sidebar '${sidebarWidth}' vs overlay '${overlayLeft}' - a mismatch leaves the overlay covering the sidebar or leaving a strip of .main uncovered`
 );
 
+// --- 5. Dimmed call-log rows: app.js <-> styles.css -----------------------
+console.log('\n=== The class that dims a call-log row is the one styled ===');
+
+// renderCallLog() dims a non-final row by adding a class; a rename on one
+// side only would leave those rows at full opacity with nothing failing.
+const dimClass = (appJs.match(/tr\.classList\.add\('([\w-]+)'\)/) || [])[1];
+check('app.js adds a class to dim a row', Boolean(dimClass), String(dimClass));
+check(
+  'styles.css styles that class',
+  Boolean(dimClass) && new RegExp(`tr\\.${dimClass}\\s*\\{[^}]*opacity`).test(css),
+  `app.js adds '${dimClass}', but no 'tr.${dimClass} { opacity ... }' rule was found in styles.css`
+);
+
 console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} check(s) failed.`);
 process.exit(failures === 0 ? 0 : 1);

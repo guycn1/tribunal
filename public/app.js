@@ -2142,16 +2142,18 @@ function renderCallLog() {
     // one ran into the token cap, the other stopped on its own and a
     // detector flagged it. (The capped kind is usually a repetition loop
     // too - see the NAMING note in openrouter.ts - but the cap, not a
-    // detector, is what stopped it.) openrouter.ts writes this exact phrase for the cap case (and quotes
-    // the offending text instead for the two degeneration detectors), so
-    // it is the honest discriminator between them. Same literal-string
+    // detector, is what stopped it.) openrouter.ts writes this exact phrase
+    // for the cap case (and quotes the offending text instead for the two
+    // degeneration detectors), so it is the honest discriminator between
+    // them. Same literal-string
     // coupling as the markers themselves.
     const hitTokenCap = err.includes('max_tokens limit');
 
-    if (isDegenerateRetried || isHttpErrorEscalated || isTransientRetried) {
-      // Dims the whole row - a visual cue that this failure wasn't fatal
-      // and the same call likely went on to succeed on a later row.
-      tr.classList.add('row-degenerated-retried');
+    if (isDegenerateRetried || isHttpErrorEscalated || isTransientRetried || isAbortRequest) {
+      // Dims the whole row: a failure that wasn't fatal, the same call
+      // likely going on to succeed on a later row, or the record of an abort
+      // request, which the role's own last row follows.
+      tr.classList.add('row-dimmed');
     }
 
     // A response still truncated after every attempt the escalation chain
@@ -2179,12 +2181,7 @@ function renderCallLog() {
 
     let statusCellHtml;
     if (isAbortRequest) {
-      statusCellHtml = `
-        <div class="cell-stack">
-          <span class="badge badge-aborted">abort requested</span>
-          <div class="status-caption">(Abort clicked)</div>
-        </div>
-      `;
+      statusCellHtml = `<span class="badge badge-aborted">abort requested</span>`;
     } else if (isDegenerateRetried) {
       const caption = isRetriedSameModel ? 'retried with the same model' : 'escalated to a different model';
       statusCellHtml = `

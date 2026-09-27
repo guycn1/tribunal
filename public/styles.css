@@ -843,6 +843,11 @@ body {
      roughly centred). No fixed padding is right for both. */
   padding: 3px 10px;
   font-size: 0.75rem;
+  /* Keeps a badge that wraps onto two lines compact. With the text-box trim
+     below, it changes only the gap between wrapped lines, not a one-line
+     pill's height; without the trim it also sets that height, about 1.1em
+     plus the 6px of padding. */
+  line-height: 1.1;
   /* white-space: normal lets a multi-word badge (e.g. "no response yet")
      wrap between words when its column is narrow. Deliberately no
      word-break: break-word here, unlike earlier - that broke single-word
@@ -861,23 +866,25 @@ body {
    font-specific) ascent and descent. Rendered in Edge, Firefox and WebKit
    (Safari's engine), every call-log and sidebar label sits within 0.25px
    of the same place in Segoe UI (Windows) as in Roboto (Android).
-   The bottom padding is 0.1em - 1px larger than the top: 0.1em sets the
+   The bottom padding is 0.1em - 0.4px larger than the top: 0.1em sets the
    pill's centre halfway between the middle of a capital letter and the
-   middle of a lowercase one, and the 1px, split across top and bottom,
-   lowers the text half a pixel from there, which looked better centred on
+   middle of a lowercase one, and the 0.4px, split across top and bottom,
+   lowers the text 0.2px from there, which looked better centred on
    screen. Every badge label is lowercase, some with an ascender and no
    descender ("truncated", "failed", "aborted") and the rest with a
-   descender or neither ("degenerated", "success"). Measured by their ink,
-   the first family sits within ~0.25px of the pill's centre and the
-   second ~1px below it, a descender pulling the ink box down further
-   than the letters' bodies; "no response", with a descender and no
-   ascender to balance it, measures ~2.2px low.
-   The total, 0.8em + 6px plus a capital's height (~0.7em), keeps the pill
-   the height it has without the trim: a 1.5em line plus 3px either side. */
+   descender or neither ("degenerated", "success"). Measured by their ink
+   in Edge, the first family sits ~0.5-0.6px above the pill's centre and
+   the second ~0.6px below it, a descender pulling the ink box down
+   further than the letters' bodies; "no response", with a descender and
+   no ascender to balance it, measures ~1.8px low. Rendering snaps to the
+   screen's pixel grid, so sub-pixel changes here show only approximately.
+   The total, 0.8em + 6px plus a capital's height (~0.7em), makes a
+   one-line pill about 1.5em + 6px tall (22px at the default text size)
+   whatever the line-height. */
 @supports (text-box: trim-both cap alphabetic) {
   .badge {
     text-box: trim-both cap alphabetic;
-    padding: calc(0.35em + 3.5px) 10px calc(0.45em + 2.5px);
+    padding: calc(0.35em + 3.2px) 10px calc(0.45em + 2.8px);
   }
 }
 
@@ -1087,13 +1094,16 @@ table.call-log tfoot tr.call-log-total-row td {
    kinds qualify, all matched in renderCallLog() in app.js: truncated or
    degenerate content (DEGENERATE_RETRIED_*_MARKER), a plain HTTP failure
    that escalated to the next tier (HTTP_ERROR_ESCALATED_MARKER), and a
-   transient failure that was retried (TRANSIENT_RETRIED_MARKER). An abort
-   caught mid-call is deliberately NOT dimmed - it is a deliberate stop,
-   not a recovered failure. Dimmed to signal the failure wasn't fatal,
-   distinct from a [degenerate-final] row (nothing left to try - the last
-   tier failing too, or no time budget for another), which deliberately
-   stays at full opacity since that outcome genuinely is fatal. */
-table.call-log tbody tr.row-degenerated-retried {
+   transient failure that was retried (TRANSIENT_RETRIED_MARKER). Dimmed to
+   signal the failure wasn't fatal, distinct from a [degenerate-final] row
+   (nothing left to try - the last tier failing too, or no time budget for
+   another), which deliberately stays at full opacity since that outcome
+   genuinely is fatal.
+   The abort endpoint's "abort requested" rows are dimmed too: they record
+   the request to stop, not an outcome, and the role's own last row
+   follows. That last row - [aborted-mid-call], when the call was still
+   running - is the role's outcome, so it stays at full opacity. */
+table.call-log tbody tr.row-dimmed {
   opacity: 0.53;
 }
 

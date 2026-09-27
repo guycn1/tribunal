@@ -69,13 +69,13 @@ Every model call is shown, whether it was kept or thrown away, and every failure
 
 ### Call log
 
-One row per real model attempt, including attempts that were discarded in favour of a retry or an escalation. Discarded rows are dimmed, since the call usually went on to succeed further down the table.
+One row per real model attempt, including attempts that were discarded in favour of a retry or an escalation, plus one for each role still pending when a trial is aborted. Discarded rows are dimmed, since the call usually went on to succeed further down the table, and so are those abort rows, which record the request to stop rather than an outcome.
 
 | Badge | Colour | What triggered it |
 | --- | --- | --- |
 | `success` | green | The attempt returned usable content and was kept — for a judge, that includes a `VERDICT` line. This is the text shown on that agent's card. |
 | `failed` | red | A real attempt that ended the call (the agent's card reads "call failed") — every tier or the time budget used up, a failure no retry can fix such as the account running out of credits, or a judge reply with no `VERDICT` line. |
-| `abort requested` | grey | The row the abort endpoint writes, the moment Abort is clicked, for each role still pending. It records the request to stop, not a model call: the model reads `n/a`, with no tokens or duration, and it does not count against the site-wide call cap. The running calls look for it and stop; the role's own `aborted` row, if its call was still running, follows. |
+| `abort requested` | grey | The row the abort endpoint writes, the moment Abort is clicked, for each role still pending. It records the request to stop, not a model call: the model reads `n/a`, with no tokens or duration, and it does not count against the site-wide call cap. Dimmed, like a discarded attempt. The running calls look for it and stop; the role's own `aborted` row, if its call was still running, follows. |
 | `truncated` | amber | `finish_reason === 'length'` — the model was still writing when it hit that tier's token cap. Retried or escalated; the caption says which. |
 | `degenerated` | amber | A detector fired on text that finished *on its own*: a 40+ word run with no punctuation, or verbatim repetition (the same whole sentence twice in a row, a sentence of 18+ words twice, any sentence 3+ times, a passage of 3+ sentences repeated word for word, the same clause twice in a row, or a clause of 6+ words 3 times close together). Retried or escalated; the caption says which. |
 | `truncated` | red | The same cap hit, with nothing left to fall back to: on the final tier, or with no time budget left for another. Nothing was saved. |
