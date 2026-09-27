@@ -1,7 +1,8 @@
 /**
  * @file Regression tests for when a trial is marked completed -
  * markTrialCompletedIfJudgingDone() in netlify/functions/lib/db.ts, and the
- * judge endpoint that calls it.
+ * judge endpoint that calls it - and for how the agent endpoints and the
+ * site-wide call cap treat an aborted trial.
  *
  * Run with `npm test`. No network: the backend is compiled from the real
  * source with the project's own tsc, the Supabase client it imports is
@@ -23,6 +24,12 @@
  *      ones included, so they can be audited in full - and the trial
  *      endpoint never sends that text to the page. A database the column
  *      has not reached yet still gets every row, without the text.
+ *   4. An aborted trial gains nothing: a ruling or argument that finishes
+ *      after the abort is logged once, as aborted, and never saved; the
+ *      trial is not marked completed; and a call aborted before it starts
+ *      logs a row with no duration.
+ *   5. The abort endpoint's rows do not count against the site-wide call
+ *      cap, while real calls still reach it.
  */
 
 const { compileBackend } = require('./support/compile-backend');

@@ -154,7 +154,7 @@ const rawHandler: Handler = async (event) => {
   // and a role the client never listed as pending would otherwise leave no
   // trace at all). What an aborted trial must NOT get is a saved result -
   // quietly resurrecting an argument minutes after the user stopped the
-  // trial would contradict both the abort row and the sidebar's "Aborted"
+  // trial would contradict both the abort row and the sidebar's `aborted`
   // badge. Re-checked here rather than inferred from the result, since the
   // call may well have completed in the window before the abort landed.
   if (await isTrialAborted(id)) {

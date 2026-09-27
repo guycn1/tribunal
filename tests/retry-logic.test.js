@@ -12,9 +12,10 @@
  * prompt size, a degeneration check blind to its most common signature, a
  * fractional millisecond that would have crashed half of all real calls,
  * a fast-429 storm that escalated to a costlier tier within five seconds,
- * a backoff pause timed as part of the attempt before it, and a
- * three-copy loop the repeated-sentence check let through. Each one below
- * is a test, so none of them can quietly come back.
+ * a backoff pause timed as part of the attempt before it, a three-copy
+ * loop the repeated-sentence check let through, and an attempt that failed
+ * as the user aborted logged as "re-tried" when no retry followed. Each
+ * one below is a test, so none of them can quietly come back.
  */
 
 const { compileBackend } = require('./support/compile-backend');

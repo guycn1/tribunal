@@ -11,9 +11,9 @@
      deliberate exception: .model-name is 0.92em, so a model id shrinks
      relative to whatever line it sits in rather than against the root -
      it appears in contexts at different sizes and should stay
-     proportional to each. Lengths that
-     should NOT track type size - hairline borders, radii, fixed
-     structural spacing, breakpoints - stay in px on purpose. */
+     proportional to each. Lengths that should NOT track type size -
+     hairline borders, radii, fixed structural spacing, breakpoints - stay
+     in px on purpose. */
   font-size: 90%;
 
   --bg: #14171c;
@@ -250,8 +250,8 @@ body {
 }
 
 /* White rather than the theme's gold accent (item 2 of CLAUDE.md's
-   sidebar/scrollbar/card polish backlog) - .active
-   (below) has two classes vs. this rule's one, so it naturally wins on
+   sidebar/scrollbar/card polish backlog) - .active (below) has two
+   classes vs. this rule's one, so it naturally wins on
    specificity alone when an entry is both the active one and currently
    hovered, without needing a combined :hover.active selector. */
 .history-item:hover {
@@ -766,9 +766,8 @@ body {
    in current Chrome and Edge nothing in this block applies - not the 8px
    width, not the thumb colour, not the :active tier. Safari was not
    tested. History, worth reading before touching this again
-   (2026-09-04): a non-zero
-   width here was found to have an undocumented-to-us side effect in
-   Firefox 153/154 - per Firefox's own 153 release notes, "rules with
+   (2026-09-04): a non-zero width here was found to have an
+   undocumented-to-us side effect in Firefox 153/154 - per Firefox's own 153 release notes, "rules with
    non-zero width/height disable overlay scrollbars for the affected
    container" - which had been silently forcing Firefox into classic,
    always-visible scrollbar rendering this whole time, unbeknownst to
@@ -872,7 +871,7 @@ body {
    lowers the text 0.2px from there, which looked better centred on
    screen. Every badge label is lowercase, some with an ascender and no
    descender ("truncated", "failed", "aborted") and the rest with a
-   descender or neither ("degenerated", "success"). Measured by their ink
+   descender ("degenerated") or neither ("success"). Measured by their ink
    in Edge, the first family sits ~0.5-0.6px above the pill's centre and
    the second ~0.6px below it, a descender pulling the ink box down
    further than the letters' bodies; "no response", with a descender and
@@ -918,10 +917,9 @@ body {
    .model-chain is the shared class for both (the still-loading model line
    in buildAgentStatusBody() and the post-success "Answered by:" line in
    buildRepresentativeCard()/buildJudgeCard()), so one rule covers both
-   cases. A plain border-top
-   would read as a harsh, abrupt cutoff against the surrounding
-   prose - ::before with a gradient background instead tapers to
-   transparent at both ends, positioned in the gap padding-top opens up
+   cases. A plain border-top would read as a harsh, abrupt cutoff against
+   the surrounding prose - ::before with a gradient background instead
+   tapers to transparent at both ends, positioned in the gap padding-top opens up
    above the text (position: relative on .model-chain gives ::before's
    absolute positioning something to anchor to). */
 .model-chain {
@@ -1301,9 +1299,8 @@ table.call-log .col-full {
     /* Just under the value it labels (0.74rem), so the label still reads as
        subordinate - but that is carried by the dim colour, the uppercase and
        the letter-spacing, not by being conspicuously tiny. It was 0.66rem
-       from the day this layout was written until it was raised to this,
-       which rendered at
-       10.56px then and 9.50px once :root dropped to 90%: the same
+       from the day this layout was written, which rendered at 10.56px
+       then and 9.50px once :root dropped to 90%: the same
        declaration, a pixel smaller, and at this size a pixel is ten per
        cent. This restores roughly the original appearance without opting
        the label out of that deliberate global scale-down. The 92px gutter

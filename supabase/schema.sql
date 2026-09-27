@@ -118,16 +118,19 @@ create table if not exists api_call_logs (
   error_message text,
   "timestamp" timestamptz not null default now(),
   -- Wall-clock time this specific row's attempt took, in ms. Nullable -
-  -- rows logged before this column existed have no value here, and the
-  -- frontend shows a plain placeholder for those rather than a
-  -- fabricated 0 (which would misleadingly read as an instant response).
+  -- a row that timed no attempt (the abort endpoint's rows, and a call
+  -- that stopped on an abort before its next attempt) has no value here,
+  -- nor do rows logged before this column existed, and the frontend
+  -- shows a plain placeholder for those rather than a fabricated 0
+  -- (which would misleadingly read as an instant response).
   duration_ms integer,
   -- The model's reply, word for word, for any attempt that got one -
   -- including every discarded attempt, so a truncated or degenerate reply
   -- can be read in full after the fact. Kept for audit and diagnosis only:
   -- the trial endpoint never selects it, so it never reaches the page.
-  -- Empty for an attempt with no reply (a timeout, an HTTP error, an
-  -- abort) and on rows logged before this column existed.
+  -- Empty for an attempt with no reply (a timeout, an HTTP error), on the
+  -- rows an abort writes without an attempt behind them, and on rows
+  -- logged before this column existed.
   response_text text
 );
 -- Adds the column to a database created before it existed; a no-op on a

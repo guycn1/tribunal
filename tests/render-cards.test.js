@@ -24,9 +24,13 @@
  *      click appeared to do nothing and the error reached only the console.
  *   4. The call log must say what actually happened: a response the token
  *      cap stopped is "truncated" and one a detector flagged
- *      "degenerated", every cell carries its column name for the narrow
- *      card layout, and a model id is shortened by rule without losing the
- *      date stamp.
+ *      "degenerated"; an abort endpoint's row reads "abort requested",
+ *      dimmed and uncaptioned, with its model printed as "n/a" rather than
+ *      shortened like a model id; every cell carries its column name for
+ *      the narrow card layout; and a model id is shortened by rule without
+ *      losing the date stamp.
+ *   5. Every badge label, on the agent cards as in the call log, reads in
+ *      lowercase in the text itself.
  */
 
 const { installDom, loadApp } = require('./support/load-app');

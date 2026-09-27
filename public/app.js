@@ -49,8 +49,9 @@
  * @property {string | null} errorMessage May begin with one of the
  *   *_MARKER prefixes below.
  * @property {string} timestamp ISO 8601.
- * @property {number | null} durationMs Null for rows logged before the
- *   column existed.
+ * @property {number | null} durationMs Null on a row that timed no attempt
+ *   (the abort endpoint's rows, and a call that stopped on an abort before
+ *   its next attempt) and on rows logged before the column existed.
  */
 
 /**
@@ -198,9 +199,10 @@ const NO_MODEL_USED = 'n/a';
 // and renderCallLog() to tell a discarded-but-recovered attempt (the role
 // went on to succeed or is still trying a further tier) from a
 // discarded-and-fatal one (the chain had nothing left to try), and by
-// renderCallLog() to pick the right badge for each. There is no import to keep them in step - this file is served as
-// plain static JS with no build step - so tests/shared-constants.test.js
-// asserts the two sets match instead. Add a marker there, add it here.
+// renderCallLog() to pick the right badge for each. There is no import to
+// keep them in step - this file is served as plain static JS with no build
+// step - so tests/shared-constants.test.js asserts the two sets match
+// instead. Add a marker there, add it here.
 //
 // "DEGENERATE" in these names is an umbrella for the whole content-quality
 // class - it covers a response cut off at the token cap as well as one
@@ -698,8 +700,9 @@ function updateHistoryLockState() {
  * Persisting is not just bookkeeping - it does two jobs, and telling the
  * in-flight calls to stop is the more important one. Aborting a fetch()
  * client-side cannot stop the Netlify invocation it was talking to, so the
- * persisted row is the only channel there is: each running call polls for
- * it between attempts and stops itself (isTrialAborted in db.ts). Second,
+ * persisted row is the only channel there is: each running call checks for
+ * it before each attempt and as each one ends, and stops itself
+ * (isTrialAborted in db.ts). Second,
  * it makes the abort durable, so the sidebar reflects it on a later visit
  * and a stray success or failure logged after the fact can't make an
  * aborted run look like an ordinary one.
@@ -802,8 +805,9 @@ async function abortCurrentTrial() {
 // model, but while the agent calls were still synchronous functions - and
 // has since been overtaken by evidence: every clean run behind this
 // project's reliability record was actually made at 4 concurrent, not 3,
-// so there is no demonstrated problem left to solve. A bounded dispatch plus the stagger is still a sensible
-// thing to keep pointed at the per-IP limiter.
+// so there is no demonstrated problem left to solve. A bounded dispatch
+// plus the stagger is still a sensible thing to keep pointed at the per-IP
+// limiter.
 /**
  * Stagger between trigger POSTs within one phase: the role at index N is
  * triggered N times this many ms after the phase starts, at the earliest.
@@ -894,10 +898,10 @@ function sleep(ms, signal) {
  * config.background in each) - the fix for a verified, load-bearing
  * problem: Netlify's real free-tier synchronous function limit is 10
  * seconds, while every real OpenRouter call measured on this project at
- * the time had taken 8-18s+ per attempt, before any retry. A standard invocation could
- * not reliably survive that gap no matter how the internal retry/timeout
- * budget was tuned. Background Functions get up to 15 minutes instead -
- * but the platform responds 202 immediately and runs the handler
+ * the time had taken 8-18s+ per attempt, before any retry. A standard
+ * invocation could not reliably survive that gap no matter how the
+ * internal retry/timeout budget was tuned. Background Functions get up to
+ * 15 minutes instead - but the platform responds 202 immediately and runs the handler
  * asynchronously, so its real return value never reaches this fetch()
  * call the way a normal synchronous function's did. Calling a role now
  * has two separate steps: triggerAgent() fires the request and reports
@@ -935,10 +939,10 @@ async function triggerAgent(url, signal) {
   // A non-2xx this early can only be a platform-level rejection rather
   // than anything from this app's own handler code, since a Background
   // Function's own application-level outcome never reaches this response
-  // at all. Two real causes, both seen on this project: Netlify's per-IP
-  // rate limiter (see the rateLimit config on the agent Background
-  // Functions), and a routing failure - an immediate 404 on every call,
-  // which happened when the function files were renamed and netlify.toml's
+  // at all. Two causes: Netlify's per-IP rate limiter (see the rateLimit
+  // config on the agent Background Functions - declared, but never yet
+  // tripped), and a routing failure - an immediate 404 on every call, seen
+  // on this project when the function files were renamed and netlify.toml's
   // redirect targets still pointed at the old names. The second looks
   // nothing like the first, so don't read every non-2xx here as rate
   // limiting.
@@ -1068,9 +1072,10 @@ function deriveRoleStates(data) {
       }
       // Two different rows can mean "the user stopped this": the one
       // abort.ts writes for every pending role at the moment Abort is
-      // clicked, and the one the call writes for itself when its own
-      // between-attempts abort check catches up (see ABORTED_MID_CALL_MARKER
-      // in openrouter.ts). Both are deliberate stops, not failures, so
+      // clicked, and the one the call writes for itself once it notices -
+      // before its next attempt, as an attempt ends, or when a reply
+      // finishes after the abort (see ABORTED_MID_CALL_MARKER in
+      // openrouter.ts). Both are deliberate stops, not failures, so
       // both get the "aborted" treatment rather than a red "call failed".
       const abortedMidCall = typeof log.errorMessage === 'string' && log.errorMessage.startsWith(ABORTED_MID_CALL_MARKER);
       store[log.agentRole] =
@@ -1098,7 +1103,7 @@ function deriveRoleStates(data) {
  * but this constant stayed at its old value (150s) - a real, observed
  * consequence was a role that genuinely succeeded server-side (verified
  * directly in the DB) still showing as unresolved on the client because
- * polling gave up first. A role that still hasn't resolved by the new
+ * polling gave up first. A role that still hasn't resolved by this
  * timeout either genuinely failed in a way this page can't see (the
  * disclosed site-gate/call-cap gap documented in
  * representative-background.ts/judge-background.ts - a rejection there is
@@ -2077,10 +2082,11 @@ function formatAgentName(role) {
 /**
  * Formats a duration as "12,345 ms", or a dash when none was recorded.
  *
- * null specifically for rows logged before the duration_ms column
- * existed (see ApiCallLogRecord in types.ts) - shown as a plain dash
- * rather than a fabricated 0, which would misleadingly read as an
- * instant response.
+ * null on a row that timed no attempt - the abort endpoint's rows, and a
+ * call that stopped on an abort before its next attempt - and on rows
+ * logged before the duration_ms column existed (see ApiCallLogRecord in
+ * types.ts). Shown as a plain dash rather than a fabricated 0, which would
+ * misleadingly read as an instant response.
  *
  * @param {number | null | undefined} durationMs
  * @returns {string}
@@ -2145,8 +2151,7 @@ function renderCallLog() {
     // detector, is what stopped it.) openrouter.ts writes this exact phrase
     // for the cap case (and quotes the offending text instead for the two
     // degeneration detectors), so it is the honest discriminator between
-    // them. Same literal-string
-    // coupling as the markers themselves.
+    // them. Same literal-string coupling as the markers themselves.
     const hitTokenCap = err.includes('max_tokens limit');
 
     if (isDegenerateRetried || isHttpErrorEscalated || isTransientRetried || isAbortRequest) {
@@ -2159,9 +2164,9 @@ function renderCallLog() {
     // A response still truncated after every attempt the escalation chain
     // allows is now a real failure (openrouter.ts), correctly shown via
     // the status column below - this badge only still fires for historical
-    // rows recorded before that change, where the log genuinely says 'success' with a
-    // completion that's an exact multiple of the cap (1x from an older,
-    // single-attempt truncation, or 2x from a retry that also truncated
+    // rows recorded before that change, where the log genuinely says
+    // 'success' with a completion that's an exact multiple of the cap (1x
+    // from an older, single-attempt truncation, or 2x from a retry that also truncated
     // before this fix existed). Same reasoning and formula as isTruncated().
     const wasTruncated =
       entry.status === 'success' &&
@@ -2264,9 +2269,9 @@ function renderCallLog() {
  * elapsed time for the trial - representatives/judges within a phase run
  * concurrently, so those two numbers are expected to differ; the label
  * below says "compute time" specifically to avoid implying otherwise.
- * Rows logged before the duration_ms column existed have a null value
- * (see formatDuration) and are simply skipped in this sum rather than
- * treated as 0, so an old trial's total doesn't silently understate.
+ * A row with no duration (see formatDuration) is skipped in this sum
+ * rather than treated as 0: it timed no attempt, or predates the
+ * duration_ms column.
  */
 function renderCallLogTotals() {
   let totalPromptTokens = 0;
@@ -2321,8 +2326,9 @@ function renderCallLogTotals() {
  * end. Both phases run all of their roles concurrently - the
  * representatives are not a 3-slot pool that makes the 4th wait for a free
  * slot, which would push the worst case to ~32.5 min (see the comment on
- * MAX_CONCURRENT_CALLS above). Kept at 40 minutes: real margin above that (not just enough to
- * scrape by, consistent with every other budget in this app), so a trial
+ * MAX_CONCURRENT_CALLS above). Kept at 40 minutes: real margin above that
+ * (not just enough to scrape by, consistent with every other budget in
+ * this app), so a trial
  * that's actually still working - however slowly - doesn't get mislabeled
  * "interrupted" in the history sidebar before it's had a real chance to
  * finish.

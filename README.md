@@ -59,7 +59,7 @@ Six tables in Supabase/Postgres. `supabase/schema.sql` is the authority on every
 
 **`judge_rulings`** — one row per judge whose ruling was kept: `id`, `trial_id`, `role` (one of the three judges), `verdict` (`justified` or `not justified`), `reasoning_text`, `model_used` and `created_at`. At most one row per trial and role. A trial's three rulings are independent rows, and nothing in the schema or the code combines them.
 
-**`api_call_logs`** — one row per model-call attempt, kept or discarded, appended and never updated. It carries the fields the spec requires for every call — `agent_role`, `model_used`, `prompt_tokens`, `completion_tokens`, `total_tokens`, `cost` (in US dollars), `status` (`success` or `failed`) and `timestamp` — plus the row's own `id`, `trial_id`, `call_type` (`representative` or `judge`), `error_message`, `duration_ms` and `response_text`. `response_text` is the model's reply word for word, stored for every attempt that got one — discarded attempts included, so a truncated or degenerate reply can be read in full afterwards — and empty for an attempt with no reply. It is kept for audit only: the trial endpoint never selects it, so it never reaches the page. A discarded attempt's `error_message` starts with a marker saying what happened to it, such as `[transient-retried]`, and `duration_ms` is empty on the abort endpoint's rows (they record a decision, not an attempt) and on rows logged before that column existed. An abort is recorded here too, as a `failed` row with the model `n/a` for each pending role; that row is what running calls look for to know they should stop.
+**`api_call_logs`** — one row per model-call attempt, kept or discarded, appended and never updated. It carries the fields the spec requires for every call — `agent_role`, `model_used`, `prompt_tokens`, `completion_tokens`, `total_tokens`, `cost` (in US dollars), `status` (`success` or `failed`) and `timestamp` — plus the row's own `id`, `trial_id`, `call_type` (`representative` or `judge`), `error_message`, `duration_ms` and `response_text`. `response_text` is the model's reply word for word, stored for every attempt that got one — discarded attempts included, so a truncated or degenerate reply can be read in full afterwards — and empty for an attempt with no reply. It is kept for audit only: the trial endpoint never selects it, so it never reaches the page. A discarded attempt's `error_message` starts with a marker saying what happened to it, such as `[transient-retried]`, and `duration_ms` is empty on a row that timed no attempt — the abort endpoint's rows (they record a decision, not an attempt), and a call's `aborted` row when it stopped before starting its next attempt — and on rows logged before that column existed. An abort is recorded here too, as a `failed` row with the model `n/a` for each pending role; that row is what running calls look for to know they should stop.
 
 **`agent_progress`** — one row per trial and role (`trial_id` and `role` together are its key), overwritten each time a new attempt starts: `model`, `tier_index`, `attempt_in_tier`, `tier_max_attempts` and `updated_at`. It drives the live "Model: … (second attempt)" line on a card that is still running. A row left behind after a role has finished is harmless: the page only reads it for a role with no final result yet.
 
@@ -69,7 +69,7 @@ Every model call is shown, whether it was kept or thrown away, and every failure
 
 ### Call log
 
-One row per real model attempt, including attempts that were discarded in favour of a retry or an escalation, plus one for each role still pending when a trial is aborted. Discarded rows are dimmed, since the call usually went on to succeed further down the table, and so are those abort rows, which record the request to stop rather than an outcome.
+One row per real model attempt, including attempts that were discarded in favour of a retry or an escalation. An abort adds rows of its own: one for each role still pending when Abort is clicked, and one for a call that stopped between attempts. Discarded rows are dimmed, since the call usually went on to succeed further down the table, and so are those abort rows, which record the request to stop rather than an outcome.
 
 | Badge | Colour | What triggered it |
 | --- | --- | --- |
@@ -137,7 +137,7 @@ Every file tracked in the repository. Not tracked, and git-ignored: `node_module
 ├── supabase/schema.sql               all six tables, the seeded case, RLS, grants
 ├── tests/                            npm test — no network, spends no quota
 │   ├── retry-logic.test.js           the escalation chain, from the real TypeScript
-│   ├── trial-status.test.js          when a trial is completed; replies kept for audit, off the page
+│   ├── trial-status.test.js          when a trial is completed; aborts; replies kept for audit, off the page
 │   ├── render-cards.test.js          app.js: cards, the call log, failed requests
 │   ├── shared-constants.test.js      values duplicated across files still agree
 │   ├── docs.test.js                  README, SPEC.md and CLAUDE.md agree with the code
@@ -173,7 +173,7 @@ npm test                # five regression suites (see below)
 `npm test` needs no network and spends no quota. Every suite runs the real source rather than a copy of it — the backend compiled from its TypeScript with the project's own `tsc`, and `app.js` executed against a stub DOM:
 
 - `tests/retry-logic.test.js` — the escalation chain, driven against a mocked `fetch`.
-- `tests/trial-status.test.js` — when a trial is marked completed, and that every model reply is kept in the call log but never sent to the page, against an in-memory stand-in for Supabase, including the real judge and trial endpoints end to end.
+- `tests/trial-status.test.js` — when a trial is marked completed, that an aborted trial is never completed and never gains a result, that abort rows do not count against the call cap, and that every model reply is kept in the call log but never sent to the page, against an in-memory stand-in for Supabase, including the real agent and trial endpoints end to end.
 - `tests/render-cards.test.js` — `app.js`'s agent cards and call log, how it shortens model ids, and how it reports a request that fails outright.
 - `tests/shared-constants.test.js` — values that are deliberately duplicated across files still agree.
 - `tests/docs.test.js` — this README, `SPEC.md` and the requirement parts of `CLAUDE.md` still say what the code does. Every file, route, table, column, threshold, price and badge they describe is checked against its source, so changing one without the other fails the suite.

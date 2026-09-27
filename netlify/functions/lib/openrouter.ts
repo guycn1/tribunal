@@ -167,13 +167,14 @@ export interface OpenRouterMessage {
 // Large, tier 2's original model), 7 succeeded and 1 truncated on both of
 // its own attempts too. Rather than one fallback, this is a genuine
 // escalation chain - each tier a different model, reached once the tier
-// before it is done - which usually means it
-// spent every attempt allowed it, on truncation, degeneration or a slow
-// transient failure, but not always: a plain HTTP error (a removed model
-// id, say) escalates immediately and forfeits that tier's remaining
-// attempts, since re-asking a model that just 404'd cannot help. The last two tiers are deliberately from two
-// different companies, not two models in the same family, so a
-// shared-vendor quirk can't explain a failure that makes it that far.
+// before it is done - which usually means it spent every attempt allowed
+// it, on truncation, degeneration or a slow transient failure, but not
+// always: a plain HTTP error (a removed model id, say) escalates
+// immediately and forfeits that tier's remaining attempts, since
+// re-asking a model that just 404'd cannot help. The last two tiers are
+// deliberately from two different companies, not two models in the same
+// family, so a shared-vendor quirk can't explain a failure that makes it
+// that far.
 // Every tier also gets more token headroom than the one before it, as a
 // safeguard in case a sound response ever runs past the cap. None has been
 // seen to: all 48 capped replies whose text was stored, as of 2026-09-27,
@@ -328,9 +329,10 @@ function detectDegenerateRun(content: string): { degenerate: boolean; runLength:
 //   knowledge of what must be done and the courage to do it.") and
 //   occasionally a structural line ("We will grant this point for the sake
 //   of argument and proceed to the next test.") - flagged, on the same
-//   priority. Run over the same 830 texts, the four rules flag 149 (18%,
-//   and 12 of the 70 saved since the first version shipped), against 30
-//   for the first version.
+//   priority. Run over the same 830 texts, the four rules, with the
+//   long-sentence minimum then at 15, flagged 149 (18%, and 12 of the 70
+//   saved since the first version shipped), against 30 for the first
+//   version.
 // - Measured on live output later on 2026-09-27: 20 local trials of
 //   daenerys_targaryen, grey_worm and barak, every one of the 105 replies
 //   read. Of the 84 that stopped on their own, the rules rejected 24: 15
@@ -343,6 +345,13 @@ function detectDegenerateRun(content: string): { degenerate: boolean; runLength:
 //   degenerate reply lost, and the 24 older stored texts it stops flagging
 //   were all read and are all sound. 19 would be one word too far: a
 //   looping closing in the stored corpus turns on an 18-word sentence.
+// - Measured again at 18 words the same day: 16 more trials, every one of
+//   the 74 replies read. Of the 60 that stopped on their own, the rules
+//   rejected 12: 10 degenerate and 2 sound. They missed one degenerate
+//   reply - a daenerys_targaryen closing re-emitting a 16-word sentence
+//   after a single sentence in between, which the 15-word minimum would
+//   have caught. That is the recall the 18-word minimum gives up, and the
+//   first live case of it.
 // Deliberate rhetorical repetition does NOT trip this: real anaphora
 // repeats an opening phrase and then continues differently ("I ask you to
 // consider the scale..." / "I ask you to consider the evidence..."), which
@@ -358,22 +367,24 @@ function detectDegenerateRun(content: string): { degenerate: boolean; runLength:
 // anaphora risk, and has not been built.
 //
 // It works on real output, not just on the corpus it was calibrated
-// against. It has caught at least eleven natural live cases, all on the
-// tier-1 default model (counted from api_call_logs on 2026-09-27). The
-// first seven, under the original 4-copy rule, repeated a sentence 4 to 8
-// times: five in local testing on the day it shipped (tyrion_lannister
-// twice, grey_worm three times), then two on the deployed site the next
-// day - grey_worm again, at 4 repeats, and later the first catch on a
-// judge (shamgar, 5 repeats). The first production catch shows what a
-// miss costs: the response had finish_reason=stop at 604 tokens, so
-// without this check it would have been saved and shown as a perfectly
-// ordinary successful argument. Four more came late on 2026-09-26 (UTC):
-// barak (a sentence 4 times), grey_worm (a 17-word sentence 4 times), and
-// daenerys_targaryen and elon (an 18-word and a 40-word sentence, twice
-// each) - those last two caught only by the widened rules.
-// The older run-on check above has caught two, both grey_worm, both on the
-// tier-2 model of the time, at 180 and 84 words - far past the 40-word
-// line, and the 84-word one was read in full and confirmed degenerate.
+// against: it catches natural live cases, in local testing and on the
+// deployed site alike. Its first live catches were all on the tier-1
+// default model. The first seven, under the original 4-copy rule,
+// repeated a sentence 4 to 8 times: five in local testing on the day it
+// shipped (tyrion_lannister twice, grey_worm three times), then two on the
+// deployed site the next day - grey_worm again, at 4 repeats, and later
+// the first catch on a judge (shamgar, 5 repeats). The first production
+// catch shows what a miss costs: the response had finish_reason=stop at
+// 604 tokens, so without this check it would have been saved and shown as
+// a perfectly ordinary successful argument. Four more came late on
+// 2026-09-26 (UTC): barak (a sentence 4 times), grey_worm (a 17-word
+// sentence 4 times), and daenerys_targaryen and elon (an 18-word and a
+// 40-word sentence, twice each) - those last two caught only by the
+// widened rules. The targeted trials of 2026-09-27 above added many more.
+// The older run-on check above had its first two live catches on
+// grey_worm, both on the tier-2 model of the time, at 180 and 84 words -
+// far past the 40-word line, and the 84-word one was read in full and
+// confirmed degenerate.
 //
 // On false positives: the thresholds above knowingly accept some (a
 // refrain, a structural line), in exchange for missing as little as
@@ -385,9 +396,10 @@ function detectDegenerateRun(content: string): { degenerate: boolean; runLength:
 // exists, it shows a full sentence repeated verbatim, which deliberate
 // anaphora cannot produce - it varies the continuation, so the whole
 // sentences differ. That is the reason to think anaphora is safe from it;
-// it is not a measurement of precision. The first such measurement is the
-// 20-trial run above: of the replies these rules rejected, 15 of 24 were
-// degenerate with the long-sentence minimum at 15, and 15 of 22 at 18.
+// it is not a measurement of precision. The two live runs above are: of
+// the replies these rules rejected in the 20-trial run, 15 of 24 were
+// degenerate with the long-sentence minimum at 15, and 15 of 22 at 18;
+// in the 16-trial run, at 18, 10 of 12.
 const REPEATED_SENTENCE_THRESHOLD = 3;
 const CONSECUTIVE_REPEAT_THRESHOLD = 2;
 const LONG_SENTENCE_WORDS = 18;
@@ -595,9 +607,9 @@ const CONCISENESS_REMINDER: OpenRouterMessage = {
 // into whichever attempt was eventually kept, and so does a call that
 // stops itself because the trial was aborted - the whole point being that
 // a reader of the call log can see that a role needed a fallback at all,
-// not just its final outcome. All six marker prefixes below are duplicated as literal strings
-// in app.js (same pattern as ABORTED_BY_USER_MESSAGE, which is defined in
-// db.ts and copied there too) so the frontend can tell a
+// not just its final outcome. All six marker prefixes below are
+// duplicated as literal strings in app.js (same pattern as
+// ABORTED_BY_USER_MESSAGE, which is defined in db.ts and copied there too) so the frontend can tell a
 // discarded-but-recovered attempt from a discarded-and-fatal one without
 // any shared module between the two. Adding a marker here means adding it
 // there as well. No build step catches a mismatch, but
@@ -610,21 +622,22 @@ const CONCISENESS_REMINDER: OpenRouterMessage = {
 //   - truncation: finish_reason === 'length'. The model was still going
 //     when max_tokens stopped it. That says how the attempt ended, not
 //     what the text was like - though a capped reply is usually a
-//     repetition loop that ran until the cap stopped it (all 13 whose text
+//     repetition loop that ran until the cap stopped it (all 48 whose text
 //     was stored, as of 2026-09-27).
 //   - degeneration proper: detectDegenerateRun / detectRepeatedSentences.
 //     The model finished on its own and produced unusable text.
 // They are told apart by how the attempt ended: the detectors only run on
 // a reply that stopped on its own, and a reply that hits the cap is
-// reported as truncated whatever it contains. The umbrella name is a holdover from when the run-on detector was the only
-// content check there was.
+// reported as truncated whatever it contains. The umbrella name is a
+// holdover from when the run-on detector was the only content check there
+// was.
 //
 // The names are deliberately NOT being corrected: these exact strings are
 // persisted into api_call_logs.error_message on every historical row, so
 // they are effectively a wire format, and renaming them would either break
 // the rendering of past trials or mean carrying both spellings forever.
 // The distinction is made where it actually reaches a reader instead -
-// renderCallLog() in app.js picks its badge ("Truncated" vs "Degenerated")
+// renderCallLog() in app.js picks its badge (`truncated` vs `degenerated`)
 // from the reason text, since only the cap case says "max_tokens limit".
 export const DEGENERATE_RETRIED_SAME_MODEL_MARKER = '[degenerate-retried-same-model]';
 export const DEGENERATE_RETRIED_DIFF_MODEL_MARKER = '[degenerate-retried-diff-model]';
@@ -791,10 +804,13 @@ export async function callOpenRouter(
   // Same fire-and-forget-tolerant contract as onDiscardedAttempt: awaited,
   // but a rejection here must never block or fail the real call.
   onAttemptStart?: (info: AttemptStartInfo) => Promise<void> | void,
-  // Checked before every attempt (including the first). Returning true
+  // Checked before every attempt (including the first), and again as each
+  // failed attempt is recorded (see recordFailedAttemptAndAdvance), so an
+  // attempt that fails as the abort lands is not retried. Returning true
   // means the user aborted this trial while this call was still running,
   // and the chain stops immediately instead of spending more real money on
-  // a result nobody is waiting for any more.
+  // a result nobody is waiting for any more. A reply that succeeds after
+  // the abort is caught by the agent handler instead (finishedAfterAbort).
   //
   // This exists because a Netlify Background Function genuinely cannot be
   // cancelled from the browser: the client gets its 202 the instant the
