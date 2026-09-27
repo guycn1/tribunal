@@ -207,8 +207,10 @@ async function main() {
   // ======================================================== README: endpoints
   console.log('\n=== README: the endpoint table matches netlify.toml and the handlers ===');
   const api = section(README, '### API endpoints');
-  const rows = [...api.matchAll(/^\| `(GET|POST|PUT|PATCH|DELETE)` \| `([^`]+)` \| `([\w-]+)\.ts` \| (.*) \|$/gm)]
-    .map((m) => ({ method: m[1], path: m[2], fn: m[3], text: m[4] }));
+  // A long path is split across lines in the table, as code spans joined by
+  // <br> ("`/api/trials/:id`<br>`/abort`"); the parts are rejoined here.
+  const rows = [...api.matchAll(/^\| `(GET|POST|PUT|PATCH|DELETE)` \| (`[^`]+`(?:<br>`[^`]+`)*) \| `([\w-]+)\.ts` \| (.*) \|$/gm)]
+    .map((m) => ({ method: m[1], path: m[2].replace(/`|<br>/g, ''), fn: m[3], text: m[4] }));
   const redirects = [...TOML.matchAll(/from = "([^"]+)"\s*\n\s*to = "\/\.netlify\/functions\/([\w-]+)[^"]*"/g)].map((m) => ({ path: m[1], fn: m[2] }));
   check('the endpoint table has rows', rows.length > 0);
   check('netlify.toml has routes', redirects.length > 0);
