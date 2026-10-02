@@ -708,6 +708,16 @@ async function main() {
   const documentedRoles = [...knownRoles.matchAll(/`([a-z_]+)`/g)].map((m) => m[1]);
   const realRoles = [...Object.keys(REPRESENTATIVES), ...Object.keys(JUDGES)];
   check('the roles listed are exactly the real ones', documentedRoles.length > 0 && minus(realRoles, documentedRoles).length === 0 && minus(documentedRoles, realRoles).length === 0, documentedRoles.join(', '));
+
+  // The default model's token cap, wherever README gives it.
+  const { AGENT_MAX_TOKENS } = backend.load('lib/models.js');
+  const capClaims = [...README.matchAll(/the ([\d,]+) tokens the default model is given/g)].map((m) => Number(m[1].replace(/,/g, '')));
+  check(`the default model's token cap is stated as ${AGENT_MAX_TOKENS}, as models.ts sets it`, capClaims.length > 0 && capClaims.every((n) => n === AGENT_MAX_TOKENS), capClaims.join(', ') || 'not stated');
+  // One trigger request per agent, so a full trial sends as many requests
+  // as there are agents - in README and in netlify.toml's rate-limit note.
+  const agentCount = realRoles.length;
+  const requestClaims = [...`${README}\n${TOML}`.matchAll(/a (?:full )?trial (?:costs|sends) (\d+)/gi)].map((m) => Number(m[1]));
+  check(`every "a trial sends N" uses ${agentCount}, one request per agent`, requestClaims.length > 0 && requestClaims.every((n) => n === agentCount), requestClaims.join(', ') || 'not stated');
   backend.cleanup();
 
   // ======================================================== README: what the UI shows
