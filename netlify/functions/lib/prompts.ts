@@ -4,6 +4,10 @@ import { JUDGES } from './judges';
 import type { CaseDefinition, JudgeRole, RepresentativeRole, Verdict } from './types';
 import type { OpenRouterMessage } from './openrouter';
 
+/**
+ * A representative's messages: their character prompt as the system
+ * message, and the case record as the user message.
+ */
 export function buildRepresentativeMessages(
   role: RepresentativeRole,
   caseDef: CaseDefinition
@@ -32,6 +36,14 @@ const REPRESENTATIVE_ORDER: RepresentativeRole[] = [
   'grey_worm',
 ];
 
+/**
+ * A judge's messages: their method prompt as the system message, and the
+ * case record followed by all four representatives' arguments as the user
+ * message. A representative with no argument is marked unavailable, never
+ * left out or filled in.
+ *
+ * @param availableArguments The saved arguments, by role.
+ */
 export function buildJudgeMessages(
   role: JudgeRole,
   caseDef: CaseDefinition,
@@ -69,6 +81,11 @@ export interface ParsedJudgeOutput {
 
 const VERDICT_LINE = /^\s*VERDICT:\s*(justified|not justified)\s*$/im;
 
+/**
+ * A judge's reply split into its verdict and its reasoning, read from the
+ * VERDICT line and everything after it. Null if there is no such line, or
+ * nothing follows it.
+ */
 export function parseJudgeOutput(raw: string): ParsedJudgeOutput | null {
   const match = raw.match(VERDICT_LINE);
   if (!match) {

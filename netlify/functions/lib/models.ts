@@ -34,6 +34,10 @@ export const ALL_AGENT_ROLES = Object.keys(ROLE_ENV_VAR);
 // other.
 export const AGENT_MAX_TOKENS = 1400;
 
+/**
+ * The model a role's call starts on: its MODEL_<ROLE> override if set,
+ * DEFAULT_MODEL otherwise.
+ */
 export function getModelForRole(role: string): string {
   const envVar = ROLE_ENV_VAR[role];
   const override = envVar ? process.env[envVar] : undefined;
@@ -114,6 +118,7 @@ export function getModelForRole(role: string): string {
 // reaching this pricier tier.
 const TRUNCATION_FALLBACK_MODEL = process.env.TRUNCATION_FALLBACK_MODEL || 'anthropic/claude-haiku-4.5';
 
+/** Tier 2's model - see TRUNCATION_FALLBACK_MODEL above. */
 export function getTruncationFallbackModel(): string {
   return TRUNCATION_FALLBACK_MODEL;
 }
@@ -145,10 +150,12 @@ export function getTruncationFallbackModel(): string {
 const TOP_TIER_FALLBACK_MODEL = process.env.TOP_TIER_FALLBACK_MODEL || 'openai/gpt-5.6-sol';
 const LAST_RESORT_FALLBACK_MODEL = process.env.LAST_RESORT_FALLBACK_MODEL || 'google/gemini-2.5-pro';
 
+/** Tier 3's model - see the comment above TOP_TIER_FALLBACK_MODEL. */
 export function getTopTierFallbackModel(): string {
   return TOP_TIER_FALLBACK_MODEL;
 }
 
+/** Tier 4's model - see the comment above TOP_TIER_FALLBACK_MODEL. */
 export function getLastResortFallbackModel(): string {
   return LAST_RESORT_FALLBACK_MODEL;
 }
@@ -161,6 +168,10 @@ export function getLastResortFallbackModel(): string {
 // deciding whether to include the reasoning field in a request at all.
 const MODELS_WITH_MANDATORY_REASONING = new Set<string>(['google/gemini-2.5-pro']);
 
+/**
+ * Whether a model rejects a request that turns reasoning off, so the
+ * reasoning field must be left out of its requests.
+ */
 export function modelRequiresReasoning(model: string): boolean {
   return MODELS_WITH_MANDATORY_REASONING.has(model);
 }

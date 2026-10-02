@@ -19,6 +19,14 @@ import type { RepresentativeRole } from './lib/types';
 // openrouter.ts).
 const MAX_TOKENS = AGENT_MAX_TOKENS;
 
+/**
+ * POST /api/trials/:id/representatives/:role
+ *
+ * Runs one representative's call, as a Background Function: the browser
+ * gets Netlify's 202 at once and learns the outcome by polling
+ * GET /api/trials/:id. Every attempt is logged, and the argument is saved
+ * unless the call failed or the trial was aborted meanwhile.
+ */
 const rawHandler: Handler = async (event) => {
   if (event.httpMethod !== 'POST') {
     return json(405, { error: 'Method not allowed' });
@@ -41,7 +49,7 @@ const rawHandler: Handler = async (event) => {
   // in db.ts for what each actually protects against and why neither
   // alone is sufficient.
   //
-  // As a Background Function (see config.background below), this JSON
+  // As a Background Function (see the end of this file), this JSON
   // response is no longer what the real caller sees - Netlify responds 202
   // to the client immediately and runs this handler asynchronously, so a
   // rejection here now only reaches the frontend if it's discoverable by
@@ -195,107 +203,36 @@ const rawHandler: Handler = async (event) => {
 
 export const handler = safeHandler(rawHandler);
 
-// Per-IP rate limit on this function specifically, since it's one of the
-// two that actually spend OpenRouter money (the other is
-// judge-background.ts) - not
-// declared on trials.ts/case.ts, which never call OpenRouter regardless of
-// how often they're hit. Path matches how this function is actually
-// reached: netlify.toml redirects /api/trials/:id/representatives/:role
-// here as /.netlify/functions/representative-background/:id/:role,
-// so the glob covers every id/role combination.
+// This runs as a Netlify Background Function because of its filename: the
+// "-background" suffix is how Netlify declares one for a function written,
+// like every function in this project, with a named `handler` export.
+// Locally, netlify dev reads the same suffix and gives it the 900-second
+// background timeout rather than the 30-second synchronous one. The same
+// goes for judge-background.ts.
 //
-// windowLimit/windowSize are deliberately generous, not tight - this is a
-// backstop against a single source hammering the function in a burst,
-// not the thing meant to bound total cost (that's the global cap in
-// db.ts, layered underneath this). A real user running several trials in
-// a short window, or retrying after a transient failure, must keep
-// working.
+// Why a Background Function at all: Netlify's free-tier synchronous limit
+// is 10 seconds (the budget here was first built around a mistaken ~30s),
+// while every real OpenRouter call measured on this project at the time
+// took 8-18s+ per attempt. No retry or timeout tuning inside
+// callOpenRouter() could close that gap; Background Functions get up to 15
+// minutes. The trade-off: the client never receives this handler's return
+// value, since Netlify answers 202 at once, so the frontend learns the
+// outcome by polling GET /api/trials/:id - see the comment above the
+// site-gate and call-cap checks for what that means for their rejections.
+// Confirmed in production on 2026-09-21: all 28 trigger POSTs across four
+// live trials came back with Netlify's own 202 in ~0.3-0.5s, a status no
+// handler in this repository returns.
 //
-// background: true is the real fix for a verified, load-bearing problem:
-// Netlify's free-tier synchronous function limit is 10 seconds (confirmed
-// against Netlify's own docs and support forum; the budget here was first
-// built around a mistaken ~30s), while every real OpenRouter call measured on this
-// project at the time had taken 8-18s+ per attempt. A standard invocation
-// could not reliably survive that gap regardless of any retry/timeout tuning inside
-// callOpenRouter() - only a genuinely different execution model
-// (Background Functions, up to 15 minutes) closes it. The tradeoff: the
-// client no longer receives this handler's return value directly (Netlify
-// responds 202 immediately) - the frontend now discovers the real outcome
-// by polling GET /api/trials/:id instead of awaiting this call's response
-// body. See the comment above the site-gate/call-cap checks for the one
-// real, disclosed gap this introduces (those two rejections are no longer
-// visible to the poller, only in function logs).
+// No `config` export, on purpose. Netlify's bundler reads one only from a
+// function written with a default export; for a named `handler` export
+// like this one it ignores everything in it (parseSource in
+// @netlify/zip-it-and-ship-it, read on 2026-10-02). An exported config here
+// once declared background: true, a custom path and a per-IP rate limit,
+// and none of the three ever took effect: the 202s come from the filename,
+// routing comes from netlify.toml, and the rate limit was never applied -
+// 75 requests in 80 seconds from one IP on 2026-10-02 all got through. The
+// per-IP rate limit is on this function's redirect in netlify.toml.
 //
-// The file is named representative-background.ts, not representative.ts,
-// for a real, load-bearing reason found by reading netlify-cli's own
-// source directly: locally, netlify dev decides whether a function gets
-// the 900-second background timeout or the 30-second synchronous one
-// purely by checking whether the function's name ends in "-background" -
-// it does not read this config.background export at all for that
-// decision. Without the suffix, local dev was silently giving these calls
-// the synchronous 30s ceiling regardless of this file's own config,
-// which is exactly what was killing real, otherwise-successful calls in
-// local testing. Both config.background here and the filename suffix are
-// kept together, since Netlify's own docs list the filename suffix as a
-// still-supported legacy convention alongside the modern config property.
-//
-// The `path` below was also updated to match this file's new name
-// (representative-background, not representative) - a first attempt at
-// this rename assumed a custom `path` fully overrides a function's
-// default name-derived URL regardless of the file's actual name, which
-// is what Netlify's own docs describe, but that assumption produced a
-// real, observed regression: every call returned a synchronous 404
-// immediately after the rename, with netlify.toml's redirect still
-// pointing at the old name-based URL. Fixed by updating both this `path`
-// and the matching redirect target in netlify.toml to the new name,
-// rather than relying on the old path continuing to resolve under a
-// renamed file - not yet root-caused exactly why the override didn't
-// hold locally, but keeping `path` and the actual filename in agreement
-// avoids depending on that assumption at all.
-//
-// CONFIRMED IN PRODUCTION: the deployed site has run real trials on this
-// exact shape - config.background plus the -background filename plus the
-// matching netlify.toml redirect - and the calls genuinely ran as
-// Background Functions there. The direct proof came on 2026-09-21: across
-// four full 7-agent trials against the live site, all 28 trigger POSTs
-// returned Netlify's own automatic HTTP 202 in roughly 0.3-0.5s, rather
-// than blocking for the real 9-21s generation. No handler in this
-// repository ever returns 202, so that status can only have come from the
-// platform treating these as Background Functions. (An earlier, incidental
-// proof pointed the same way: a production trial on 2026-09-20 had two
-// judge calls run for roughly six unbroken minutes server-side - impossible
-// for a synchronous invocation, which dies at the 10-second ceiling.) So
-// whatever the platform keys off, this combination works deployed.
-//
-// What is still genuinely unknown, and no longer matters much: whether the
-// platform needs the filename suffix or merely tolerates it alongside
-// config.background. Both are present and the pair is confirmed working, so
-// there is nothing to act on - only a reason not to drop either one
-// casually.
-//
-// STILL UNVERIFIED: whether the rate-limit path glob below is what
-// Netlify's rate limiter actually matches against. Local netlify dev does
-// not simulate rate limiting at all, and nothing has exercised it against
-// the deployed site. If it turns out not to match, the consequence is the
-// quiet loss of one of three anti-abuse layers - the global call cap in
-// db.ts and the site gate both still apply - not a break of anything.
-// No `: Config` type annotation here on purpose: the RateLimitConfig type
-// shipped by the installed @netlify/functions version (2.8.2, checked
-// 2026-09-26) is missing `windowLimit` entirely, even though it's a real,
-// required field in
-// Netlify's own build-time schema (confirmed directly against the zod
-// schema its bundler actually validates against, in
-// node_modules/netlify-cli's vendored zip-it-and-ship-it package) - a
-// stale type export, not a real constraint. TypeScript types are erased
-// at build time (esbuild, per netlify.toml) and have no effect on what
-// the platform reads from this export, so annotating against the stale
-// type would only fight the type-checker over something already correct.
-export const config = {
-  path: '/.netlify/functions/representative-background/*',
-  background: true,
-  rateLimit: {
-    windowLimit: 45,
-    windowSize: 300,
-    aggregateBy: ['ip'],
-  },
-};
+// The filename and the redirect target in netlify.toml must name the same
+// function. When this file was renamed from representative.ts, every call
+// returned 404 until the redirect was updated to match.

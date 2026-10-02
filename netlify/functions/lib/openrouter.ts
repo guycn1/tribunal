@@ -11,8 +11,8 @@ const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 // try genuinely takes most of its ceiling uses up its tier's attempts.
 //
 // representative-background.ts/judge-background.ts run as Netlify
-// Background Functions (config.background = true), not standard
-// synchronous invocations. Before that move this file budgeted against a
+// Background Functions (declared by their -background filenames), not
+// standard synchronous invocations. Before that move this file budgeted against a
 // tight ~26s ceiling, calibrated against a *standard* Netlify Function
 // invocation limit that turned out to be wrong for what this project
 // actually runs on: the real free-tier synchronous limit is 10
@@ -78,62 +78,66 @@ const FAST_FAILURE_THRESHOLD_MS = 10000;
 // real outage.
 const MAX_FAST_TRANSIENT_RETRIES_PER_TIER = 4;
 
-// Per-attempt ceiling, scaled to how much text the call actually asked for
-// AND to how much it has to read first. A timeout signal passed to fetch()
-// stays armed while the response body is read, so this has to cover
-// generation time, not just time-to-headers.
-//
-// The prompt-size term is not cosmetic - it was added (2026-09-20) after a
-// real incident where judge calls timed out repeatedly against a ceiling
-// that only ever considered max_tokens. A judge's prompt carries the full
-// case record plus all four representative arguments. Counted across every
-// successful call in api_call_logs as of 2026-09-21: a judge prompt runs a
-// median of 3896 tokens (mean 3943, p90 4483), a representative's 1028
-// (mean 1166, p90 2068) - so a judge carries something like 3.8x a
-// representative's prompt. The old formula gave both the identical 43000ms.
-// Real measured judge completions on the default model in that incident:
-// 26.9s, 33.9s, and 43.2s - the last of those at that very ceiling (a
-// logged duration can read slightly over it, since it also covers the
-// progress write made just before the request starts), with several sibling
-// attempts timing out outright just past it. A ceiling that half the real
-// distribution overruns isn't a safety limit, it's a coin flip, so prompt
-// size now feeds it directly.
-//
-// Sum of attempt ceilings across the whole escalation chain: a judge at
-// 4550 prompt tokens (the incident's judges - above p90, so a deliberately
-// generous case) comes to 648.6s, and a representative at 1030 (about the
-// median) to 587.0s, both just inside the 650s budget. Those two figures
-// are what the budget was sized against.
-//
-// It is NOT inside the budget by construction. The ceiling scales with
-// prompt size and real prompts have a long tail - the largest judge prompt
-// in the log (as of 2026-09-21) is 11318 tokens, which sums to 767s, over
-// budget by nearly two minutes. Even p90 (4483) only reaches 647.5s, so the
-// tail has to be genuinely unusual before this bites, and it bites safely
-// when it does: remainingMs() clamps the last attempt and the loop reports
-// honestly that the budget ran out before a further tier could be tried.
-// The effect of an outsized prompt is fewer tiers actually reached, not a
-// silent overrun.
-//
-// The result is also clamped: never under 30000ms, and never over the
-// whole budget less MIN_REMAINING_TO_ATTEMPT_MS.
-//
-// Math.round is load-bearing, not tidiness: the prompt term uses a
-// fractional multiplier, so an odd token estimate yields a half
-// millisecond - and AbortSignal.timeout() throws outright on a
-// non-integer ("The value of 'delay' is out of range"), before fetch() is
-// even called. That would have failed roughly half of all real calls,
-// deterministically, on prompt length alone. Caught by the offline suite
-// before deploy; do not remove.
+/**
+ * Per-attempt ceiling, scaled to how much text the call actually asked for
+ * AND to how much it has to read first. A timeout signal passed to fetch()
+ * stays armed while the response body is read, so this has to cover
+ * generation time, not just time-to-headers.
+ *
+ * The prompt-size term is not cosmetic - it was added (2026-09-20) after a
+ * real incident where judge calls timed out repeatedly against a ceiling
+ * that only ever considered max_tokens. A judge's prompt carries the full
+ * case record plus all four representative arguments. Counted across every
+ * successful call in api_call_logs as of 2026-09-21: a judge prompt runs a
+ * median of 3896 tokens (mean 3943, p90 4483), a representative's 1028
+ * (mean 1166, p90 2068) - so a judge carries something like 3.8x a
+ * representative's prompt. The old formula gave both the identical 43000ms.
+ * Real measured judge completions on the default model in that incident:
+ * 26.9s, 33.9s, and 43.2s - the last of those at that very ceiling (a
+ * logged duration can read slightly over it, since it also covers the
+ * progress write made just before the request starts), with several sibling
+ * attempts timing out outright just past it. A ceiling that half the real
+ * distribution overruns isn't a safety limit, it's a coin flip, so prompt
+ * size now feeds it directly.
+ *
+ * Sum of attempt ceilings across the whole escalation chain: a judge at
+ * 4550 prompt tokens (the incident's judges - above p90, so a deliberately
+ * generous case) comes to 648.6s, and a representative at 1030 (about the
+ * median) to 587.0s, both just inside the 650s budget. Those two figures
+ * are what the budget was sized against.
+ *
+ * It is NOT inside the budget by construction. The ceiling scales with
+ * prompt size and real prompts have a long tail - the largest judge prompt
+ * in the log (as of 2026-09-21) is 11318 tokens, which sums to 767s, over
+ * budget by nearly two minutes. Even p90 (4483) only reaches 647.5s, so the
+ * tail has to be genuinely unusual before this bites, and it bites safely
+ * when it does: remainingMs() clamps the last attempt and the loop reports
+ * honestly that the budget ran out before a further tier could be tried.
+ * The effect of an outsized prompt is fewer tiers actually reached, not a
+ * silent overrun.
+ *
+ * The result is also clamped: never under 30000ms, and never over the
+ * whole budget less MIN_REMAINING_TO_ATTEMPT_MS.
+ *
+ * Math.round is load-bearing, not tidiness: the prompt term uses a
+ * fractional multiplier, so an odd token estimate yields a half
+ * millisecond - and AbortSignal.timeout() throws outright on a
+ * non-integer ("The value of 'delay' is out of range"), before fetch() is
+ * even called. That would have failed roughly half of all real calls,
+ * deterministically, on prompt length alone. Caught by the offline suite
+ * before deploy; do not remove.
+ */
 function attemptTimeoutFor(promptTokens: number, maxTokens: number): number {
   const estimateMs = 12000 + promptTokens * 2.5 + maxTokens * 25;
   const ceiling = TOTAL_BUDGET_MS - MIN_REMAINING_TO_ATTEMPT_MS;
   return Math.round(Math.min(Math.max(estimateMs, 30000), ceiling));
 }
 
-// Rough token estimate from raw characters (~4 chars/token) - only ever
-// used to size the timeout above, never to bill or cap anything, so an
-// approximation is fine and avoids shipping a tokenizer for it.
+/**
+ * Rough token estimate from raw characters (~4 chars/token) - only ever
+ * used to size the timeout above, never to bill or cap anything, so an
+ * approximation is fine and avoids shipping a tokenizer for it.
+ */
 function estimatePromptTokens(messages: OpenRouterMessage[]): number {
   const chars = messages.reduce((total, m) => total + m.content.length, 0);
   return Math.ceil(chars / 4);
@@ -204,22 +208,28 @@ interface RetryTier {
   maxAttempts: number;
 }
 
-// Tier 1's maxAttempts raised 1 -> 2 (2026-09-20), specifically to
-// compensate for tier 2's own cost going up when its model was replaced
-// (mistralai/mistral-large-2512, deprecated/removed from OpenRouter -
-// see getTruncationFallbackModel's comment in models.ts - was $0.50/$1.50
-// per million prompt/completion tokens; its replacement,
-// anthropic/claude-haiku-4.5, is $1.00/$5.00, a real 2-3x step up). A
-// second attempt at the default model catches more recoverable
-// truncations/degeneracies before reaching for a costlier tier. Note that
-// every tier in this chain is a genuinely paid model - nothing here runs
-// on a free tier - so this is about relative cost, not about avoiding
-// spend altogether: the default model is simply the cheapest of the four
-// by a wide margin ($0.05/$0.08 per million prompt/completion tokens
-// against tier 2's $1.00/$5.00 - see pricing.ts). This is also what surfaced
-// the isFallbackAttempt fix below: with tier 1 now allowed more than one
-// attempt, "is this attempt a retry" could no longer be inferred from
-// tierIndex alone.
+/**
+ * The escalation chain, cheapest model first: each tier's model, token cap
+ * and number of attempts. callOpenRouter() moves to the next tier once the
+ * current one's attempts are spent, or at once on a plain HTTP error.
+ *
+ * Tier 1's maxAttempts raised 1 -> 2 (2026-09-20), specifically to
+ * compensate for tier 2's own cost going up when its model was replaced
+ * (mistralai/mistral-large-2512, deprecated/removed from OpenRouter -
+ * see getTruncationFallbackModel's comment in models.ts - was $0.50/$1.50
+ * per million prompt/completion tokens; its replacement,
+ * anthropic/claude-haiku-4.5, is $1.00/$5.00, a real 2-3x step up). A
+ * second attempt at the default model catches more recoverable
+ * truncations/degeneracies before reaching for a costlier tier. Note that
+ * every tier in this chain is a genuinely paid model - nothing here runs
+ * on a free tier - so this is about relative cost, not about avoiding
+ * spend altogether: the default model is simply the cheapest of the four
+ * by a wide margin ($0.05/$0.08 per million prompt/completion tokens
+ * against tier 2's $1.00/$5.00 - see pricing.ts). This is also what surfaced
+ * the isFallbackAttempt fix below: with tier 1 now allowed more than one
+ * attempt, "is this attempt a retry" could no longer be inferred from
+ * tierIndex alone.
+ */
 function buildRetryTiers(defaultModel: string, defaultMaxTokens: number): RetryTier[] {
   return [
     { getModel: () => defaultModel, maxTokens: defaultMaxTokens, maxAttempts: 2 },
@@ -259,6 +269,10 @@ const DEGENERATE_RUN_THRESHOLD = 40;
 // this threshold was measured with.
 const PUNCTUATION_BREAK_CHARS = /[.,;:!?()"'“”‘’—–\-\n*]+/g;
 
+/**
+ * The longest run of words with no punctuation between them, whether it
+ * reaches DEGENERATE_RUN_THRESHOLD, and the start of that run as a sample.
+ */
 function detectDegenerateRun(content: string): { degenerate: boolean; runLength: number; sample: string } {
   const chunks = content.split(PUNCTUATION_BREAK_CHARS);
   let max = 0;
@@ -294,7 +308,8 @@ function detectDegenerateRun(content: string): { degenerate: boolean; runLength:
 // undetected the whole time since.
 //
 // It flags a text on any of four verbatim-repetition patterns in its
-// sentences, and two more in its clauses (see CLAUSE_SPLIT below):
+// sentences, two more in its clauses (see CLAUSE_SPLIT below), and two
+// near-verbatim ones (see NEAR_COPY_SIMILARITY below). The four:
 //   1. the same sentence twice in a row;
 //   2. a long sentence (18+ words) twice anywhere in the text;
 //   3. any sentence 3+ times anywhere in the text;
@@ -357,14 +372,17 @@ function detectDegenerateRun(content: string): { degenerate: boolean; runLength:
 // consider the scale..." / "I ask you to consider the evidence..."), which
 // produces different whole sentences and is therefore invisible to the
 // sentence rules - unlike the earlier, abandoned 5-word phrase heuristic,
-// which flagged exactly that pattern as a false positive. The clause rules
-// below are the exception: an opening that ends at a comma is a clause of
-// its own, and three copies of it close together are flagged.
+// which flagged exactly that pattern as a false positive. Two kinds of rule
+// below are exceptions. The clause rules: an opening that ends at a comma
+// is a clause of its own, and three copies of it close together are
+// flagged. And the near-copy rules: anaphora whose sentences share most of
+// their words - a closing that restates a line from just above, most often
+// - reads as a near-copy, and most of the sound replies they reject are
+// exactly that.
 //
-// What it does not catch: near-verbatim looping, where each copy differs
-// by a word or two ("Jon Snow's actions" / "his actions"). Matching that
-// would take a fuzzy comparison with its own calibration against the
-// anaphora risk, and has not been built.
+// Near-verbatim looping, where each copy differs by a word or two ("Jon
+// Snow's actions" / "his actions"), is left to the two near-copy rules
+// further below, with their own calibration.
 //
 // It works on real output, not just on the corpus it was calibrated
 // against: it catches natural live cases, in local testing and on the
@@ -395,8 +413,9 @@ function detectDegenerateRun(content: string): { degenerate: boolean; runLength:
 // survived, and for the earliest catches not even that. Where a sample
 // exists, it shows a full sentence repeated verbatim, which deliberate
 // anaphora cannot produce - it varies the continuation, so the whole
-// sentences differ. That is the reason to think anaphora is safe from it;
-// it is not a measurement of precision. The two live runs above are: of
+// sentences differ. That is the reason to think anaphora is safe from the
+// verbatim rules (not from the near-copy rules, as above); it is not a
+// measurement of precision. The two live runs above are: of
 // the replies these rules rejected in the 20-trial run, 15 of 24 were
 // degenerate with the long-sentence minimum at 15, and 15 of 22 at 18;
 // in the 16-trial run, at 18, 10 of 12.
@@ -435,7 +454,8 @@ const MIN_WORDS_FOR_REPEATED_PASSAGE = 12;
 //      clause, exactly like a loop.
 // With them, and the long-sentence minimum at 15 as it then was, the
 // detector flagged 157 of the 844 texts (18.6%), against 152 without; with
-// the minimum at 18 it flags 133 (15.8%).
+// the minimum at 18, 133 (15.8%). The near-copy rules below were measured
+// on a larger set, with its own figures.
 // Copies spread across a text are left alone: a thesis line restated at
 // the start and the end, or a phrase quoted from the Question for
 // Judgment ("the presence or absence of safer alternatives"), repeats 3
@@ -448,33 +468,96 @@ const MIN_WORDS_FOR_CLAUSE_CLUSTER = 6;
 const CLAUSE_CLUSTER_COPIES = 3;
 const CLAUSE_CLUSTER_SPAN = 6;
 
+// Near-verbatim looping: copies that differ by a word or two, which every
+// rule above misses because it compares whole sentences or clauses
+// exactly. Two sentences count as near-copies by word-level edit distance
+// (the number of words to insert, delete or replace to turn one into the
+// other), over the length of the longer one. Two rules:
+//   1. a near-verbatim passage: 2+ consecutive sentences found again later,
+//      each aligned pair at least 80% alike, 10+ words in all (counting the
+//      shorter of each pair);
+//   2. a looping close: a sentence in the last 10% of the text that is at
+//      least 60% like one of the 4 sentences before it, both of 8+ words
+//      and not identical. This is the shape the passage rule misses: a
+//      closing paragraph that reshuffles the one before it ("I ask you to
+//      consider the legacy of a woman who was a threat, who was a
+//      liberator..." then "...the legacy of a realm that was torn apart by
+//      the actions of a woman who was a threat, who was a liberator...").
+// Calibrated on 2026-09-27 against the 959 replies ever kept as a success
+// (851 in the database, 108 from deleted targeted trials), of which the
+// rules above flag 133 and pass 826. Every reply these two rules flag
+// among the 826 was read, 109 in all: 27 clear near-verbatim loops (of 28
+// known in the corpus), 44 borderline (a sentence or two re-emitted near
+// the end), and 38 sound, mostly a closing that restates a line from the
+// paragraph above. Read on the recall-first priority above, and chosen by
+// the user over a stricter setting (the last 5%, 12+ words) that, in its
+// prototype, rejected 14 sound replies but caught only 24 of the 28. The
+// one known loop it misses (a daenerys_targaryen closing, trial dc1cb897)
+// re-emits its lines too early for the closing rule and too loosely for
+// the passage rule. Neither rule catches a loop that never re-emits a
+// sentence, such as an escalating list ("It was the only way to save the
+// realm... to save the people... to save the world").
+const NEAR_COPY_SIMILARITY = 0.8;
+const NEAR_PASSAGE_SENTENCES = 2;
+const MIN_WORDS_FOR_NEAR_PASSAGE = 10;
+const CLOSING_COPY_SIMILARITY = 0.6;
+const CLOSING_SHARE = 0.1;
+const CLOSING_LOOKBACK = 4;
+const MIN_WORDS_FOR_CLOSING_COPY = 8;
+
+/**
+ * Word-level similarity of two normalized sentences, given as their words:
+ * one less their word edit distance over the longer one's length - 1 for
+ * identical, 0 for nothing in common.
+ */
+function sentenceSimilarity(a: string[], b: string[]): number {
+  let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i];
+    for (let j = 1; j <= b.length; j++) {
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+    prev = cur;
+  }
+  return 1 - prev[b.length] / Math.max(a.length, b.length, 1);
+}
+
+/**
+ * A sentence reduced for comparison: trimmed, lower-cased, whitespace
+ * collapsed and punctuation dropped.
+ */
 function normalizeSentenceForRepeatCheck(sentence: string): string {
   return sentence.trim().toLowerCase().replace(/\s+/g, ' ').replace(/[^\w\s]/g, '');
 }
 
+/** The number of words in a sentence already normalized. */
 function wordCount(normalized: string): number {
   return normalized.split(' ').filter(Boolean).length;
 }
 
 /**
- * The first verbatim-repetition pattern found, as the reason text a
- * discarded attempt is logged with: the repeated text quoted, and where
- * its copies sit ("sentences 3 and 31 of 32"), so the call log alone shows
- * a closing restatement apart from a loop. The whole reply is stored too
- * (DiscardedAttempt.responseText). The in-a-row check comes first because
- * it names a loop most precisely.
+ * The first repetition pattern found, verbatim or near-verbatim, as the
+ * reason text a discarded attempt is logged with: the repeated text
+ * quoted, and where its copies sit ("sentences 3 and 31 of 32"), so the
+ * call log alone shows a closing restatement apart from a loop. The whole
+ * reply is stored too (DiscardedAttempt.responseText). The in-a-row check
+ * comes first because it names a loop most precisely, and the near-copy
+ * checks last, so an exact repeat is reported as one.
  */
 function detectRepeatedSentences(content: string): { degenerate: boolean; reason: string } {
   const sentences = content.split(/[.!?]+/).map(normalizeSentenceForRepeatCheck).filter((s) => wordCount(s) > 0);
   const total = sentences.length;
+  /** The first 60 characters of a sentence or clause, quoted for a reason text. */
   const quote = (s: string) => `("${s.slice(0, 60)}...")`;
-  // 0-based indexes in, "sentences 3, 17 and 31 of 32" out.
+  /** 0-based indexes in, "sentences 3, 17 and 31 of 32" out. */
   const where = (indexes: number[]) => {
     const labels = indexes.map((i) => String(i + 1));
     const list = labels.length > 1 ? `${labels.slice(0, -1).join(', ')} and ${labels[labels.length - 1]}` : labels[0];
     return `(sentences ${list} of ${total})`;
   };
+  /** A run of sentences or clauses as "4-6", from a 0-based start. */
   const span = (from: number, length: number) => `${from + 1}-${from + length}`;
+  /** The article a number takes when read aloud: "an 18-word", "a 6-word". */
   const aOrAn = (n: number) => (n === 11 || n === 18 || String(n).startsWith('8') ? 'an' : 'a');
 
   let run = 1;
@@ -536,8 +619,8 @@ function detectRepeatedSentences(content: string): { degenerate: boolean; reason
     };
   }
 
-  // Clause rules last, so a loop the sentence rules already name is
-  // reported in sentences.
+  // Clause rules after the sentence rules, so a loop the sentence rules
+  // already name is reported in sentences.
   const clauses = content.split(CLAUSE_SPLIT).map(normalizeSentenceForRepeatCheck).filter((c) => wordCount(c) > 0);
   const clauseTotal = clauses.length;
   let clauseRun = 1;
@@ -577,6 +660,40 @@ function detectRepeatedSentences(content: string): { degenerate: boolean; reason
     }
   }
 
+  // Near-copy rules last of all, so an exact repeat is reported as one.
+  const tokens = sentences.map((s) => s.split(' ').filter(Boolean));
+  /** How alike sentences i and j are - see sentenceSimilarity(). */
+  const similar = (i: number, j: number) => sentenceSimilarity(tokens[i], tokens[j]);
+  for (let i = 0; i < total; i++) {
+    for (let j = i + 1; j < total; j++) {
+      let length = 0;
+      let words = 0;
+      while (i + length < j && j + length < total && similar(i + length, j + length) >= NEAR_COPY_SIMILARITY) {
+        words += Math.min(tokens[i + length].length, tokens[j + length].length);
+        length++;
+      }
+      if (length >= NEAR_PASSAGE_SENTENCES && words >= MIN_WORDS_FOR_NEAR_PASSAGE) {
+        return {
+          degenerate: true,
+          reason: `repeated a ${length}-sentence passage almost word for word (sentences ${span(i, length)} and ${span(j, length)} of ${total}) ${quote(sentences[j])}`,
+        };
+      }
+    }
+  }
+
+  for (let j = 0; j < total; j++) {
+    if ((j + 1) / total < 1 - CLOSING_SHARE || tokens[j].length < MIN_WORDS_FOR_CLOSING_COPY) continue;
+    for (let i = Math.max(0, j - CLOSING_LOOKBACK); i < j; i++) {
+      if (tokens[i].length < MIN_WORDS_FOR_CLOSING_COPY || sentences[i] === sentences[j]) continue;
+      if (similar(i, j) >= CLOSING_COPY_SIMILARITY) {
+        return {
+          degenerate: true,
+          reason: `closed on a near-copy of a sentence just before it (sentences ${i + 1} and ${j + 1} of ${total}) ${quote(sentences[j])}`,
+        };
+      }
+    }
+  }
+
   return { degenerate: false, reason: '' };
 }
 
@@ -586,15 +703,12 @@ function detectRepeatedSentences(content: string): { degenerate: boolean; reason
 // guess (e.g. telling a degenerate-but-not-truncated response it was "cut
 // off") would be actively misleading to the model on the retry.
 //
-// Worth knowing, since the wording does not fit every case it now
-// reaches: `attempt > 1` is the gate, so this is also appended after a
-// transient failure - a timeout, a 429, an empty-content 200 - where the
-// previous attempt produced no content at all and there was nothing to be
-// too long or too repetitive. The text is wrong for that case, though
-// harmlessly so: it asks for a concise, well-punctuated answer, which is
-// what was wanted anyway. Narrowing the gate to content-quality failures
-// specifically would be a behaviour change, not a comment fix, and has
-// not been made.
+// `attempt > 1` is the gate, so this is also appended after a transient
+// failure - a timeout, a 429, an empty-content 200 - where the previous
+// attempt produced no content at all and there was nothing to be too long
+// or too repetitive. It suits that case too: the reminder asks for a
+// concise, well-punctuated answer, which is what every retry wants,
+// whatever discarded the attempt before it.
 const CONCISENESS_REMINDER: OpenRouterMessage = {
   role: 'user',
   content:
@@ -701,6 +815,10 @@ export const RETRIED_ATTEMPT_MARKERS = [
   TRANSIENT_RETRIED_MARKER,
 ];
 
+/**
+ * Whether a call-log error message marks an attempt that was discarded and
+ * retried, rather than a role's final outcome.
+ */
 export function isRetriedAttemptMessage(errorMessage: string | null | undefined): boolean {
   return typeof errorMessage === 'string' && RETRIED_ATTEMPT_MARKERS.some((marker) => errorMessage.startsWith(marker));
 }
@@ -762,11 +880,19 @@ export interface OpenRouterResult {
   responseText?: string;
 }
 
-// label identifies the caller in the log lines below (e.g.
-// "representative:jon_snow") - purely diagnostic, never sent to OpenRouter
-// or returned to the client. With seven agents potentially calling this
-// concurrently, a log line with no indication of which one it belongs to
-// is close to useless once more than one is in flight at the same time.
+/**
+ * Asks OpenRouter for one agent's reply, walking the escalation chain
+ * (buildRetryTiers) until an attempt is kept, every tier is spent, the time
+ * budget runs out or the trial is aborted. Never throws for an API failure:
+ * every outcome, success or failure, comes back as an OpenRouterResult, with
+ * the attempts discarded on the way listed in it.
+ *
+ * @param label Identifies the caller in the log lines below (e.g.
+ *   "representative:jon_snow") - purely diagnostic, never sent to OpenRouter
+ *   or returned to the client. With seven agents potentially calling this
+ *   concurrently, a log line with no indication of which one it belongs to
+ *   is close to useless once more than one is in flight at the same time.
+ */
 export async function callOpenRouter(
   model: string,
   messages: OpenRouterMessage[],
@@ -839,9 +965,14 @@ export async function callOpenRouter(
   }
 
   const startedAt = Date.now();
+  /** How much of TOTAL_BUDGET_MS this call has left. */
   const remainingMs = () => TOTAL_BUDGET_MS - (Date.now() - startedAt);
   const estimatedPromptTokens = estimatePromptTokens(messages);
 
+  /**
+   * Whether the trial has been aborted, through the caller's isAborted.
+   * False when there is no such callback, and when the check itself fails.
+   */
   async function checkAborted(): Promise<boolean> {
     if (!isAborted) return false;
     try {
@@ -880,25 +1011,27 @@ export async function callOpenRouter(
   // cumulative time since callOpenRouter() itself was first called.
   let lastAttemptStartedAt = Date.now();
 
-  // Records one failed attempt and moves the chain forward, for EVERY kind
-  // of failure rather than only the content-quality ones.
-  //
-  // This unification is the fix for a real, load-bearing bug (2026-09-20):
-  // `attemptsAtTier++` used to live exclusively inside the
-  // truncation/degeneracy branch, so every other retry path - timeout, 429,
-  // 5xx, an empty-content 200 - looped with `continue` while leaving both
-  // `attemptsAtTier` and `tierIndex` untouched. A call whose attempts kept
-  // timing out therefore retried the SAME model at the SAME tier until the
-  // entire 650s budget drained, never once escalating, while
-  // `attemptInTier` (reported as `attemptsAtTier + 1`) stayed pinned at 1 -
-  // which is why two judge cards sat on "Model: mistral-small (first
-  // attempt)" for six unbroken minutes through roughly nine separate
-  // 43-second timeouts. The escalation chain existed but was unreachable
-  // for the most common failure modes it should have been covering.
-  //
-  // `skipRestOfTier` is for failures where retrying this exact model is
-  // pointless rather than merely unlucky - currently a plain HTTP error
-  // such as a removed model id, which will fail identically every time.
+  /**
+   * Records one failed attempt and moves the chain forward, for EVERY kind
+   * of failure rather than only the content-quality ones.
+   *
+   * This unification is the fix for a real, load-bearing bug (2026-09-20):
+   * `attemptsAtTier++` used to live exclusively inside the
+   * truncation/degeneracy branch, so every other retry path - timeout, 429,
+   * 5xx, an empty-content 200 - looped with `continue` while leaving both
+   * `attemptsAtTier` and `tierIndex` untouched. A call whose attempts kept
+   * timing out therefore retried the SAME model at the SAME tier until the
+   * entire 650s budget drained, never once escalating, while
+   * `attemptInTier` (reported as `attemptsAtTier + 1`) stayed pinned at 1 -
+   * which is why two judge cards sat on "Model: mistral-small (first
+   * attempt)" for six unbroken minutes through roughly nine separate
+   * 43-second timeouts. The escalation chain existed but was unreachable
+   * for the most common failure modes it should have been covering.
+   *
+   * `skipRestOfTier` is for failures where retrying this exact model is
+   * pointless rather than merely unlucky - currently a plain HTTP error
+   * such as a removed model id, which will fail identically every time.
+   */
   async function recordFailedAttemptAndAdvance(opts: {
     marker: string;
     // Used instead of `marker` when this failure actually moves the chain
@@ -1460,24 +1593,33 @@ export async function callOpenRouter(
   return failure(lastAttemptModel, message, lastUsage, discardedAttempts, Date.now() - lastAttemptStartedAt, { tierIndex, tierCount: tiers.length });
 }
 
-// Applied to a terminal failure only when it happened on the LAST
-// escalation tier (tierIndex === tierCount - 1) - i.e. every tier this
-// chain offers was genuinely tried and none of them produced a kept
-// result, regardless of which specific failure mode ended it (an HTTP
-// error, a rate limit or exhausted quota, the account out of credits, a
-// timeout or network error, or an empty response). Truncation and
-// degeneration never come through here: the DEGENERATE_FINAL_MARKER
-// branch above words that case itself. A failure that happens on an
-// EARLIER tier (the time budget running out before the chain reached the
-// last tier, say, or a failure no retry can fix, such as the account being
-// out of credits) is a different, less complete situation and keeps its
-// own specific message instead of falsely claiming every tier was
-// exhausted.
+/**
+ * A terminal failure's message, prefixed with the fact that every tier was
+ * tried when that is so, and returned unchanged otherwise.
+ *
+ * Applied to a terminal failure only when it happened on the LAST
+ * escalation tier (tierIndex === tierCount - 1) - i.e. every tier this
+ * chain offers was genuinely tried and none of them produced a kept
+ * result, regardless of which specific failure mode ended it (an HTTP
+ * error, a rate limit or exhausted quota, the account out of credits, a
+ * timeout or network error, or an empty response). Truncation and
+ * degeneration never come through here: the DEGENERATE_FINAL_MARKER
+ * branch above words that case itself. A failure that happens on an
+ * EARLIER tier (the time budget running out before the chain reached the
+ * last tier, say, or a failure no retry can fix, such as the account being
+ * out of credits) is a different, less complete situation and keeps its
+ * own specific message instead of falsely claiming every tier was
+ * exhausted.
+ */
 function withTierContext(rawMessage: string, tierIndex: number, tierCount: number, attemptModel: string): string {
   if (tierIndex !== tierCount - 1) return rawMessage;
   return `Every model tier was tried (${tierCount} in total, ending with ${attemptModel}) and none produced a usable response. Last attempt: ${rawMessage}`;
 }
 
+/**
+ * A failed OpenRouterResult, priced from the attempt's own usage when it got
+ * any, and with withTierContext() applied when tierContext is given.
+ */
 function failure(
   model: string,
   errorMessage: string,
@@ -1499,6 +1641,7 @@ function failure(
   };
 }
 
+/** A response's body as text, or a placeholder if it cannot be read. */
 async function safeReadText(response: Response): Promise<string> {
   try {
     return await response.text();
@@ -1507,11 +1650,15 @@ async function safeReadText(response: Response): Promise<string> {
   }
 }
 
-// Every non-ok failure path wants a human-readable reason, not a raw
-// response body - OpenRouter error responses are typically
-// {"error":{"message":"..."}}, so this pulls that message out when
-// present and only falls back to the raw text (still better than nothing)
-// when the body isn't that shape at all.
+/**
+ * The reason a failed response gives, as readable text.
+ *
+ * Every non-ok failure path wants a human-readable reason, not a raw
+ * response body - OpenRouter error responses are typically
+ * {"error":{"message":"..."}}, so this pulls that message out when
+ * present and only falls back to the raw text (still better than nothing)
+ * when the body isn't that shape at all.
+ */
 async function describeErrorBody(response: Response): Promise<string> {
   const bodyText = await safeReadText(response);
   try {
@@ -1524,11 +1671,13 @@ async function describeErrorBody(response: Response): Promise<string> {
   return bodyText;
 }
 
-// Exponential backoff with jitter, capped so a long backoff never eats the
-// remaining budget that an actual attempt needs. The jitter matters here:
-// the agents in each phase (all four representatives, then all three
-// judges) run concurrently on one account, and an unjittered backoff
-// makes them all retry in lockstep.
+/**
+ * Exponential backoff with jitter, capped so a long backoff never eats the
+ * remaining budget that an actual attempt needs. The jitter matters here:
+ * the agents in each phase (all four representatives, then all three
+ * judges) run concurrently on one account, and an unjittered backoff
+ * makes them all retry in lockstep.
+ */
 function backoff(attempt: number): Promise<void> {
   const base = Math.min(400 * Math.pow(2, attempt), 2000);
   const delayMs = base + Math.random() * 300;

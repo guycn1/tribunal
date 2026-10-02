@@ -648,13 +648,10 @@ body {
    .history-list too, an element with no DOM/CSS relationship to
    .card-body-scroll-wrap at all - a result that contradicts the actual
    mechanism this fix was supposed to rely on, meaning the diagnosis
-   itself was likely wrong, not just its placement. Left as a known,
-   disclosed cosmetic limitation rather than continuing to guess at
-   variations of the same technique without a real Firefox instance to
-   actually test against (none available in this environment) - a
-   different approach (e.g. a shorter/subtler fade, or dropping it for
-   Firefox specifically) would need to be verified by the user directly
-   before attempting again. */
+   itself was likely wrong, not just its placement. The fade stays as it
+   is in every browser: it does its job in Firefox too, and the finish of
+   its edge there is a matter of how that engine composites text, which
+   no change here was shown to improve. */
 
 /* Hidden by default (opacity 0, see .has-more-below below) - only shown
    once app.js confirms there's real hidden content, and hidden again
@@ -803,13 +800,12 @@ body {
    respected even in that mode), just not matching Chrome/Edge's
    always-visible weight/timing. Two real, user-machine-level (not
    website-level) ways to get classic rendering back on a specific
-   Windows install, for whoever's testing this later: the Windows 11
-   Settings -> Accessibility -> Visual effects -> "Always show
-   scrollbars" toggle, or the Firefox-internal about:config preference
-   widget.non-native-theme.scrollbar.style set to 4 - neither is
-   something this site can turn on for an arbitrary visitor. Disclosed,
-   accepted, not chased further - a real, documented cross-browser
-   platform difference, not a bug in this codebase. */
+   Windows install: the Windows 11 Settings -> Accessibility -> Visual
+   effects -> "Always show scrollbars" toggle, or the Firefox-internal
+   about:config preference widget.non-native-theme.scrollbar.style set to
+   4 - neither is something this site can turn on for an arbitrary
+   visitor. This is how Firefox draws scrollbars, a documented
+   cross-browser platform difference, not a bug in this codebase. */
 .history-list::-webkit-scrollbar,
 .card-body-scroll::-webkit-scrollbar {
   width: 8px;

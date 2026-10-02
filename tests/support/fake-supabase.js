@@ -34,8 +34,21 @@ function fakeSupabase(tables, options = {}) {
   const writes = [];
   let clock = 0;
   let nextId = 0;
+  /**
+   * A table's rows, creating the table empty on first use.
+   * @param {string} table
+   * @returns {object[]}
+   */
   const rowsOf = (table) => (tables[table] = tables[table] || []);
   const client = {
+    /**
+     * Starts a query on `table`, as supabase-js's from() does. The builder's
+     * methods mirror supabase-js's and are not documented one by one: each
+     * records its part of the query and returns the builder, and awaiting it
+     * runs the query.
+     * @param {string} table
+     * @returns {object}
+     */
     from(table) {
       const filters = [];
       let op = 'select';
@@ -46,8 +59,22 @@ function fakeSupabase(tables, options = {}) {
       let orderBy = null;
       let returning = false;
       let columns = null;
+      /**
+       * Whether a row passes every filter so far.
+       * @param {object} row
+       * @returns {boolean}
+       */
       const matches = (row) => filters.every((test) => test(row));
+      /**
+       * The first column the write names that this table does not have yet.
+       * @returns {string | undefined}
+       */
       const unknownColumn = () => ((options.missingColumns || {})[table] || []).find((c) => payload && c in payload);
+      /**
+       * A row cut down to the selected columns, or whole if none were named.
+       * @param {object} row
+       * @returns {object}
+       */
       const project = (row) => (columns ? Object.fromEntries(columns.map((c) => [c, row[c]])) : row);
       const query = {
         select(selected, selectOptions) {
@@ -62,6 +89,8 @@ function fakeSupabase(tables, options = {}) {
         in(column, values) { filters.push((row) => values.includes(row[column])); return query; },
         gte(column, value) { filters.push((row) => row[column] >= value); return query; },
         order(column) { orderBy = column; return query; },
+        // Ignores its argument: every matching row comes back. No suite
+        // stores more rows than the backend's limits, so none can tell.
         limit() { return query; },
         maybeSingle() { single = 'maybe'; return query; },
         single() { single = 'exact'; return query; },

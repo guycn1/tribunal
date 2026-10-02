@@ -13,9 +13,10 @@
  * fractional millisecond that would have crashed half of all real calls,
  * a fast-429 storm that escalated to a costlier tier within five seconds,
  * a backoff pause timed as part of the attempt before it, a three-copy
- * loop the repeated-sentence check let through, and an attempt that failed
- * as the user aborted logged as "re-tried" when no retry followed. Each
- * one below is a test, so none of them can quietly come back.
+ * loop the repeated-sentence check let through, near-verbatim loops that no
+ * exact comparison could see, and an attempt that failed as the user
+ * aborted logged as "re-tried" when no retry followed. Each one below is a
+ * test, so none of them can quietly come back.
  */
 
 const { compileBackend } = require('./support/compile-backend');
@@ -38,7 +39,10 @@ const realWarn = console.warn;
 const captured = [];
 console.log = (...a) => captured.push(a.join(' '));
 console.warn = (...a) => captured.push(a.join(' '));
-/** Prints to the real console, which the capture above no longer reaches. */
+/**
+ * Prints to the real console, which the capture above no longer reaches.
+ * @param {...unknown} a
+ */
 const say = (...a) => realLog(...a);
 
 let failures = 0;
@@ -183,8 +187,13 @@ async function main() {
       const r = await callOpenRouter(DEFAULT, [{ role: 'user', content: 'hi' }], 1400, 'rep:test');
       return r.discardedAttempts && r.discardedAttempts.length ? r.discardedAttempts[0].errorMessage : null;
     };
-    /** A distinct filler sentence, so copies can be kept apart. @param {number} i */
-    const filler = (i) => `Point number ${i} stands on its own terms here.`;
+    /**
+     * A filler sentence sharing no word with any other, so copies can be
+     * kept apart without the fillers looking like near-copies themselves.
+     * @param {number} i
+     * @returns {string}
+     */
+    const filler = (i) => `Note${i}a note${i}b note${i}c note${i}d note${i}e note${i}f note${i}g note${i}h.`;
     const SHORT = 'He had no lawful authority to act.';
     // Exactly at the long-sentence minimum (18 words), and one word under.
     const LONG = 'He had seen the city burn after the bells rang and he knew that she would not stop.';
@@ -211,7 +220,10 @@ async function main() {
     const passage = [filler(1), filler(2), filler(3)].join(' ');
     const repeatedPassage = await verdict(`${passage} ${filler(4)} ${passage}`);
     check('a 3-sentence passage repeated later is caught', repeatedPassage !== null && /3-sentence passage word for word \(sentences 1-3 and 5-7 of 7\)/.test(repeatedPassage), repeatedPassage);
-    check('a 2-sentence passage repeated later is not', (await verdict(`${filler(1)} ${filler(2)} ${filler(3)} ${filler(1)} ${filler(2)}`)) === null);
+    // Two sentences repeated are short of the verbatim-passage rule's 3, and
+    // are the near-copy passage rule's to catch instead (see 2c).
+    const twoSentencePassage = await verdict(`${filler(1)} ${filler(2)} ${filler(3)} ${filler(1)} ${filler(2)}`);
+    check('a 2-sentence passage repeated later is not named by the 3-sentence rule', twoSentencePassage === null || !/passage word for word/.test(twoSentencePassage), twoSentencePassage);
 
     // Loops that never end a sentence, only a clause. Both are stored
     // replies the sentence rules passed: a grey_worm reply (2026-08-29)
@@ -224,12 +236,39 @@ async function main() {
     // Three copies of a clause, each in a different sentence, so no
     // sentence rule can fire.
     const CLAUSE6 = 'she would never stop the burning';
-    const close = await verdict(`${CLAUSE6}, then one. ${filler(1)} ${CLAUSE6}, then two. ${filler(2)} ${CLAUSE6}, then three.`);
+    // Each copy ends differently enough that the sentences are not
+    // near-copies of each other, so only the clause rules are in play.
+    const TAIL = ['alpha bravo charlie delta echo foxtrot', 'golf hotel india juliet kilo lima', 'mike november oscar papa quebec romeo'];
+    const close = await verdict(`${CLAUSE6}, ${TAIL[0]}. ${filler(1)} ${CLAUSE6}, ${TAIL[1]}. ${filler(2)} ${CLAUSE6}, ${TAIL[2]}.`);
     check('a 6-word clause 3 times within 6 clauses is caught', close !== null && /a 6-word clause 3 times close together \(clauses 1, 4 and 7 of 8\)/.test(close), close);
-    check('the same 3 copies spread one clause wider are not', (await verdict(`${CLAUSE6}, then one. ${filler(1)} ${CLAUSE6}, then two. ${filler(2)} ${filler(3)} ${CLAUSE6}, then three.`)) === null);
+    check('the same 3 copies spread one clause wider are not', (await verdict(`${CLAUSE6}, ${TAIL[0]}. ${filler(1)} ${CLAUSE6}, ${TAIL[1]}. ${filler(2)} ${filler(3)} ${CLAUSE6}, ${TAIL[2]}.`)) === null);
     check('a 5-word clause 3 times close together is not', (await verdict('she would never stop burning, then one. she would never stop burning, then two. she would never stop burning, then three.')) === null);
-    check('a clause twice close together is not', (await verdict(`${CLAUSE6}, then one. ${filler(1)} ${CLAUSE6}, then two.`)) === null);
+    check('a clause twice close together is not', (await verdict(`${CLAUSE6}, ${TAIL[0]}. ${filler(1)} ${CLAUSE6}, ${TAIL[1]}.`)) === null);
     check('a 4-word clause twice in a row is not', (await verdict(`${filler(1)} He saw the fire, he saw the fire, and he acted. ${filler(2)}`)) === null);
+  });
+
+  // ------------------------------------------------------------------ 2c
+  await test('Near-verbatim loops are caught, by passage and by closing', async () => {
+    // Two replies saved as successes before these rules existed, word for
+    // word: a daenerys_targaryen closing that reshuffles the paragraph
+    // before it (trial 5bb8f477, 2026-09-27), and a grey_worm reply that
+    // re-emits two sentences almost verbatim (trial 7520a32c, 2026-09-04).
+    const DANY_5BB8F477 = "Honorable Tribunal, I stand before you not merely as a victim, but as a voice from beyond the grave, compelled to speak the truth as I see it. I, Daenerys Targaryen, First of My Name, The Unburnt, Queen of the Andals and the First Men, Khaleesi of the Great Grass Sea, Breaker of Chains, and Mother of Dragons, address you with the same fire that once burned in my veins.\n\nThe facts are clear: I was slain by Jon Snow, a man I loved and trusted. He stabbed me in the throne room, a place where I had hoped to rule with wisdom and justice. But let us not forget the context in which this act occurred. I had just liberated King's Landing from the tyranny of Cersei Lannister. The bells rang, the city surrendered, and yet, I was met with betrayal.\n\nJon witnessed the destruction wrought by Drogon and my forces. He saw the streets burn, the people suffer, and he heard my declaration that our campaign of liberation would continue. He knew the scale of the harm I was prepared to inflict. He knew the fear and despair I had caused, and he knew that I would not hesitate to do it again. He knew the threat I posed to his sisters, to his friends, and to the realm.\n\nBut did Jon have the right to take my life? Did he have the right to decide that I was a threat that needed to be eliminated? I say no. I say that he had no right to take the throne from me, to take my life, to take my dragons, and to take my legacy.\n\nJon had alternatives. He could have convened a council, sought a public surrender of power, or even attempted to detain me. He could have tried to reason with me, to persuade me to change my ways. But he chose to take the easy way out, to take the life of a woman who had fought for her people, who had freed the enslaved, and who had brought dragons back to Westeros.\n\nI do not deny that I was a threat. I was a threat to those who would stand in the way of my rule, to those who would seek to undermine my authority. But I was also a threat to the tyranny and oppression that had plagued Westeros for so long. I was a threat to the status quo, to the entrenched cruelty that had held the realm in its grip for generations.\n\nI was not a perfect ruler, but I was a ruler. I was a ruler who had fought for her people, who had sacrificed everything for them, and who had given them hope. I was a ruler who had earned her throne, who had earned her dragons, and who had earned her legacy. And I was a ruler who was betrayed by the man she loved.\n\nI ask the Tribunal to consider these things. I ask you to consider the context, the alternatives, and the consequences. I ask you to consider the legacy of a woman who fought for her people, who freed the enslaved, and who brought dragons back to Westeros. And I ask you to consider the legacy of a man who betrayed her, who took her life, and who took her throne.\n\nI ask you to consider the legacy of a woman who was betrayed, who was killed, and who was silenced. I ask you to consider the legacy of a woman who was a threat, who was a liberator, and who was a ruler. And I ask you to consider the legacy of a man who was a friend, who was a lover, and who was a killer.\n\nI ask you to consider the legacy of a woman who was Daenerys Targaryen, and I ask you to consider the legacy of a man who was Jon Snow. And I ask you to consider the legacy of a realm that was torn apart by their actions, by their betrayals, and by their deaths.\n\nI ask you to consider the legacy of a realm that was torn apart by the actions of a man who was a friend, who was a lover, and who was a killer. And I ask you to consider the legacy of a realm that was torn apart by the actions of a woman who was a threat, who was a liberator, and who was a ruler.";
+    const GREY_7520A32C = "Honorable Tribunal,\n\nI stand before you today to present the facts as they are, not as some might wish them to be. I speak of what I saw, what I heard, and what I know to be true.\n\nDaenerys Targaryen, my queen, my commander, burned King's Landing to the ground. The city had surrendered, the bells had rung, and still, she ordered Drogon to rain fire upon the streets. I was there, on the ground, and I saw the destruction. I followed her orders, and I know the scale of the harm she was willing to inflict.\n\nJon Snow saw it too. He saw the city burn, he heard her promise to continue her campaign of \"liberation,\" and he knew that Tyrion Lannister, her own Hand, had resigned in protest and been imprisoned. Tyrion warned Jon that Daenerys would treat anyone she saw as an obstacle as an enemy. Jon knew the threat was real. He knew that Daenerys would not stop at King's Landing.\n\nJon had a choice. He could have stood by and done nothing, allowing Daenerys to continue her reign of terror. He could have tried to reason with her, but he had already seen that she would not listen. He could have tried to convene a council or attempt detention, but Daenerys would not have allowed it. She had made it clear that her judgment was final.\n\nJon chose to act. He used his intimacy with Daenerys to get close enough to strike. He did not have formal authority, but he had seen the threat, he had heard the warning, and he had acted to stop it. He had no other choice.\n\nThe Tribunal must decide if Jon Snow's actions were justified. I say they were. Jon knew the threat, he knew the harm that Daenerys was willing to inflict, and he knew that there were no safer alternatives. He acted to defend others and to defend the realm. He did what he had to do.\n\nI do not speak of motives or speculations. I speak of facts. I speak of what I saw, what I heard, and what I know to be true. Jon Snow's actions were justified. He acted to defend others and to defend the realm. He did what he had to do.";
+    /**
+     * What the first attempt's reply gets logged as, or null if it was kept.
+     * @param {string} content
+     * @returns {Promise<string | null>}
+     */
+    const firstReason = async (content) => {
+      global.fetch = async (_u, o) => { const m = JSON.parse(o.body).model; return reply(m, m === DEFAULT ? content : CLEAN); };
+      const r = await callOpenRouter(DEFAULT, [{ role: 'user', content: 'hi' }], 1400, 'rep:test');
+      return r.discardedAttempts && r.discardedAttempts.length ? r.discardedAttempts[0].errorMessage : null;
+    };
+    const closing = await firstReason(DANY_5BB8F477);
+    check('the reshuffled closing is caught by the closing rule', closing !== null && /closed on a near-copy of a sentence just before it \(sentences 35 and 38 of 39\)/.test(closing), closing);
+    const passage = await firstReason(GREY_7520A32C);
+    check('the re-emitted pair is caught by the passage rule', passage !== null && /repeated a 2-sentence passage almost word for word \(sentences 24-25 and 30-31 of 31\)/.test(passage), passage);
   });
 
   // ------------------------------------------------------------------ 3

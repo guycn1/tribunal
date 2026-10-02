@@ -40,6 +40,16 @@ import type { JudgeRole, RepresentativeRole } from './lib/types';
 // both role types.
 const MAX_TOKENS = AGENT_MAX_TOKENS;
 
+/**
+ * POST /api/trials/:id/judges/:role
+ *
+ * Runs one judge's call, as a Background Function, the same way as
+ * representative-background.ts: the judge is given the case and every
+ * representative argument that was saved, every attempt is logged, and the
+ * ruling is saved unless the call failed, the reply had no parseable
+ * VERDICT line or the trial was aborted meanwhile. Marks the trial
+ * completed once every judge has a final outcome.
+ */
 const rawHandler: Handler = async (event) => {
   if (event.httpMethod !== 'POST') {
     return json(405, { error: 'Method not allowed' });
@@ -57,7 +67,7 @@ const rawHandler: Handler = async (event) => {
 
   // See the matching comment in representative-background.ts - both checks
   // run before any Supabase trial lookup or OpenRouter call, and (as this
-  // runs as a Background Function - see config.background below) neither
+  // runs as a Background Function - see the end of this file) neither
   // rejection reaches the polling frontend directly, only Netlify's
   // function logs, for the same disclosed reasons as
   // representative-background.ts.
@@ -223,19 +233,6 @@ const rawHandler: Handler = async (event) => {
 
 export const handler = safeHandler(rawHandler);
 
-// See the matching config on representative-background.ts for the
-// reasoning behind every choice here (the numbers, background:true and
-// why it's now required rather than optional, the -background filename
-// suffix and why local dev specifically needs it, the path glob, the
-// missing `: Config` annotation, and what is and is not confirmed in
-// production) - the only difference is the function name in the path,
-// matching how netlify.toml routes here.
-export const config = {
-  path: '/.netlify/functions/judge-background/*',
-  background: true,
-  rateLimit: {
-    windowLimit: 45,
-    windowSize: 300,
-    aggregateBy: ['ip'],
-  },
-};
+// A Background Function by its "-background" filename, with no `config`
+// export and its per-IP rate limit on its redirect in netlify.toml - see
+// the comment at the end of representative-background.ts for why.

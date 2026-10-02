@@ -38,6 +38,10 @@ const PRICING_PER_MILLION_TOKENS: Record<string, { prompt: number; completion: n
   'google/gemini-2.5-pro': { prompt: 1.25, completion: 10 },
 };
 
+/**
+ * A call's cost in USD, to six decimal places: 0 for a ":free" model, and 0
+ * for a model missing from the table above.
+ */
 export function calculateCost(model: string, promptTokens: number, completionTokens: number): number {
   if (model.endsWith(':free')) {
     return 0;

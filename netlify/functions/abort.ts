@@ -6,36 +6,38 @@ import { REPRESENTATIVES } from './lib/representatives';
 import { JUDGES } from './lib/judges';
 import { logApiCall, ABORTED_BY_USER_MESSAGE, NO_MODEL_USED } from './lib/db';
 
-// POST /api/trials/:id/abort
-// Body: { roles: string[] } - the agent roles still pending (loading, or
-// mid-retry/mid-escalation) when the user clicked Abort.
-//
-// What this endpoint writes is one 'failed' row per pending role, carrying
-// a distinct, exact error message (see ABORTED_BY_USER_MESSAGE / wasAborted
-// in db.ts), which does two separate jobs:
-//
-//   1. It makes the abort visible and persistent, so a trial the user
-//      deliberately stopped reads as `aborted` in the run-history sidebar
-//      rather than as a generic failure - or as a falsely-clean success, if
-//      an abandoned call happens to finish anyway.
-//   2. It is also the ONLY durable, server-visible signal that the abort
-//      happened, and the agent Background Functions poll for it: the
-//      browser has no way to cancel a Background Function, so each
-//      in-flight call checks isTrialAborted() before each attempt and as
-//      each one ends, and stops itself, and checks again before saving a
-//      result (see the isAborted callback on callOpenRouter, and
-//      isTrialAborted in db.ts).
-//
-// These rows record a request to stop, not a model call: the call log
-// shows them as `abort requested`, and they do not count against the
-// site-wide call cap (isGlobalCallCapExceeded in db.ts).
-//
-// So this call does stop server-side work, just indirectly - by leaving a
-// record the running calls notice, not by cancelling anything. It cannot
-// interrupt an HTTP request already in flight; it stops the next attempt,
-// which is where the escalation chain's real cost lives. Before that
-// mechanism was added (2026-09-20), an abort stopped nothing server-side:
-// an aborted trial's judges ran on and wrote their rulings.
+/**
+ * POST /api/trials/:id/abort
+ * Body: { roles: string[] } - the agent roles still pending (loading, or
+ * mid-retry/mid-escalation) when the user clicked Abort.
+ *
+ * What this endpoint writes is one 'failed' row per pending role, carrying
+ * a distinct, exact error message (see ABORTED_BY_USER_MESSAGE / wasAborted
+ * in db.ts), which does two separate jobs:
+ *
+ *   1. It makes the abort visible and persistent, so a trial the user
+ *      deliberately stopped reads as `aborted` in the run-history sidebar
+ *      rather than as a generic failure - or as a falsely-clean success, if
+ *      an abandoned call happens to finish anyway.
+ *   2. It is also the ONLY durable, server-visible signal that the abort
+ *      happened, and the agent Background Functions poll for it: the
+ *      browser has no way to cancel a Background Function, so each
+ *      in-flight call checks isTrialAborted() before each attempt and as
+ *      each one ends, and stops itself, and checks again before saving a
+ *      result (see the isAborted callback on callOpenRouter, and
+ *      isTrialAborted in db.ts).
+ *
+ * These rows record a request to stop, not a model call: the call log
+ * shows them as `abort requested`, and they do not count against the
+ * site-wide call cap (isGlobalCallCapExceeded in db.ts).
+ *
+ * So this call does stop server-side work, just indirectly - by leaving a
+ * record the running calls notice, not by cancelling anything. It cannot
+ * interrupt an HTTP request already in flight; it stops the next attempt,
+ * which is where the escalation chain's real cost lives. Before that
+ * mechanism was added (2026-09-20), an abort stopped nothing server-side:
+ * an aborted trial's judges ran on and wrote their rulings.
+ */
 const rawHandler: Handler = async (event) => {
   if (event.httpMethod !== 'POST') {
     return json(405, { error: 'Method not allowed' });

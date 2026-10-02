@@ -728,6 +728,11 @@ async function abortCurrentTrial() {
   el.mainLoadingOverlay.classList.remove('hidden');
   el.sidebar.classList.add('loading-locked');
 
+  /**
+   * Whether a role's card is still waiting on its call.
+   * @param {string | undefined} status
+   * @returns {boolean}
+   */
   const isPending = (status) => status === 'loading';
   const pendingRoles = [
     ...REPRESENTATIVE_ROLES.filter((r) => isPending(state.representatives[r] && state.representatives[r].status)),
@@ -894,8 +899,8 @@ function sleep(ms, signal) {
  * Starts one agent call and reports whether the platform accepted it -
  * never whether the call itself succeeded.
  *
- * The agent endpoints now run as Netlify Background Functions (see
- * config.background in each) - the fix for a verified, load-bearing
+ * The agent endpoints now run as Netlify Background Functions (declared
+ * by their -background filenames) - the fix for a verified, load-bearing
  * problem: Netlify's real free-tier synchronous function limit is 10
  * seconds, while every real OpenRouter call measured on this project at
  * the time had taken 8-18s+ per attempt, before any retry. A standard
@@ -939,9 +944,9 @@ async function triggerAgent(url, signal) {
   // A non-2xx this early can only be a platform-level rejection rather
   // than anything from this app's own handler code, since a Background
   // Function's own application-level outcome never reaches this response
-  // at all. Two causes: Netlify's per-IP rate limiter (see the rateLimit
-  // config on the agent Background Functions - declared, but never yet
-  // tripped), and a routing failure - an immediate 404 on every call, seen
+  // at all. Two causes: Netlify's per-IP rate limiter (the rate_limit on
+  // the two agent routes in netlify.toml), and a routing failure - an
+  // immediate 404 on every call, seen
   // on this project when the function files were renamed and netlify.toml's
   // redirect targets still pointed at the old names. The second looks
   // nothing like the first, so don't read every non-2xx here as rate
