@@ -59,8 +59,8 @@ const rawHandler: Handler = async (event) => {
   // here would undercut for exactly the traffic it's meant to filter; the
   // call-cap check has its own, separate, already-documented reason never
   // to log its own trip (self-perpetuation - see isGlobalCallCapExceeded).
-  // console.warn keeps both visible in Netlify's function logs, just not
-  // in the poll-driven UI - a real, disclosed trade-off, not an oversight.
+  // console.warn keeps both visible in Netlify's function logs; the page
+  // does not see them, by design.
   if (!isSiteGateOk(event.headers)) {
     console.warn(`representative:${repRole}: rejected - missing or invalid site gate header.`);
     return json(401, { role: repRole, status: 'failed', error: 'Missing or invalid site gate header.' });

@@ -1109,12 +1109,10 @@ function deriveRoleStates(data) {
  * consequence was a role that genuinely succeeded server-side (verified
  * directly in the DB) still showing as unresolved on the client because
  * polling gave up first. A role that still hasn't resolved by this
- * timeout either genuinely failed in a way this page can't see (the
- * disclosed site-gate/call-cap gap documented in
- * representative-background.ts/judge-background.ts - a rejection there is
- * no longer visible to the poller, only in Netlify's function logs) or is
- * a real anomaly worth surfacing honestly rather than silently waiting
- * past.
+ * timeout was either turned away by the site gate or the call cap, whose
+ * rejections show only in Netlify's function logs (see
+ * representative-background.ts), or ran into something unexpected; either
+ * way its card says the page stopped waiting, rather than spinning on.
  */
 const POLL_TIMEOUT_MS = 700000;
 /** Time between polls of GET /api/trials/:id, in ms. */

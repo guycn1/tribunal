@@ -69,8 +69,7 @@ const rawHandler: Handler = async (event) => {
   // run before any Supabase trial lookup or OpenRouter call, and (as this
   // runs as a Background Function - see the end of this file) neither
   // rejection reaches the polling frontend directly, only Netlify's
-  // function logs, for the same disclosed reasons as
-  // representative-background.ts.
+  // function logs, for the same reasons as representative-background.ts.
   if (!isSiteGateOk(event.headers)) {
     console.warn(`judge:${judgeRole}: rejected - missing or invalid site gate header.`);
     return json(401, { role: judgeRole, status: 'failed', error: 'Missing or invalid site gate header.' });
