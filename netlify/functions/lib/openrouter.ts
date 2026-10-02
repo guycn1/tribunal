@@ -743,10 +743,10 @@ const CONCISENESS_REMINDER: OpenRouterMessage = {
 // holdover from when the run-on detector was the only content check there
 // was.
 //
-// The names are deliberately NOT being corrected: these exact strings are
-// persisted into api_call_logs.error_message on every historical row, so
-// they are effectively a wire format, and renaming them would either break
-// the rendering of past trials or mean carrying both spellings forever.
+// The names are kept: these exact strings are persisted into
+// api_call_logs.error_message on every historical row, so they are
+// effectively a wire format, and renaming them would either break the
+// rendering of past trials or mean carrying both spellings forever.
 // The distinction is made where it actually reaches a reader instead -
 // renderCallLog() in app.js picks its badge (`truncated` vs `degenerated`)
 // from the reason text, since only the cap case says "max_tokens limit".

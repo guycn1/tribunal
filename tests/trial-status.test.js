@@ -23,7 +23,7 @@
  *   3. Every model reply is kept in the call log's response_text, discarded
  *      ones included, so they can be audited in full - and the trial
  *      endpoint never sends that text to the page. A database the column
- *      has not reached yet still gets every row, without the text.
+ *      has not reached still gets every row, without the text.
  *   4. An aborted trial gains nothing: a ruling or argument that finishes
  *      after the abort is logged once, as aborted, and never saved; the
  *      trial is not marked completed; and a call aborted before it starts

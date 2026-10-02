@@ -249,11 +249,10 @@ body {
   transition: border-color 0.2s ease;
 }
 
-/* White rather than the theme's gold accent (item 2 of CLAUDE.md's
-   sidebar/scrollbar/card polish backlog) - .active (below) has two
-   classes vs. this rule's one, so it naturally wins on
-   specificity alone when an entry is both the active one and currently
-   hovered, without needing a combined :hover.active selector. */
+/* White rather than the theme's gold accent - .active (below) has two
+   classes vs. this rule's one, so it naturally wins on specificity alone
+   when an entry is both the active one and currently hovered, without
+   needing a combined :hover.active selector. */
 .history-item:hover {
   border-color: color-mix(in srgb, var(--text) 45%, transparent);
 }
@@ -911,8 +910,7 @@ body {
   color: var(--aborted);
 }
 
-/* Item 8 of CLAUDE.md's sidebar/scrollbar/card polish backlog: a
-   soft-edged separator above the "Model: ..."/"Answered by: ..." line -
+/* A soft-edged separator above the "Model: ..."/"Answered by: ..." line -
    .model-chain is the shared class for both (the still-loading model line
    in buildAgentStatusBody() and the post-success "Answered by:" line in
    buildRepresentativeCard()/buildJudgeCard()), so one rule covers both

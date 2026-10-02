@@ -362,8 +362,7 @@ export async function upsertAgentProgress(params: {
 // repeated real usage from other visitors) while staying well short of
 // meaningfully denting a small prepaid balance. Real per-call cost is now
 // known rather than guessed - see pricing.ts, where every model in the
-// escalation chain carries a verified per-token price - so this number can
-// be re-derived against real spend rather than set by feel.
+// escalation chain carries a verified per-token price.
 export const GLOBAL_CALL_CAP = 350;
 const GLOBAL_CALL_WINDOW_MS = 24 * 60 * 60 * 1000;
 
@@ -511,7 +510,7 @@ export async function logApiCall(params: {
     response_text: params.responseText ?? null,
   };
   let { error } = await supabase.from('api_call_logs').insert(row);
-  // A database the response_text migration hasn't reached yet rejects the
+  // A database the response_text migration hasn't reached rejects the
   // whole insert over the one unknown column. Losing the row would hide a
   // call from the log entirely, so it is written again without the text.
   if (error && /response_text/.test(error.message)) {
