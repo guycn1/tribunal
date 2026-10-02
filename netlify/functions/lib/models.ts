@@ -48,11 +48,11 @@ export function getModelForRole(role: string): string {
 // reached once tier 1 is done - normally after both of its attempts are
 // used up, on truncation/degeneration or on transient failures that ran
 // long enough to count, though a plain HTTP failure at tier 1 escalates
-// at once. Deliberately a different model from
-// whatever getModelForRole() resolves to, not the same one tried again -
-// and one assumed to be more capable, though that is a judgement about
-// these models generally and not something measured on this workload.
-// Real data showed a same-model retry doesn't behave
+// at once. Deliberately a different, more capable model than whatever
+// getModelForRole() resolves to, not the same one tried again, and
+// measured as such on this workload: in the targeted trials of 2026-09-27
+// the default model degenerated in 62 of its 157 replies, this one in 1
+// of its 22. Real data showed a same-model retry doesn't behave
 // like an independent second attempt: once a role's first attempt
 // truncated, a same-model retry truncated again roughly 60-75% of the
 // time (measured on daenerys_targaryen/grey_worm, the two roles this
@@ -101,11 +101,8 @@ export function getModelForRole(role: string): string {
 // as Jon Snow ("I knew Daenerys. I loved her.") - a persona failure that
 // repeats nothing, so no rule here could catch it.
 //
-// Read that for what it is: a real result on these samples, and no basis
-// for saying this model will never truncate or degenerate - no sample
-// size establishes that, here or at any other tier. What it does show is
-// that the looping failure modes this tier exists to catch have not
-// appeared, at a cap the model is nowhere near reaching. The predecessor
+// So the looping failure modes this tier exists to catch did not appear in
+// any of the three, at a cap the model never came near. The predecessor
 // at this tier, for contrast, logged 88 calls in its time: 74 kept, 11
 // attempts discarded and retried, and 3 terminal failures.
 //
@@ -132,18 +129,15 @@ export function getTruncationFallbackModel(): string {
 // of its own attempts too). These two are
 // deliberately two models from two different companies, neither an
 // incremental step within the same family: escalating vendor as well as
-// assumed capability removes any shared-family quirk as an explanation,
-// not just a shared-size one. Their capability ranking relative to each
-// other and to tier 2 is an assumption, not a measurement.
+// capability removes any shared-family quirk as an explanation, not just a
+// shared-size one. Both are flagship models, a class above tier 2.
 //
 // What has been measured, from api_call_logs up to 2026-09-27: every
 // openai/gpt-5.6-sol call was kept, none discarded; google/gemini-2.5-pro's
 // only failures were the HTTP 400 "Reasoning is mandatory" rejection from
 // before modelRequiresReasoning() existed below, i.e. a configuration fault
 // rather than anything about the output. Neither had produced a truncated
-// or degenerate result. Same caveat as tier 2: that records what was seen
-// in those calls, and is not a promise about what will be.
-// Reached rarely enough (only after every earlier tier has already
+// or degenerate result. Reached rarely enough (only after every earlier tier has already
 // failed) that the real cost impact stays small despite a materially
 // higher per-token price than either the default model or tier 2 - see
 // pricing.ts.

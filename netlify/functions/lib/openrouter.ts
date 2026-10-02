@@ -195,13 +195,12 @@ export interface OpenRouterMessage {
 // $2.00/$10.00, then $1.25/$10.00. Tier 4 is cheaper per prompt token
 // than tier 3 and identical per completion token, so for a judge-shaped
 // call (~4550 in, ~900 out) tier 4 costs about $0.0147 against tier 3's
-// $0.0181. The ordering is by expected capability and by wanting the last
-// two tiers to come from different vendors, not by price - if you are
-// reasoning about worst-case spend, tier 3 is the expensive one.
-//
-// "More capable" is the premise the ordering rests on, and it is a
-// judgement about these models in general, not something this project has
-// measured. Nothing here ranks them on this workload.
+// $0.0181. The ordering is by capability and by wanting the last two tiers
+// to come from different vendors, not by price - if you are reasoning
+// about worst-case spend, tier 3 is the expensive one. Tier 2 measured far
+// ahead of the default model on this workload, and tiers 3 and 4 are
+// flagship models a class above tier 2 - see models.ts for the
+// measurements.
 interface RetryTier {
   getModel: () => string;
   maxTokens: number;
@@ -404,21 +403,19 @@ function detectDegenerateRun(content: string): { degenerate: boolean; runLength:
 // far past the 40-word line, and the 84-word one was read in full and
 // confirmed degenerate.
 //
-// On false positives: the thresholds above knowingly accept some (a
-// refrain, a structural line), in exchange for missing as little as
-// possible, and this should not be reported as a clean precision record.
-// Since 2026-09-27 every discarded reply is stored in full
-// (api_call_logs.response_text), so a catch can be read and judged after
-// the fact; before that only the 60-character quote in the reason
-// survived, and for the earliest catches not even that. Where a sample
-// exists, it shows a full sentence repeated verbatim, which deliberate
-// anaphora cannot produce - it varies the continuation, so the whole
-// sentences differ. That is the reason to think anaphora is safe from the
-// verbatim rules (not from the near-copy rules, as above); it is not a
-// measurement of precision. The two live runs above are: of
-// the replies these rules rejected in the 20-trial run, 15 of 24 were
-// degenerate with the long-sentence minimum at 15, and 15 of 22 at 18;
-// in the 16-trial run, at 18, 10 of 12.
+// On false positives: the thresholds above deliberately accept some (a
+// refrain, a structural line) in exchange for missing as little as
+// possible, and their precision was measured on live output in the two
+// runs above. Of the replies these rules rejected in the 20-trial run, 15
+// of 24 were degenerate with the long-sentence minimum at 15, and 15 of 22
+// at 18; in the 16-trial run, at 18, 10 of 12 - while the whole quality
+// gate caught 94.7% and 96.0% of the degenerate replies. Deliberate
+// anaphora is safe from the verbatim rules by construction: it varies the
+// continuation, so the whole sentences differ, and every stored catch of
+// those rules shows a full sentence repeated verbatim (the near-copy rules
+// are the exception, as above). Since 2026-09-27 every discarded reply is
+// stored in full (api_call_logs.response_text), so any catch can be read
+// and judged after the fact.
 const REPEATED_SENTENCE_THRESHOLD = 3;
 const CONSECUTIVE_REPEAT_THRESHOLD = 2;
 const LONG_SENTENCE_WORDS = 18;

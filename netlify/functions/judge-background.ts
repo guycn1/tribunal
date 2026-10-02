@@ -31,8 +31,7 @@ import type { JudgeRole, RepresentativeRole } from './lib/types';
 // overrun. Counted across every row in api_call_logs as of 2026-09-21,
 // judges had hit the cap 2 times in 363 calls (0.6%), representatives 67
 // times in 897 (7.5%) - representatives run out of room about thirteen
-// times as often as the
-// role with the longer word target. Whatever drives that, it is not the
+// times as often as the role with the longer word target. It is not the
 // stated targets, so do not reason about the cap from the targets alone.
 //
 // Shares AGENT_MAX_TOKENS with representative-background.ts - see the
