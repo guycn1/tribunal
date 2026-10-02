@@ -22,6 +22,8 @@
  *      opening one from history, and the call-log refresh after a run all
  *      used to let a network failure escape as an uncaught rejection, so a
  *      click appeared to do nothing and the error reached only the console.
+ *      A trigger Netlify's per-IP rate limit rejects - a bare 429 with an
+ *      empty body - shows on the agent's card as that limit.
  *   4. The call log must say what actually happened: a response the token
  *      cap stopped is "truncated" and one a detector flagged
  *      "degenerated"; an abort endpoint's row reads "abort requested",
@@ -59,7 +61,7 @@ console.log('\n=== app.js executes cleanly (catches a TDZ-class load crash) ==='
 let app;
 try {
   // Hand back exactly the pieces under test from app.js's own top-level scope.
-  app = loadApp(['state', 'el', 'renderRepresentatives', 'renderJudges', 'renderCallLog', 'agentCardSignature', 'shortModelName', 'REPRESENTATIVE_ROLES', 'JUDGE_ROLES', 'beginTrial', 'loadTrial', 'buildAgentStatusBody', 'appendTruncationNotice']);
+  app = loadApp(['state', 'el', 'renderRepresentatives', 'renderJudges', 'renderCallLog', 'agentCardSignature', 'shortModelName', 'REPRESENTATIVE_ROLES', 'JUDGE_ROLES', 'beginTrial', 'loadTrial', 'buildAgentStatusBody', 'appendTruncationNotice', 'triggerAgent']);
   check('top-level code ran with no error', true);
 } catch (error) {
   check('top-level code ran with no error', false, error.message);
@@ -473,6 +475,14 @@ async function requestFailureChecks() {
   check('the run history is still refreshed after it', historyReads === 1, String(historyReads));
   check('every result from the run stays on screen', [...Object.values(state.representatives), ...Object.values(state.judges)].every((e) => e.status === 'success') && Object.keys(state.judges).length === JUDGE_ROLES.length);
   check('the controls, overlay and sidebar are restored', isIdle());
+
+  console.log('\n=== A trigger the per-IP rate limit rejects is reported as that ===');
+  // Netlify answers a rate-limited trigger with a bare 429 and an empty
+  // body, as measured on the live site, before the handler ever runs.
+  global.fetch = async () => ({ ok: false, status: 429, json: async () => { throw new SyntaxError('Unexpected end of JSON input'); } });
+  const limited = await app.triggerAgent('/api/trials/t/representatives/jon_snow', new AbortController().signal);
+  check('a rate-limited trigger is not accepted', limited.accepted === false && limited.result.status === 'failed', JSON.stringify(limited));
+  check("its card names Netlify's per-IP rate limit", /per-IP rate limit/.test((limited.result || {}).error || ''), (limited.result || {}).error);
 }
 
 requestFailureChecks().then(

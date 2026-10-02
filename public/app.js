@@ -801,18 +801,18 @@ async function abortCurrentTrial() {
 // its timestamp minus duration_ms) - including every one of the four trials
 // run against the live deployed site, each of which ran 4 of 4
 // representatives and 3 of 3 judges at once. What these constants
-// actually bound now is how many trigger POSTs overlap - which matters only
-// against Netlify's per-IP rate limiter, not OpenRouter's account-level
-// concurrency.
+// actually bound now is how many trigger POSTs overlap - not OpenRouter's
+// account-level concurrency, and not Netlify's per-IP rate limit either,
+// which counts requests in a window however they overlap.
 //
 // Kept rather than removed or "restored," deliberately. The original
 // 3-vs-4 reading came from two runs on 2026-08-28 - on the current default
 // model, but while the agent calls were still synchronous functions - and
 // has since been overtaken by evidence: every clean run behind this
 // project's reliability record was actually made at 4 concurrent, not 3,
-// so there is no demonstrated problem left to solve. A bounded dispatch
-// plus the stagger is still a sensible thing to keep pointed at the per-IP
-// limiter.
+// so there is no demonstrated problem left to solve. Removing the pool
+// would gain nothing either: a bounded, staggered dispatch costs about a
+// second per phase.
 /**
  * Stagger between trigger POSTs within one phase: the role at index N is
  * triggered N times this many ms after the phase starts, at the earliest.
@@ -945,9 +945,9 @@ async function triggerAgent(url, signal) {
   // than anything from this app's own handler code, since a Background
   // Function's own application-level outcome never reaches this response
   // at all. Two causes: Netlify's per-IP rate limiter (the rate_limit on
-  // the two agent routes in netlify.toml), and a routing failure - an
-  // immediate 404 on every call, seen
-  // on this project when the function files were renamed and netlify.toml's
+  // the two agent routes in netlify.toml), which answers 429 with an empty
+  // body, and a routing failure - an immediate 404 on every call, seen on
+  // this project when the function files were renamed and netlify.toml's
   // redirect targets still pointed at the old names. The second looks
   // nothing like the first, so don't read every non-2xx here as rate
   // limiting.
