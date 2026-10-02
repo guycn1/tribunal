@@ -39,7 +39,10 @@ const realWarn = console.warn;
 const captured = [];
 console.log = (...a) => captured.push(a.join(' '));
 console.warn = (...a) => captured.push(a.join(' '));
-/** Prints to the real console, which the capture above no longer reaches. */
+/**
+ * Prints to the real console, which the capture above no longer reaches.
+ * @param {...unknown} a
+ */
 const say = (...a) => realLog(...a);
 
 let failures = 0;
@@ -188,6 +191,7 @@ async function main() {
      * A filler sentence sharing no word with any other, so copies can be
      * kept apart without the fillers looking like near-copies themselves.
      * @param {number} i
+     * @returns {string}
      */
     const filler = (i) => `Note${i}a note${i}b note${i}c note${i}d note${i}e note${i}f note${i}g note${i}h.`;
     const SHORT = 'He had no lawful authority to act.';

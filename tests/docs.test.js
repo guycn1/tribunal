@@ -158,6 +158,10 @@ function isGitIgnored(relPath) {
 /** Every .ts file under netlify/functions/, as [relative path, source]. */
 const FUNCTION_SOURCES = (() => {
   const out = [];
+  /**
+   * Adds every .ts file under `dir` to `out`, recursing into folders.
+   * @param {string} dir Relative to the repository root.
+   */
   const walk = (dir) => {
     for (const entry of fs.readdirSync(path.join(ROOT, dir), { withFileTypes: true })) {
       const rel = path.posix.join(dir, entry.name);
@@ -168,8 +172,18 @@ const FUNCTION_SOURCES = (() => {
   walk('netlify/functions');
   return out;
 })();
+/**
+ * One Netlify Function's source, by function name.
+ * @param {string} name The file name under netlify/functions/, without .ts.
+ * @returns {string}
+ */
 const functionSource = (name) => read('netlify', 'functions', `${name}.ts`);
 
+/**
+ * Runs every check in order. Async because the behavioural checks drive the
+ * compiled backend, whose calls return promises.
+ * @returns {Promise<void>}
+ */
 async function main() {
   // The backend, compiled once for every behavioural check below, with its
   // Supabase client pointed at an in-memory stand-in.
@@ -284,9 +298,14 @@ async function main() {
 
   const agentPara = (api.match(/^\*\*The (\w+) agent endpoints[^\n]*$/m) || [''])[0];
   check('the agent-endpoint paragraph is there', agentPara.length > 0);
-  // Read from each function's exported config only: a comment that merely
-  // mentions background:true must not count.
-  const configOf = (src) => (src.match(/export const config = \{[\s\S]*?\n\};/) || [''])[0];
+  /**
+   * A function's exported `config` object, as source text, or '' if it has
+   * none. Read from the export only: a comment that merely mentions
+   * background:true must not count.
+   * @param {string} src
+   * @returns {string}
+   */
+  const configOf =(src) => (src.match(/export const config = \{[\s\S]*?\n\};/) || [''])[0];
   const topLevel = FUNCTION_SOURCES.filter(([f]) => !f.includes('/lib/'));
   const backgroundFns = topLevel.filter(([, src]) => /background:\s*true/.test(configOf(src))).map(([f]) => path.basename(f, '.ts'));
   const suffixedFns = topLevel.map(([f]) => path.basename(f, '.ts')).filter((fn) => fn.endsWith('-background'));
@@ -390,8 +409,9 @@ async function main() {
    * @param {string} model
    * @param {string} content
    * @param {string} [finishReason='stop']
+   * @returns {{ok: boolean, status: number, headers: Map<string, string>, json: () => Promise<object>}}
    */
-  const reply = (model, content, finishReason = 'stop') => ({
+  const reply =(model, content, finishReason = 'stop') => ({
     ok: true, status: 200, headers: new Map(),
     json: async () => ({ model, choices: [{ message: { content }, finish_reason: finishReason }], usage: { prompt_tokens: 1000, completion_tokens: 400, total_tokens: 1400 } }),
   });
@@ -418,6 +438,11 @@ async function main() {
   const prices = README.match(/the default is \$([\d.]+)\/\$([\d.]+) per million prompt\/completion tokens, the next is \$([\d.]+)\/\$([\d.]+)/);
   check('the prices are stated', Boolean(prices));
   if (prices && tiers.length >= 2) {
+    /**
+     * A model's price per million prompt and completion tokens.
+     * @param {string} model
+     * @returns {[number, number]}
+     */
     const perMillion = (model) => [calculateCost(model, 1e6, 0), calculateCost(model, 0, 1e6)];
     check(`the default costs $${prices[1]}/$${prices[2]}`, JSON.stringify(perMillion(tiers[0].model)) === JSON.stringify([Number(prices[1]), Number(prices[2])]), perMillion(tiers[0].model).join('/'));
     check(`tier 2 costs $${prices[3]}/$${prices[4]}`, JSON.stringify(perMillion(tiers[1].model)) === JSON.stringify([Number(prices[3]), Number(prices[4])]), perMillion(tiers[1].model).join('/'));
@@ -438,6 +463,11 @@ async function main() {
   check('the run-on threshold is stated', runOnClaims.length > 0);
   if (runOnClaims.length) {
     const n = runOnClaims[0];
+    /**
+     * `count` distinct words with no punctuation between them.
+     * @param {number} count
+     * @returns {string}
+     */
     const words = (count) => Array.from({ length: count }, (_, i) => `word${i}`).join(' ');
     check(`a ${n}-word run is caught`, !(await acceptedFirstTime(`${words(n)}.`)));
     check(`a ${n - 1}-word run is not`, await acceptedFirstTime(`${words(n - 1)}.`));
@@ -455,6 +485,7 @@ async function main() {
    * An 8-word filler sentence sharing no word with any other, so fillers
    * never look like near-copies of each other.
    * @param {number} i
+   * @returns {string}
    */
   const filler = (i) => `Note${i}a note${i}b note${i}c note${i}d note${i}e note${i}f note${i}g note${i}h.`;
   /**
@@ -468,7 +499,11 @@ async function main() {
     const r = await quietly(() => callOpenRouter(DEFAULT, [{ role: 'user', content: 'hi' }], 1400, 'docs:detector'));
     return r.discardedAttempts && r.discardedAttempts.length ? r.discardedAttempts[0].errorMessage : null;
   };
-  /** A sentence of exactly `count` words. @param {number} count */
+  /**
+   * A sentence of exactly `count` words.
+   * @param {number} count
+   * @returns {string}
+   */
   const sentenceOf = (count) => Array.from({ length: count }, (_, i) => `term${i}`).join(' ') + '.';
   const SHORT = 'He had no lawful authority to act.';
 
@@ -480,6 +515,11 @@ async function main() {
   check('the long-sentence threshold is stated, the same everywhere', longClaims.length > 0 && longClaims.every((n) => n === longClaims[0]), longClaims.join(', '));
   if (longClaims.length) {
     const n = longClaims[0];
+    /**
+     * A `words`-word sentence twice, with one filler between the copies.
+     * @param {number} words
+     * @returns {string}
+     */
     const twiceApart = (words) => `${sentenceOf(words)} ${filler(1)} ${sentenceOf(words)}`;
     check(`a ${n}-word sentence twice is caught`, !(await acceptedFirstTime(twiceApart(n))));
     check(`a ${n - 1}-word sentence twice is not`, await acceptedFirstTime(twiceApart(n - 1)));
@@ -489,6 +529,11 @@ async function main() {
   check('the repeated-sentence threshold is stated, the same everywhere', repeatClaims.length > 0 && repeatClaims.every((n) => n === repeatClaims[0]), repeatClaims.join(', '));
   if (repeatClaims.length) {
     const n = repeatClaims[0];
+    /**
+     * The same short sentence `count` times, each copy followed by a filler.
+     * @param {number} count
+     * @returns {string}
+     */
     const apart = (count) => Array.from({ length: count }, (_, i) => `${SHORT} ${filler(i)}`).join(' ');
     check(`a sentence repeated ${n} times is caught`, !(await acceptedFirstTime(apart(n))));
     check(`one repeated ${n - 1} times is not`, await acceptedFirstTime(apart(n - 1)));
@@ -498,6 +543,11 @@ async function main() {
   check('the repeated-passage length is stated, the same everywhere', passageClaims.length > 0 && passageClaims.every((n) => n === passageClaims[0]), passageClaims.join(', '));
   if (passageClaims.length) {
     const n = passageClaims[0];
+    /**
+     * A passage of `count` fillers, one more filler, then the passage again.
+     * @param {number} count
+     * @returns {string}
+     */
     const passageTwice = (count) => { const p = Array.from({ length: count }, (_, i) => filler(i)).join(' '); return `${p} ${filler(99)} ${p}`; };
     // Named by the rule itself: a shorter passage repeated is caught too, by
     // the near-copy passage rule, which reports it differently.
@@ -516,17 +566,27 @@ async function main() {
   check('the clause-cluster thresholds are stated, the same everywhere', clusterClaims.length > 0 && clusterClaims.every((c) => c === clusterClaims[0]), clusterClaims.join(', '));
   if (clusterClaims.length) {
     const [words, copies] = clusterClaims[0].split('/').map(Number);
-    /** A clause of exactly `count` words. @param {number} count */
+    /**
+     * A clause of exactly `count` words.
+     * @param {number} count
+     * @returns {string}
+     */
     const clauseOf = (count) => Array.from({ length: count }, (_, i) => `part${i}`).join(' ');
+    /**
+     * Six words of the `i`th sentence's own, to end it with. Each copy's
+     * sentence ends this way, so the sentences are not near-copies of each
+     * other and only the clause rules apply.
+     * @param {number} i
+     * @returns {string}
+     */
+    const tail = (i) => Array.from({ length: 6 }, (_, k) => `tail${i}w${k}`).join(' ');
     /**
      * `times` copies of a `count`-word clause, one clause apart, each in a
      * sentence of its own.
      * @param {number} count
      * @param {number} times
+     * @returns {string}
      */
-    // Each copy's sentence ends in six words of its own, so the sentences
-    // are not near-copies of each other and only the clause rules apply.
-    const tail = (i) => Array.from({ length: 6 }, (_, k) => `tail${i}w${k}`).join(' ');
     const cluster = (count, times) => Array.from({ length: times }, (_, i) => `${clauseOf(count)}, ${tail(i)}.`).join(' ');
     check(`a ${words}-word clause ${copies} times close together is caught`, !(await acceptedFirstTime(cluster(words, copies))));
     check(`a ${words - 1}-word clause ${copies} times close together is not`, await acceptedFirstTime(cluster(words - 1, copies)));
@@ -537,24 +597,33 @@ async function main() {
   // with its last `changed` words replaced is (len - changed) / len alike.
   /**
    * A sentence of `len` words unique to `tag`, with the last `changed` of
-   * them swapped for words of its own.
+   * them swapped for words of its own. A comma every 9 words keeps a long
+   * sentence clear of the run-on check.
    * @param {string} tag
    * @param {number} len
    * @param {number} [changed=0]
+   * @returns {string}
    */
-  // A comma every 9 words keeps a long sentence clear of the run-on check.
   const sentenceFor = (tag, len, changed = 0) =>
     Array.from({ length: len }, (_, k) => (k >= len - changed ? `${tag}x${k}` : `${tag}w${k}`) + (k % 9 === 8 && k < len - 1 ? ',' : '')).join(' ') + '.';
-  /** `count` fillers, numbered from `from`. @param {number} from @param {number} count */
+  /**
+   * `count` fillers, numbered from `from`.
+   * @param {number} from
+   * @param {number} count
+   * @returns {string}
+   */
   const fillers = (from, count) => Array.from({ length: count }, (_, i) => filler(from + i)).join(' ');
   const passageClaims2 = [...README.matchAll(/(\d+)\+ consecutive sentences found again almost word for word \((\d+)%\+ alike, (\d+)\+ words\)/g)].map((m) => m.slice(1, 4).join('/'));
   check('the near-copy passage thresholds are stated, the same everywhere', passageClaims2.length === 2 && passageClaims2.every((c) => c === passageClaims2[0]), passageClaims2.join(', '));
   if (passageClaims2.length) {
     const [count, pct, words] = passageClaims2[0].split('/').map(Number);
     /**
-     * `k` sentences, then found again later with `changed` of each one's
-     * words replaced, well away from the end.
-     * @param {number[]} lens @param {number} changed
+     * One sentence per entry of `lens`, of that many words, then the same
+     * sentences found again later with `changed` of each one's words
+     * replaced, well away from the end.
+     * @param {number[]} lens
+     * @param {number} changed
+     * @returns {string}
      */
     const nearPassage = (lens, changed) =>
       `${lens.map((len, i) => sentenceFor(`p${i}`, len)).join(' ')} ${fillers(1, 6)} ${lens.map((len, i) => sentenceFor(`p${i}`, len, changed)).join(' ')} ${fillers(10, 12)}`;
@@ -575,6 +644,11 @@ async function main() {
      * `changed` words replaced, then `after` fillers. 100 words by default,
      * so likeness moves in steps of 1%. Each run of fillers is numbered apart
      * from the others, so no filler appears twice.
+     * @param {{len?: number, changed?: number, gap?: number, after?: number, lead?: number}} [options]
+     *   `len` defaults to 100, `changed` to the number of words that leaves
+     *   a 100-word copy exactly at the stated likeness, `gap` to 1, `after`
+     *   to 0 and `lead` to 20.
+     * @returns {string}
      */
     const closing = ({ len = 100, changed = 100 - pct, gap = 1, after = 0, lead = 20 } = {}) =>
       `${fillers(1000, lead)} ${sentenceFor('c', len)} ${fillers(2000, gap)} ${sentenceFor('c', len, changed)}${after ? ' ' + fillers(3000, after) : ''}`;
@@ -702,6 +776,11 @@ async function main() {
   check('every sidebar badge app.js can render is in the table', minus(sidebar, documentedSidebar).length === 0, minus(sidebar, documentedSidebar).join(', '));
   check('every badge in the sidebar table is one app.js renders', minus(documentedSidebar, sidebar).length === 0, minus(documentedSidebar, sidebar).join(', '));
   if (Number.isFinite(threshold)) {
+    /**
+     * The sidebar label of an unfinished trial started `minutes` ago.
+     * @param {number} minutes
+     * @returns {string}
+     */
     const labelAt = (minutes) => app.trialStatusLabel({ wasAborted: false, status: 'created', resultCount: 0, createdAt: new Date(Date.now() - minutes * 60000).toISOString() });
     check(`a run is "in progress" just under ${threshold} minutes`, labelAt(threshold - 0.1) === 'in progress…', labelAt(threshold - 0.1));
     check(`and "interrupted" just over`, labelAt(threshold + 0.1) === 'interrupted', labelAt(threshold + 0.1));

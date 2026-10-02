@@ -356,8 +356,12 @@ async function requestFailureChecks() {
   const { beginTrial, loadTrial, JUDGE_ROLES } = app;
   const alerts = [];
   global.alert = (message) => alerts.push(String(message));
-  // fetch() rejects, rather than resolving with an error status, when the
-  // server is never reached - offline, DNS, connection refused.
+  /**
+   * A fetch for a server that is never reached - offline, DNS, connection
+   * refused. fetch() rejects then, rather than resolving with an error
+   * status.
+   * @returns {Promise<never>}
+   */
   const unreachable = async () => { throw new TypeError('Failed to fetch'); };
 
   /** Puts the page back as index.html starts it, with nothing running. */

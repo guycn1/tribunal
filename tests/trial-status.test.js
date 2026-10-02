@@ -90,12 +90,21 @@ async function runCompletion(logRows, options) {
 }
 
 const { TRANSIENT_RETRIED_MARKER, DEGENERATE_RETRIED_SAME_MODEL_MARKER, DEGENERATE_RETRIED_DIFF_MODEL_MARKER, HTTP_ERROR_ESCALATED_MARKER, DEGENERATE_FINAL_MARKER, ABORTED_MID_CALL_MARKER } = markers;
+/**
+ * A discarded attempt's error message, as the chain writes it.
+ * @param {string} marker One of the retried-attempt markers.
+ * @returns {string}
+ */
 const retried = (marker) => `${marker} This attempt was discarded - re-tried.`;
 
 // Quieted during the checks: the code under test logs to the console by
 // design (a failed read, every OpenRouter attempt), and none of it is output
 // these checks read.
 const realConsole = { log: console.log, warn: console.warn, error: console.error };
+/**
+ * Prints to the real console, even while quietly() has silenced it.
+ * @param {...unknown} args
+ */
 const say = (...args) => realConsole.log(...args);
 /**
  * Runs `fn` with the backend's own console output suppressed.
@@ -174,6 +183,10 @@ const { handler: representativeHandler } = backend.load('representative-backgrou
 // A judge reply the repetition check discards: one sentence twice in a row.
 const LOOPED_RULING = 'VERDICT: justified\n\nThe bells had rung before the fire. He had no lawful authority to strike her down. He had no lawful authority to strike her down.';
 
+/**
+ * Runs every check in order.
+ * @returns {Promise<void>}
+ */
 async function main() {
   say('\n=== One judge with retries does not complete the trial on its own ===');
   // The exact shape of the bug: three judge rows, all belonging to barak.

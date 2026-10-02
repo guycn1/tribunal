@@ -728,6 +728,11 @@ async function abortCurrentTrial() {
   el.mainLoadingOverlay.classList.remove('hidden');
   el.sidebar.classList.add('loading-locked');
 
+  /**
+   * Whether a role's card is still waiting on its call.
+   * @param {string | undefined} status
+   * @returns {boolean}
+   */
   const isPending = (status) => status === 'loading';
   const pendingRoles = [
     ...REPRESENTATIVE_ROLES.filter((r) => isPending(state.representatives[r] && state.representatives[r].status)),
