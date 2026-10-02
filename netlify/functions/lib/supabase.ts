@@ -2,9 +2,14 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 let client: SupabaseClient | null = null;
 
-// Uses the service role key, which bypasses Row Level Security — this is
-// safe only because it is used exclusively on the backend and never sent
-// to the browser. The browser talks only to the Netlify function endpoints.
+/**
+ * The backend's Supabase client, created on first use. Throws if
+ * SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY is not set.
+ *
+ * Uses the service role key, which bypasses Row Level Security — this is
+ * safe only because it is used exclusively on the backend and never sent
+ * to the browser. The browser talks only to the Netlify function endpoints.
+ */
 export function getSupabaseClient(): SupabaseClient {
   if (client) return client;
 

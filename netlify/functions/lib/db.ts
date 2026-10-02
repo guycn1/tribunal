@@ -36,6 +36,10 @@ export const ABORTED_BY_USER_MESSAGE = 'Aborted by user before this call could c
 // tests/shared-constants.test.js.
 export const NO_MODEL_USED = 'n/a';
 
+/**
+ * Creates a trial for the given case, in its starting status. Throws if the
+ * row cannot be written.
+ */
 export async function createTrial(caseCode: string): Promise<TrialRecord> {
   const supabase = getSupabaseClient();
   const { data, error } = await supabase
@@ -73,6 +77,11 @@ export interface TrialSummary extends TrialRecord {
   resultCount: number;
 }
 
+/**
+ * The most recent trials, newest first, each with what the run-history
+ * sidebar labels it by: whether it was aborted, how many of its 7 results
+ * exist, and whether any call ever failed. Throws if a query fails.
+ */
 export async function listTrials(limit = 50): Promise<TrialSummary[]> {
   const supabase = getSupabaseClient();
   const { data: trials, error } = await supabase
@@ -140,6 +149,7 @@ export async function listTrials(limit = 50): Promise<TrialSummary[]> {
   }));
 }
 
+/** One trial's own row, or null if there is none. Throws if the query fails. */
 export async function getTrial(trialId: string): Promise<TrialRecord | null> {
   const supabase = getSupabaseClient();
   const { data, error } = await supabase.from('trials').select('*').eq('id', trialId).maybeSingle();
@@ -158,6 +168,12 @@ export async function getTrial(trialId: string): Promise<TrialRecord | null> {
 export const CALL_LOG_PAGE_COLUMNS =
   'agent_role, call_type, model_used, prompt_tokens, completion_tokens, total_tokens, cost, status, error_message, timestamp, duration_ms';
 
+/**
+ * Everything the page shows for one trial: the trial, its arguments and
+ * rulings, its call log (without the stored replies - see
+ * CALL_LOG_PAGE_COLUMNS) and the attempt each role has in flight. Null if
+ * there is no such trial; throws if a query fails.
+ */
 export async function getFullTrial(trialId: string) {
   const supabase = getSupabaseClient();
 
@@ -237,6 +253,10 @@ export async function getFullTrial(trialId: string) {
   };
 }
 
+/**
+ * Saves a representative's argument, replacing any earlier one for the same
+ * trial and role. Throws if the write fails.
+ */
 export async function upsertRepresentativeArgument(params: {
   trialId: string;
   role: RepresentativeRole;
@@ -261,6 +281,10 @@ export async function upsertRepresentativeArgument(params: {
   }
 }
 
+/**
+ * Saves a judge's ruling, replacing any earlier one for the same trial and
+ * role. Throws if the write fails.
+ */
 export async function upsertJudgeRuling(params: {
   trialId: string;
   role: JudgeRole;
@@ -285,15 +309,17 @@ export async function upsertJudgeRuling(params: {
   }
 }
 
-// Overwrites (not appends - see agent_progress in schema.sql) the one row
-// for this trial/role with whichever attempt is now actually in flight.
-// Called from openrouter.ts's onAttemptStart callback the moment each
-// attempt begins, so a client polling mid-call sees the real current
-// model/attempt rather than only learning about it once that attempt is
-// later discarded or kept. Errors are thrown here and swallowed by
-// callOpenRouter(), which catches a failing onAttemptStart callback and
-// carries on - this is a best-effort live-progress signal, never allowed
-// to interrupt the actual retry logic.
+/**
+ * Overwrites (not appends - see agent_progress in schema.sql) the one row
+ * for this trial/role with whichever attempt is now actually in flight.
+ * Called from openrouter.ts's onAttemptStart callback the moment each
+ * attempt begins, so a client polling mid-call sees the real current
+ * model/attempt rather than only learning about it once that attempt is
+ * later discarded or kept. Errors are thrown here and swallowed by
+ * callOpenRouter(), which catches a failing onAttemptStart callback and
+ * carries on - this is a best-effort live-progress signal, never allowed
+ * to interrupt the actual retry logic.
+ */
 export async function upsertAgentProgress(params: {
   trialId: string;
   role: string;
@@ -342,35 +368,41 @@ export async function upsertAgentProgress(params: {
 export const GLOBAL_CALL_CAP = 350;
 const GLOBAL_CALL_WINDOW_MS = 24 * 60 * 60 * 1000;
 
-// Deliberately does NOT log anything when the cap is hit (unlike every
-// other outcome in this file) - a logged row here would itself count
-// toward the very total this function checks, which would make a trip of
-// the cap self-perpetuating: once tripped, every subsequent check would
-// see its own past rejections and stay tripped for the rest of the
-// window even if real traffic had stopped. The caller still returns an
-// error and writes a console.warn (see representative-background.ts /
-// judge-background.ts), but as a Background Function its response never
-// reaches the browser - a trip is visible only in Netlify's function
-// logs.
-//
-// This whole cap exists to bound worst-case spend on the real, public,
-// deployed site - not to constrain the developer's own local testing,
-// which already needs its own explicit go-ahead before any OpenRouter
-// quota is spent (a separate, stricter gate than this one). NETLIFY_DEV
-// is injected as 'true' by the Netlify CLI itself for every invocation
-// under `netlify dev` (confirmed directly in its own source,
-// commands/dev/dev.js) and is not something a real deployed invocation
-// - or a client request - could ever set; a genuine hang chasing this
-// exact cap during local testing is what prompted checking for a way to
-// exempt local calls instead of only ever raising the number.
-//
-// Never set NETLIFY_DEV by hand - not in .env, and above all not in
-// Netlify's own environment variables. It is deliberately absent from
-// .env.example for this reason. Setting it would silently switch off the
-// only hard ceiling on what the public site can spend, and nothing would
-// look wrong: calls would keep succeeding, the cap would simply never
-// trip. The CLI sets it for you locally; there is no case where you need
-// to.
+/**
+ * Whether the site has logged GLOBAL_CALL_CAP model calls in the last 24
+ * hours, with the count. Always false under `netlify dev`, and false if the
+ * count cannot be read.
+ *
+ * Deliberately does NOT log anything when the cap is hit (unlike every
+ * other outcome in this file) - a logged row here would itself count
+ * toward the very total this function checks, which would make a trip of
+ * the cap self-perpetuating: once tripped, every subsequent check would
+ * see its own past rejections and stay tripped for the rest of the
+ * window even if real traffic had stopped. The caller still returns an
+ * error and writes a console.warn (see representative-background.ts /
+ * judge-background.ts), but as a Background Function its response never
+ * reaches the browser - a trip is visible only in Netlify's function
+ * logs.
+ *
+ * This whole cap exists to bound worst-case spend on the real, public,
+ * deployed site - not to constrain the developer's own local testing,
+ * which already needs its own explicit go-ahead before any OpenRouter
+ * quota is spent (a separate, stricter gate than this one). NETLIFY_DEV
+ * is injected as 'true' by the Netlify CLI itself for every invocation
+ * under `netlify dev` (confirmed directly in its own source,
+ * commands/dev/dev.js) and is not something a real deployed invocation
+ * - or a client request - could ever set; a genuine hang chasing this
+ * exact cap during local testing is what prompted checking for a way to
+ * exempt local calls instead of only ever raising the number.
+ *
+ * Never set NETLIFY_DEV by hand - not in .env, and above all not in
+ * Netlify's own environment variables. It is deliberately absent from
+ * .env.example for this reason. Setting it would silently switch off the
+ * only hard ceiling on what the public site can spend, and nothing would
+ * look wrong: calls would keep succeeding, the cap would simply never
+ * trip. The CLI sets it for you locally; there is no case where you need
+ * to.
+ */
 export async function isGlobalCallCapExceeded(): Promise<{ exceeded: boolean; count: number }> {
   if (process.env.NETLIFY_DEV === 'true') {
     return { exceeded: false, count: 0 };
@@ -397,30 +429,32 @@ export async function isGlobalCallCapExceeded(): Promise<{ exceeded: boolean; co
   return { exceeded: (count ?? 0) >= GLOBAL_CALL_CAP, count: count ?? 0 };
 }
 
-// Has the user aborted this trial? Checked by the agent Background
-// Functions before each attempt and as each failed attempt is recorded
-// (see the isAborted callback on callOpenRouter), so an abandoned trial
-// stops costing real money; again once a call succeeds, so a reply that
-// finished after the abort is logged as aborted (finishedAfterAbort in
-// openrouter.ts); and once more before a result is saved, so an aborted
-// trial never gains one.
-//
-// abort.ts writes one row carrying exactly ABORTED_BY_USER_MESSAGE per
-// role that was still pending when the user clicked Abort, which makes
-// that row the only durable, server-visible record that the abort
-// happened - there is no other channel, since a Background Function
-// invocation cannot be cancelled by the client that started it.
-//
-// Deliberately trial-wide rather than per-role: Abort stops the whole
-// trial, and a role that has not yet written its own abort row (because
-// the client did not consider it pending at that instant) should still
-// stop rather than carry on alone against a trial the user has visibly
-// walked away from.
-//
-// Fails open on error - a Supabase hiccup returns false ("not aborted"),
-// so the call carries on, and a transient lookup failure can never
-// silently kill a real, wanted call. Spending a little extra on a call the user abandoned
-// is the far cheaper mistake of the two.
+/**
+ * Has the user aborted this trial? Checked by the agent Background
+ * Functions before each attempt and as each failed attempt is recorded
+ * (see the isAborted callback on callOpenRouter), so an abandoned trial
+ * stops costing real money; again once a call succeeds, so a reply that
+ * finished after the abort is logged as aborted (finishedAfterAbort in
+ * openrouter.ts); and once more before a result is saved, so an aborted
+ * trial never gains one.
+ *
+ * abort.ts writes one row carrying exactly ABORTED_BY_USER_MESSAGE per
+ * role that was still pending when the user clicked Abort, which makes
+ * that row the only durable, server-visible record that the abort
+ * happened - there is no other channel, since a Background Function
+ * invocation cannot be cancelled by the client that started it.
+ *
+ * Deliberately trial-wide rather than per-role: Abort stops the whole
+ * trial, and a role that has not yet written its own abort row (because
+ * the client did not consider it pending at that instant) should still
+ * stop rather than carry on alone against a trial the user has visibly
+ * walked away from.
+ *
+ * Fails open on error - a Supabase hiccup returns false ("not aborted"),
+ * so the call carries on, and a transient lookup failure can never
+ * silently kill a real, wanted call. Spending a little extra on a call the user abandoned
+ * is the far cheaper mistake of the two.
+ */
 export async function isTrialAborted(trialId: string): Promise<boolean> {
   const supabase = getSupabaseClient();
   const { count, error } = await supabase
@@ -437,6 +471,11 @@ export async function isTrialAborted(trialId: string): Promise<boolean> {
   return (count ?? 0) > 0;
 }
 
+/**
+ * Writes one call-log row. A write the database rejects is reported on the
+ * function's console rather than thrown, so it never masks the outcome of
+ * the call it records.
+ */
 export async function logApiCall(params: {
   trialId: string;
   agentRole: string;
@@ -490,16 +529,20 @@ export async function logApiCall(params: {
   }
 }
 
-// A trial is marked completed once every judge has a final outcome logged,
-// successful or not — a failed judge call still ends the run for that seat
-// rather than leaving the trial stuck "in progress" forever.
-//
-// This counts judges, not log rows. It used to mark the trial completed at 3
-// judge rows, which was right while each judge logged exactly one; once every
-// discarded attempt got a row of its own, a single judge that needed two
-// retries reached 3 alone and marked the trial completed while the other two
-// were still running. A row carrying a retried marker is not an outcome, so
-// it is left out; anything else - a success, a final failure, an abort - is.
+/**
+ * Marks the trial completed if every judge now has a final outcome.
+ *
+ * A trial is marked completed once every judge has a final outcome logged,
+ * successful or not — a failed judge call still ends the run for that seat
+ * rather than leaving the trial stuck "in progress" forever.
+ *
+ * This counts judges, not log rows. It used to mark the trial completed at 3
+ * judge rows, which was right while each judge logged exactly one; once every
+ * discarded attempt got a row of its own, a single judge that needed two
+ * retries reached 3 alone and marked the trial completed while the other two
+ * were still running. A row carrying a retried marker is not an outcome, so
+ * it is left out; anything else - a success, a final failure, an abort - is.
+ */
 export async function markTrialCompletedIfJudgingDone(trialId: string): Promise<void> {
   const supabase = getSupabaseClient();
   const { data, error } = await supabase
@@ -529,6 +572,7 @@ export async function markTrialCompletedIfJudgingDone(trialId: string): Promise<
   }
 }
 
+/** A trials row in the shape the rest of the backend uses. */
 function mapTrial(row: any): TrialRecord {
   return {
     id: row.id,

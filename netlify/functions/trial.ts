@@ -5,6 +5,13 @@ import { extractParams } from './lib/extractParams';
 import { getFullTrial } from './lib/db';
 import { getChargeSheet } from './lib/chargeSheet';
 
+/**
+ * GET /api/trials/:id
+ *
+ * One trial in full - its arguments, rulings, call log and live progress
+ * (see getFullTrial in db.ts) - with the case record. This is what the page
+ * polls while a trial runs, and what it reads to open one from history.
+ */
 const rawHandler: Handler = async (event) => {
   if (event.httpMethod !== 'GET') {
     return json(405, { error: 'Method not allowed' });

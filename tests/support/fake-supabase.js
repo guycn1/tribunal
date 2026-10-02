@@ -89,6 +89,8 @@ function fakeSupabase(tables, options = {}) {
         in(column, values) { filters.push((row) => values.includes(row[column])); return query; },
         gte(column, value) { filters.push((row) => row[column] >= value); return query; },
         order(column) { orderBy = column; return query; },
+        // Ignores its argument: every matching row comes back. No suite
+        // stores more rows than the backend's limits, so none can tell.
         limit() { return query; },
         maybeSingle() { single = 'maybe'; return query; },
         single() { single = 'exact'; return query; },

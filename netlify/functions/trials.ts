@@ -5,6 +5,11 @@ import { createTrial, listTrials } from './lib/db';
 import { getChargeSheet } from './lib/chargeSheet';
 import { isSiteGateOk } from './lib/siteGate';
 
+/**
+ * GET /api/trials lists recent trials for the run-history sidebar (see
+ * listTrials in db.ts). POST /api/trials creates a trial and returns it with
+ * the case record; it needs the site-gate header and makes no model call.
+ */
 const rawHandler: Handler = async (event) => {
   if (event.httpMethod === 'GET') {
     // Read-only history listing stays fully open, gate or no gate -

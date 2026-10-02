@@ -40,6 +40,16 @@ import type { JudgeRole, RepresentativeRole } from './lib/types';
 // both role types.
 const MAX_TOKENS = AGENT_MAX_TOKENS;
 
+/**
+ * POST /api/trials/:id/judges/:role
+ *
+ * Runs one judge's call, as a Background Function, the same way as
+ * representative-background.ts: the judge is given the case and every
+ * representative argument that was saved, every attempt is logged, and the
+ * ruling is saved unless the call failed, the reply had no parseable
+ * VERDICT line or the trial was aborted meanwhile. Marks the trial
+ * completed once every judge has a final outcome.
+ */
 const rawHandler: Handler = async (event) => {
   if (event.httpMethod !== 'POST') {
     return json(405, { error: 'Method not allowed' });

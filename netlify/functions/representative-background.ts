@@ -19,6 +19,14 @@ import type { RepresentativeRole } from './lib/types';
 // openrouter.ts).
 const MAX_TOKENS = AGENT_MAX_TOKENS;
 
+/**
+ * POST /api/trials/:id/representatives/:role
+ *
+ * Runs one representative's call, as a Background Function: the browser
+ * gets Netlify's 202 at once and learns the outcome by polling
+ * GET /api/trials/:id. Every attempt is logged, and the argument is saved
+ * unless the call failed or the trial was aborted meanwhile.
+ */
 const rawHandler: Handler = async (event) => {
   if (event.httpMethod !== 'POST') {
     return json(405, { error: 'Method not allowed' });

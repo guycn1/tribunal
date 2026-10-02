@@ -78,62 +78,66 @@ const FAST_FAILURE_THRESHOLD_MS = 10000;
 // real outage.
 const MAX_FAST_TRANSIENT_RETRIES_PER_TIER = 4;
 
-// Per-attempt ceiling, scaled to how much text the call actually asked for
-// AND to how much it has to read first. A timeout signal passed to fetch()
-// stays armed while the response body is read, so this has to cover
-// generation time, not just time-to-headers.
-//
-// The prompt-size term is not cosmetic - it was added (2026-09-20) after a
-// real incident where judge calls timed out repeatedly against a ceiling
-// that only ever considered max_tokens. A judge's prompt carries the full
-// case record plus all four representative arguments. Counted across every
-// successful call in api_call_logs as of 2026-09-21: a judge prompt runs a
-// median of 3896 tokens (mean 3943, p90 4483), a representative's 1028
-// (mean 1166, p90 2068) - so a judge carries something like 3.8x a
-// representative's prompt. The old formula gave both the identical 43000ms.
-// Real measured judge completions on the default model in that incident:
-// 26.9s, 33.9s, and 43.2s - the last of those at that very ceiling (a
-// logged duration can read slightly over it, since it also covers the
-// progress write made just before the request starts), with several sibling
-// attempts timing out outright just past it. A ceiling that half the real
-// distribution overruns isn't a safety limit, it's a coin flip, so prompt
-// size now feeds it directly.
-//
-// Sum of attempt ceilings across the whole escalation chain: a judge at
-// 4550 prompt tokens (the incident's judges - above p90, so a deliberately
-// generous case) comes to 648.6s, and a representative at 1030 (about the
-// median) to 587.0s, both just inside the 650s budget. Those two figures
-// are what the budget was sized against.
-//
-// It is NOT inside the budget by construction. The ceiling scales with
-// prompt size and real prompts have a long tail - the largest judge prompt
-// in the log (as of 2026-09-21) is 11318 tokens, which sums to 767s, over
-// budget by nearly two minutes. Even p90 (4483) only reaches 647.5s, so the
-// tail has to be genuinely unusual before this bites, and it bites safely
-// when it does: remainingMs() clamps the last attempt and the loop reports
-// honestly that the budget ran out before a further tier could be tried.
-// The effect of an outsized prompt is fewer tiers actually reached, not a
-// silent overrun.
-//
-// The result is also clamped: never under 30000ms, and never over the
-// whole budget less MIN_REMAINING_TO_ATTEMPT_MS.
-//
-// Math.round is load-bearing, not tidiness: the prompt term uses a
-// fractional multiplier, so an odd token estimate yields a half
-// millisecond - and AbortSignal.timeout() throws outright on a
-// non-integer ("The value of 'delay' is out of range"), before fetch() is
-// even called. That would have failed roughly half of all real calls,
-// deterministically, on prompt length alone. Caught by the offline suite
-// before deploy; do not remove.
+/**
+ * Per-attempt ceiling, scaled to how much text the call actually asked for
+ * AND to how much it has to read first. A timeout signal passed to fetch()
+ * stays armed while the response body is read, so this has to cover
+ * generation time, not just time-to-headers.
+ *
+ * The prompt-size term is not cosmetic - it was added (2026-09-20) after a
+ * real incident where judge calls timed out repeatedly against a ceiling
+ * that only ever considered max_tokens. A judge's prompt carries the full
+ * case record plus all four representative arguments. Counted across every
+ * successful call in api_call_logs as of 2026-09-21: a judge prompt runs a
+ * median of 3896 tokens (mean 3943, p90 4483), a representative's 1028
+ * (mean 1166, p90 2068) - so a judge carries something like 3.8x a
+ * representative's prompt. The old formula gave both the identical 43000ms.
+ * Real measured judge completions on the default model in that incident:
+ * 26.9s, 33.9s, and 43.2s - the last of those at that very ceiling (a
+ * logged duration can read slightly over it, since it also covers the
+ * progress write made just before the request starts), with several sibling
+ * attempts timing out outright just past it. A ceiling that half the real
+ * distribution overruns isn't a safety limit, it's a coin flip, so prompt
+ * size now feeds it directly.
+ *
+ * Sum of attempt ceilings across the whole escalation chain: a judge at
+ * 4550 prompt tokens (the incident's judges - above p90, so a deliberately
+ * generous case) comes to 648.6s, and a representative at 1030 (about the
+ * median) to 587.0s, both just inside the 650s budget. Those two figures
+ * are what the budget was sized against.
+ *
+ * It is NOT inside the budget by construction. The ceiling scales with
+ * prompt size and real prompts have a long tail - the largest judge prompt
+ * in the log (as of 2026-09-21) is 11318 tokens, which sums to 767s, over
+ * budget by nearly two minutes. Even p90 (4483) only reaches 647.5s, so the
+ * tail has to be genuinely unusual before this bites, and it bites safely
+ * when it does: remainingMs() clamps the last attempt and the loop reports
+ * honestly that the budget ran out before a further tier could be tried.
+ * The effect of an outsized prompt is fewer tiers actually reached, not a
+ * silent overrun.
+ *
+ * The result is also clamped: never under 30000ms, and never over the
+ * whole budget less MIN_REMAINING_TO_ATTEMPT_MS.
+ *
+ * Math.round is load-bearing, not tidiness: the prompt term uses a
+ * fractional multiplier, so an odd token estimate yields a half
+ * millisecond - and AbortSignal.timeout() throws outright on a
+ * non-integer ("The value of 'delay' is out of range"), before fetch() is
+ * even called. That would have failed roughly half of all real calls,
+ * deterministically, on prompt length alone. Caught by the offline suite
+ * before deploy; do not remove.
+ */
 function attemptTimeoutFor(promptTokens: number, maxTokens: number): number {
   const estimateMs = 12000 + promptTokens * 2.5 + maxTokens * 25;
   const ceiling = TOTAL_BUDGET_MS - MIN_REMAINING_TO_ATTEMPT_MS;
   return Math.round(Math.min(Math.max(estimateMs, 30000), ceiling));
 }
 
-// Rough token estimate from raw characters (~4 chars/token) - only ever
-// used to size the timeout above, never to bill or cap anything, so an
-// approximation is fine and avoids shipping a tokenizer for it.
+/**
+ * Rough token estimate from raw characters (~4 chars/token) - only ever
+ * used to size the timeout above, never to bill or cap anything, so an
+ * approximation is fine and avoids shipping a tokenizer for it.
+ */
 function estimatePromptTokens(messages: OpenRouterMessage[]): number {
   const chars = messages.reduce((total, m) => total + m.content.length, 0);
   return Math.ceil(chars / 4);
@@ -204,22 +208,28 @@ interface RetryTier {
   maxAttempts: number;
 }
 
-// Tier 1's maxAttempts raised 1 -> 2 (2026-09-20), specifically to
-// compensate for tier 2's own cost going up when its model was replaced
-// (mistralai/mistral-large-2512, deprecated/removed from OpenRouter -
-// see getTruncationFallbackModel's comment in models.ts - was $0.50/$1.50
-// per million prompt/completion tokens; its replacement,
-// anthropic/claude-haiku-4.5, is $1.00/$5.00, a real 2-3x step up). A
-// second attempt at the default model catches more recoverable
-// truncations/degeneracies before reaching for a costlier tier. Note that
-// every tier in this chain is a genuinely paid model - nothing here runs
-// on a free tier - so this is about relative cost, not about avoiding
-// spend altogether: the default model is simply the cheapest of the four
-// by a wide margin ($0.05/$0.08 per million prompt/completion tokens
-// against tier 2's $1.00/$5.00 - see pricing.ts). This is also what surfaced
-// the isFallbackAttempt fix below: with tier 1 now allowed more than one
-// attempt, "is this attempt a retry" could no longer be inferred from
-// tierIndex alone.
+/**
+ * The escalation chain, cheapest model first: each tier's model, token cap
+ * and number of attempts. callOpenRouter() moves to the next tier once the
+ * current one's attempts are spent, or at once on a plain HTTP error.
+ *
+ * Tier 1's maxAttempts raised 1 -> 2 (2026-09-20), specifically to
+ * compensate for tier 2's own cost going up when its model was replaced
+ * (mistralai/mistral-large-2512, deprecated/removed from OpenRouter -
+ * see getTruncationFallbackModel's comment in models.ts - was $0.50/$1.50
+ * per million prompt/completion tokens; its replacement,
+ * anthropic/claude-haiku-4.5, is $1.00/$5.00, a real 2-3x step up). A
+ * second attempt at the default model catches more recoverable
+ * truncations/degeneracies before reaching for a costlier tier. Note that
+ * every tier in this chain is a genuinely paid model - nothing here runs
+ * on a free tier - so this is about relative cost, not about avoiding
+ * spend altogether: the default model is simply the cheapest of the four
+ * by a wide margin ($0.05/$0.08 per million prompt/completion tokens
+ * against tier 2's $1.00/$5.00 - see pricing.ts). This is also what surfaced
+ * the isFallbackAttempt fix below: with tier 1 now allowed more than one
+ * attempt, "is this attempt a retry" could no longer be inferred from
+ * tierIndex alone.
+ */
 function buildRetryTiers(defaultModel: string, defaultMaxTokens: number): RetryTier[] {
   return [
     { getModel: () => defaultModel, maxTokens: defaultMaxTokens, maxAttempts: 2 },
@@ -259,6 +269,10 @@ const DEGENERATE_RUN_THRESHOLD = 40;
 // this threshold was measured with.
 const PUNCTUATION_BREAK_CHARS = /[.,;:!?()"'“”‘’—–\-\n*]+/g;
 
+/**
+ * The longest run of words with no punctuation between them, whether it
+ * reaches DEGENERATE_RUN_THRESHOLD, and the start of that run as a sample.
+ */
 function detectDegenerateRun(content: string): { degenerate: boolean; runLength: number; sample: string } {
   const chunks = content.split(PUNCTUATION_BREAK_CHARS);
   let max = 0;
@@ -491,8 +505,11 @@ const CLOSING_SHARE = 0.1;
 const CLOSING_LOOKBACK = 4;
 const MIN_WORDS_FOR_CLOSING_COPY = 8;
 
-// Word-level similarity of two normalized sentences: 1 for identical, 0 for
-// nothing in common.
+/**
+ * Word-level similarity of two normalized sentences, given as their words:
+ * one less their word edit distance over the longer one's length - 1 for
+ * identical, 0 for nothing in common.
+ */
 function sentenceSimilarity(a: string[], b: string[]): number {
   let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
   for (let i = 1; i <= a.length; i++) {
@@ -505,10 +522,15 @@ function sentenceSimilarity(a: string[], b: string[]): number {
   return 1 - prev[b.length] / Math.max(a.length, b.length, 1);
 }
 
+/**
+ * A sentence reduced for comparison: trimmed, lower-cased, whitespace
+ * collapsed and punctuation dropped.
+ */
 function normalizeSentenceForRepeatCheck(sentence: string): string {
   return sentence.trim().toLowerCase().replace(/\s+/g, ' ').replace(/[^\w\s]/g, '');
 }
 
+/** The number of words in a sentence already normalized. */
 function wordCount(normalized: string): number {
   return normalized.split(' ').filter(Boolean).length;
 }
@@ -525,14 +547,17 @@ function wordCount(normalized: string): number {
 function detectRepeatedSentences(content: string): { degenerate: boolean; reason: string } {
   const sentences = content.split(/[.!?]+/).map(normalizeSentenceForRepeatCheck).filter((s) => wordCount(s) > 0);
   const total = sentences.length;
+  /** The first 60 characters of a sentence or clause, quoted for a reason text. */
   const quote = (s: string) => `("${s.slice(0, 60)}...")`;
-  // 0-based indexes in, "sentences 3, 17 and 31 of 32" out.
+  /** 0-based indexes in, "sentences 3, 17 and 31 of 32" out. */
   const where = (indexes: number[]) => {
     const labels = indexes.map((i) => String(i + 1));
     const list = labels.length > 1 ? `${labels.slice(0, -1).join(', ')} and ${labels[labels.length - 1]}` : labels[0];
     return `(sentences ${list} of ${total})`;
   };
+  /** A run of sentences or clauses as "4-6", from a 0-based start. */
   const span = (from: number, length: number) => `${from + 1}-${from + length}`;
+  /** The article a number takes when read aloud: "an 18-word", "a 6-word". */
   const aOrAn = (n: number) => (n === 11 || n === 18 || String(n).startsWith('8') ? 'an' : 'a');
 
   let run = 1;
@@ -637,6 +662,7 @@ function detectRepeatedSentences(content: string): { degenerate: boolean; reason
 
   // Near-copy rules last of all, so an exact repeat is reported as one.
   const tokens = sentences.map((s) => s.split(' ').filter(Boolean));
+  /** How alike sentences i and j are - see sentenceSimilarity(). */
   const similar = (i: number, j: number) => sentenceSimilarity(tokens[i], tokens[j]);
   for (let i = 0; i < total; i++) {
     for (let j = i + 1; j < total; j++) {
@@ -789,6 +815,10 @@ export const RETRIED_ATTEMPT_MARKERS = [
   TRANSIENT_RETRIED_MARKER,
 ];
 
+/**
+ * Whether a call-log error message marks an attempt that was discarded and
+ * retried, rather than a role's final outcome.
+ */
 export function isRetriedAttemptMessage(errorMessage: string | null | undefined): boolean {
   return typeof errorMessage === 'string' && RETRIED_ATTEMPT_MARKERS.some((marker) => errorMessage.startsWith(marker));
 }
@@ -850,11 +880,19 @@ export interface OpenRouterResult {
   responseText?: string;
 }
 
-// label identifies the caller in the log lines below (e.g.
-// "representative:jon_snow") - purely diagnostic, never sent to OpenRouter
-// or returned to the client. With seven agents potentially calling this
-// concurrently, a log line with no indication of which one it belongs to
-// is close to useless once more than one is in flight at the same time.
+/**
+ * Asks OpenRouter for one agent's reply, walking the escalation chain
+ * (buildRetryTiers) until an attempt is kept, every tier is spent, the time
+ * budget runs out or the trial is aborted. Never throws for an API failure:
+ * every outcome, success or failure, comes back as an OpenRouterResult, with
+ * the attempts discarded on the way listed in it.
+ *
+ * @param label Identifies the caller in the log lines below (e.g.
+ *   "representative:jon_snow") - purely diagnostic, never sent to OpenRouter
+ *   or returned to the client. With seven agents potentially calling this
+ *   concurrently, a log line with no indication of which one it belongs to
+ *   is close to useless once more than one is in flight at the same time.
+ */
 export async function callOpenRouter(
   model: string,
   messages: OpenRouterMessage[],
@@ -927,9 +965,14 @@ export async function callOpenRouter(
   }
 
   const startedAt = Date.now();
+  /** How much of TOTAL_BUDGET_MS this call has left. */
   const remainingMs = () => TOTAL_BUDGET_MS - (Date.now() - startedAt);
   const estimatedPromptTokens = estimatePromptTokens(messages);
 
+  /**
+   * Whether the trial has been aborted, through the caller's isAborted.
+   * False when there is no such callback, and when the check itself fails.
+   */
   async function checkAborted(): Promise<boolean> {
     if (!isAborted) return false;
     try {
@@ -968,25 +1011,27 @@ export async function callOpenRouter(
   // cumulative time since callOpenRouter() itself was first called.
   let lastAttemptStartedAt = Date.now();
 
-  // Records one failed attempt and moves the chain forward, for EVERY kind
-  // of failure rather than only the content-quality ones.
-  //
-  // This unification is the fix for a real, load-bearing bug (2026-09-20):
-  // `attemptsAtTier++` used to live exclusively inside the
-  // truncation/degeneracy branch, so every other retry path - timeout, 429,
-  // 5xx, an empty-content 200 - looped with `continue` while leaving both
-  // `attemptsAtTier` and `tierIndex` untouched. A call whose attempts kept
-  // timing out therefore retried the SAME model at the SAME tier until the
-  // entire 650s budget drained, never once escalating, while
-  // `attemptInTier` (reported as `attemptsAtTier + 1`) stayed pinned at 1 -
-  // which is why two judge cards sat on "Model: mistral-small (first
-  // attempt)" for six unbroken minutes through roughly nine separate
-  // 43-second timeouts. The escalation chain existed but was unreachable
-  // for the most common failure modes it should have been covering.
-  //
-  // `skipRestOfTier` is for failures where retrying this exact model is
-  // pointless rather than merely unlucky - currently a plain HTTP error
-  // such as a removed model id, which will fail identically every time.
+  /**
+   * Records one failed attempt and moves the chain forward, for EVERY kind
+   * of failure rather than only the content-quality ones.
+   *
+   * This unification is the fix for a real, load-bearing bug (2026-09-20):
+   * `attemptsAtTier++` used to live exclusively inside the
+   * truncation/degeneracy branch, so every other retry path - timeout, 429,
+   * 5xx, an empty-content 200 - looped with `continue` while leaving both
+   * `attemptsAtTier` and `tierIndex` untouched. A call whose attempts kept
+   * timing out therefore retried the SAME model at the SAME tier until the
+   * entire 650s budget drained, never once escalating, while
+   * `attemptInTier` (reported as `attemptsAtTier + 1`) stayed pinned at 1 -
+   * which is why two judge cards sat on "Model: mistral-small (first
+   * attempt)" for six unbroken minutes through roughly nine separate
+   * 43-second timeouts. The escalation chain existed but was unreachable
+   * for the most common failure modes it should have been covering.
+   *
+   * `skipRestOfTier` is for failures where retrying this exact model is
+   * pointless rather than merely unlucky - currently a plain HTTP error
+   * such as a removed model id, which will fail identically every time.
+   */
   async function recordFailedAttemptAndAdvance(opts: {
     marker: string;
     // Used instead of `marker` when this failure actually moves the chain
@@ -1548,24 +1593,33 @@ export async function callOpenRouter(
   return failure(lastAttemptModel, message, lastUsage, discardedAttempts, Date.now() - lastAttemptStartedAt, { tierIndex, tierCount: tiers.length });
 }
 
-// Applied to a terminal failure only when it happened on the LAST
-// escalation tier (tierIndex === tierCount - 1) - i.e. every tier this
-// chain offers was genuinely tried and none of them produced a kept
-// result, regardless of which specific failure mode ended it (an HTTP
-// error, a rate limit or exhausted quota, the account out of credits, a
-// timeout or network error, or an empty response). Truncation and
-// degeneration never come through here: the DEGENERATE_FINAL_MARKER
-// branch above words that case itself. A failure that happens on an
-// EARLIER tier (the time budget running out before the chain reached the
-// last tier, say, or a failure no retry can fix, such as the account being
-// out of credits) is a different, less complete situation and keeps its
-// own specific message instead of falsely claiming every tier was
-// exhausted.
+/**
+ * A terminal failure's message, prefixed with the fact that every tier was
+ * tried when that is so, and returned unchanged otherwise.
+ *
+ * Applied to a terminal failure only when it happened on the LAST
+ * escalation tier (tierIndex === tierCount - 1) - i.e. every tier this
+ * chain offers was genuinely tried and none of them produced a kept
+ * result, regardless of which specific failure mode ended it (an HTTP
+ * error, a rate limit or exhausted quota, the account out of credits, a
+ * timeout or network error, or an empty response). Truncation and
+ * degeneration never come through here: the DEGENERATE_FINAL_MARKER
+ * branch above words that case itself. A failure that happens on an
+ * EARLIER tier (the time budget running out before the chain reached the
+ * last tier, say, or a failure no retry can fix, such as the account being
+ * out of credits) is a different, less complete situation and keeps its
+ * own specific message instead of falsely claiming every tier was
+ * exhausted.
+ */
 function withTierContext(rawMessage: string, tierIndex: number, tierCount: number, attemptModel: string): string {
   if (tierIndex !== tierCount - 1) return rawMessage;
   return `Every model tier was tried (${tierCount} in total, ending with ${attemptModel}) and none produced a usable response. Last attempt: ${rawMessage}`;
 }
 
+/**
+ * A failed OpenRouterResult, priced from the attempt's own usage when it got
+ * any, and with withTierContext() applied when tierContext is given.
+ */
 function failure(
   model: string,
   errorMessage: string,
@@ -1587,6 +1641,7 @@ function failure(
   };
 }
 
+/** A response's body as text, or a placeholder if it cannot be read. */
 async function safeReadText(response: Response): Promise<string> {
   try {
     return await response.text();
@@ -1595,11 +1650,15 @@ async function safeReadText(response: Response): Promise<string> {
   }
 }
 
-// Every non-ok failure path wants a human-readable reason, not a raw
-// response body - OpenRouter error responses are typically
-// {"error":{"message":"..."}}, so this pulls that message out when
-// present and only falls back to the raw text (still better than nothing)
-// when the body isn't that shape at all.
+/**
+ * The reason a failed response gives, as readable text.
+ *
+ * Every non-ok failure path wants a human-readable reason, not a raw
+ * response body - OpenRouter error responses are typically
+ * {"error":{"message":"..."}}, so this pulls that message out when
+ * present and only falls back to the raw text (still better than nothing)
+ * when the body isn't that shape at all.
+ */
 async function describeErrorBody(response: Response): Promise<string> {
   const bodyText = await safeReadText(response);
   try {
@@ -1612,11 +1671,13 @@ async function describeErrorBody(response: Response): Promise<string> {
   return bodyText;
 }
 
-// Exponential backoff with jitter, capped so a long backoff never eats the
-// remaining budget that an actual attempt needs. The jitter matters here:
-// the agents in each phase (all four representatives, then all three
-// judges) run concurrently on one account, and an unjittered backoff
-// makes them all retry in lockstep.
+/**
+ * Exponential backoff with jitter, capped so a long backoff never eats the
+ * remaining budget that an actual attempt needs. The jitter matters here:
+ * the agents in each phase (all four representatives, then all three
+ * judges) run concurrently on one account, and an unjittered backoff
+ * makes them all retry in lockstep.
+ */
 function backoff(attempt: number): Promise<void> {
   const base = Math.min(400 * Math.pow(2, attempt), 2000);
   const delayMs = base + Math.random() * 300;
