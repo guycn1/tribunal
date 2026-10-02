@@ -394,10 +394,7 @@ body {
 }
 
 /* :active/:focus included, not just :hover, so a press or keyboard-focus
-   without a preceding mouse hover still gets the same treatment - the
-   shared .btn:hover:not(:disabled) rule (border-color) has the same gap,
-   but that's left alone here since only this button's own hover styling
-   was asked to extend, not every button's shared hover rule. */
+   without a preceding mouse hover still gets the same treatment. */
 .btn-primary:hover:not(:disabled),
 .btn-primary:active:not(:disabled),
 .btn-primary:focus:not(:disabled) {
@@ -650,8 +647,7 @@ body {
    mechanism this fix was supposed to rely on, meaning the diagnosis
    itself was likely wrong, not just its placement. The fade stays as it
    is in every browser: it does its job in Firefox too, and the finish of
-   its edge there is a matter of how that engine composites text, which
-   no change here was shown to improve. */
+   its edge there is a matter of how that engine composites text. */
 
 /* Hidden by default (opacity 0, see .has-more-below below) - only shown
    once app.js confirms there's real hidden content, and hidden again
@@ -726,13 +722,12 @@ body {
    ::-webkit-scrollbar-thumb:active rule (see the fallback block further
    down), snapping instantly rather than fading - direct feedback to a
    physical mouse press, deliberately not softened the way the ambient
-   hover cue is. In practice it does not render in any current browser
-   this was checked in. Firefox does not apply styling from a
-   ::-webkit-scrollbar-* rule at all, and current Chrome and Edge ignore
-   every such rule on an element that also sets the standard
+   hover cue is. In practice, browser support for it was measured to be
+   limited: Firefox does not apply styling from a ::-webkit-scrollbar-*
+   rule at all, and current Chrome, Edge and WebKit (Safari's engine)
+   ignore every such rule on an element that also sets the standard
    scrollbar-width, as both elements here do - see the fallback block
-   below. So what actually shows everywhere tested is two tiers, rest and
-   hover.
+   below. So Chrome, Edge and Firefox show two tiers, rest and hover.
 
    The custom-property fade mechanism above (--scrollbar-thumb-opacity)
    is unrelated to any of this and unaffected by it - Firefox
@@ -744,8 +739,8 @@ body {
    rule that reads it exactly the same way in every browser, so Firefox
    gets the full fade too, not just an instant two-state jump) - at
    least on Firefox versions/settings where scrollbar-color is actually
-   honored at all; see the fallback block below for the current, real
-   caveat to that on Firefox specifically. It is also what Chrome and Edge
+   honored at all; see the fallback block below for the notes about
+   Firefox's behaviour. It is also what Chrome and Edge
    render: the thin width and the thumb colour come from these two
    standard properties, not from the fallback block. */
 .history-list,
@@ -761,8 +756,13 @@ body {
    ::-webkit-scrollbar rule for it (a 30px webkit width measured 10px, the
    same as scrollbar-width: thin on its own). Both elements here set it, so
    in current Chrome and Edge nothing in this block applies - not the 8px
-   width, not the thumb colour, not the :active tier. Safari was not
-   tested. History, worth reading before touching this again
+   width, not the thumb colour, not the :active tier. Measured 2026-10-02
+   in WebKit 26.6 (Safari's engine, run through Playwright's Windows
+   build), the same holds: with scrollbar-width set, an 8px or a 30px
+   webkit width laid out at 0px, against 8px and 30px on an element
+   without it. WebKit also supports scrollbar-width but not
+   scrollbar-color, so there the thumb keeps WebKit's own colour.
+   History, worth reading before touching this again
    (2026-09-04): a non-zero width here was found to have an
    undocumented-to-us side effect in Firefox 153/154 - per Firefox's own 153 release notes, "rules with
    non-zero width/height disable overlay scrollbars for the affected

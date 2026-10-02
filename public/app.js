@@ -420,7 +420,7 @@ function formatDateTimeHtml(dateInput) {
  * could never be relied on to cover whatever is actually running - it would
  * silently miss the one case it was added for. If some future id still reads
  * badly after these rules, an exceptions table consulted ahead of them is
- * the escape hatch, but there is no point building one for a set of one.
+ * the fallback.
  *
  * @param {string | null | undefined} modelId A full model id.
  * @returns {string} The shortened id, or 'unknown model' when there is none.
@@ -721,10 +721,8 @@ async function abortCurrentTrial() {
   // beginTrial()'s own in-flight chain is doing when the abort signal
   // fires - e.g. pollForRoles()'s GET isn't itself signal-aware, so an
   // already-in-flight poll only notices the abort on its *next* loop
-  // check, not instantly - not something worth chasing down and fixing
-  // request-by-request when a loading overlay already covers exactly
-  // this kind of "a few real seconds, cause not worth pinning down
-  // precisely" gap elsewhere in this app.
+  // check, not instantly - not something worth fixing request-by-request
+  // when a loading overlay already covers exactly this kind of short delay.
   el.mainLoadingOverlay.classList.remove('hidden');
   el.sidebar.classList.add('loading-locked');
 
