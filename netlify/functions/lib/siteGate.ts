@@ -10,9 +10,9 @@
  * actual page - for near-zero implementation cost. A caller who has
  * actually looked at app.js first defeats this trivially.
  *
- * The real, unconditional ceiling on worst-case spend is
- * isGlobalCallCapExceeded() in db.ts, which this cannot substitute for -
- * this is layer three of three, not the load-bearing one.
+ * What bounds spend is the site-wide call cap, isGlobalCallCapExceeded()
+ * in db.ts, which this cannot substitute for - this is layer three of
+ * three, not the load-bearing one.
  *
  * Fails OPEN (allows the request through) when SITE_GATE_TOKEN isn't
  * configured, rather than closed: an env var that didn't get set must

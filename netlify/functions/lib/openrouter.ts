@@ -17,10 +17,9 @@ const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 // invocation limit that turned out to be wrong for what this project
 // actually runs on: the real free-tier synchronous limit is 10
 // seconds (verified directly against Netlify's own docs and support
-// forum, not assumed), which every real completion measured on this
-// project (consistently 8-18s+ per call) would have been at serious risk
-// of blowing through regardless of how carefully the old budget was
-// tuned - no amount of constant-tuning fixes an architecture mismatch.
+// forum, not assumed), which real calls on the default model routinely
+// ran past, however carefully the old budget was tuned - no amount of
+// constant-tuning fixes an architecture mismatch.
 // Background Functions get up to 15 minutes instead, which is what makes
 // the current value possible at all: this was first set to 120000ms (2
 // minutes) on that move, then raised again to fit the full escalation
@@ -366,8 +365,8 @@ function detectDegenerateRun(content: string): { degenerate: boolean; runLength:
 //   after a single sentence in between, which the 15-word minimum would
 //   have caught. That is the recall the 18-word minimum gives up, and the
 //   first live case of it.
-// Deliberate rhetorical repetition does NOT trip this: real anaphora
-// repeats an opening phrase and then continues differently ("I ask you to
+// Anaphora does NOT trip the sentence rules: real anaphora repeats an
+// opening phrase and then continues differently ("I ask you to
 // consider the scale..." / "I ask you to consider the evidence..."), which
 // produces different whole sentences and is therefore invisible to the
 // sentence rules - unlike the earlier, abandoned 5-word phrase heuristic,
@@ -410,10 +409,10 @@ function detectDegenerateRun(content: string): { degenerate: boolean; runLength:
 // of 24 were degenerate with the long-sentence minimum at 15, and 15 of 22
 // at 18; in the 16-trial run, at 18, 10 of 12 - while the whole quality
 // gate caught 94.7% and 96.0% of the degenerate replies. Deliberate
-// anaphora is safe from the verbatim rules by construction: it varies the
+// anaphora is safe from the sentence rules by construction: it varies the
 // continuation, so the whole sentences differ, and every stored catch of
-// those rules shows a full sentence repeated verbatim (the near-copy rules
-// are the exception, as above). Since 2026-09-27 every discarded reply is
+// those rules shows a full sentence repeated verbatim. The clause and
+// near-copy rules work differently, as above. Since 2026-09-27 every discarded reply is
 // stored in full (api_call_logs.response_text), so any catch can be read
 // and judged after the fact.
 const REPEATED_SENTENCE_THRESHOLD = 3;
@@ -743,8 +742,8 @@ const CONCISENESS_REMINDER: OpenRouterMessage = {
 // holdover from when the run-on detector was the only content check there
 // was.
 //
-// The names are kept: these exact strings are persisted into
-// api_call_logs.error_message on every historical row, so they are
+// The names are kept: these exact strings open the error_message of every
+// api_call_logs row they were ever written to, so they are
 // effectively a wire format, and renaming them would either break the
 // rendering of past trials or mean carrying both spellings forever.
 // The distinction is made where it actually reaches a reader instead -
@@ -769,7 +768,8 @@ export const HTTP_ERROR_ESCALATED_MARKER = '[http-error-escalated]';
 // timed out repeatedly showed the user a frozen card and left nothing in
 // the call log to explain it afterward - the exact situation that made a
 // real 6-minute stall (2026-09-20) impossible to diagnose from the UI. Now
-// every discarded attempt is a real row, whatever discarded it.
+// each discarded attempt is written as a row of its own the moment it is
+// discarded, whatever discarded it (see onDiscardedAttempt below).
 export const TRANSIENT_RETRIED_MARKER = '[transient-retried]';
 // Written when the user aborted the trial while this call was still
 // running server-side. A Background Function cannot be cancelled by the
@@ -860,8 +860,9 @@ export interface OpenRouterResult {
   // actually reports on), not the cumulative time across every attempt
   // in the chain - consistent with promptTokens/completionTokens/cost
   // above, which are likewise this attempt's own, not a running total.
-  // Absent when the result is not an attempt at all: a call that stopped
-  // before starting one because the trial had been aborted.
+  // Absent when the result is not an attempt at all: a call that ended
+  // before starting one, because the trial had been aborted or because no
+  // OpenRouter key is configured.
   durationMs?: number;
   // Attempts discarded before this result was reached, whatever discarded
   // them - truncation/degeneration, a plain HTTP failure at that tier, or a
@@ -1177,7 +1178,7 @@ export async function callOpenRouter(
     // tokens; it used to carry the previous attempt's duration again, which
     // the call log's total then counted twice.
     //
-    // A request already in flight is never cancelled, deliberately. This
+    // An abort never cancels a request already in flight, deliberately. This
     // app does not stream, and OpenRouter documents that cancelling a
     // non-streaming request does not stop the model or its billing - "you
     // will be billed for the complete response" - so an abort cannot save

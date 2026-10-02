@@ -31,7 +31,7 @@ Daenerys attacks King's Landing. The city surrenders, but Daenerys burns streets
 
 ## 2. The seven agents
 
-**Non-negotiable rule:** a seat (defense/prosecution, or a named judicial model) fixes only procedural role — never an opinion, a factual inference, or a final position. No agent is instructed to argue toward a predetermined conclusion; each reasons from its own character/method and may land anywhere, including against "its side." Full prompt text (real depth, not a one-line trait) lives in `netlify/functions/lib/representatives.ts` and `judges.ts` — this section states identity and required reasoning approach, not the prompts themselves.
+**Non-negotiable rule:** a representative's seat (defense or prosecution) fixes only procedural role — never an opinion, a factual inference, or a final position. A judge's named model fixes the reasoning method it applies, never the verdict. No agent is instructed to argue toward a predetermined conclusion; each reasons from its own character/method and may land anywhere, including against "its side." Each agent's full system prompt (real depth, not a one-line trait) lives in `netlify/functions/lib/representatives.ts` or `judges.ts`, and `prompts.ts` pairs it with the case record (for a judge, with the representatives' arguments too) — this section states identity and required reasoning approach, not the prompts themselves.
 
 **Representatives:**
 - **Jon Snow** (defense) — plain-spoken, duty- and protection-driven; accepts blame readily; changes position when honor or evidence requires it.

@@ -7,16 +7,18 @@
  * than a hand-copied imitation of it.
  *
  * This file exists because this specific logic has now produced several
- * subtle, expensive bugs that only showed up in real use - an escalation
- * chain that silently never escalated, a timeout ceiling that ignored
- * prompt size, a degeneration check blind to its most common signature, a
- * fractional millisecond that would have crashed half of all real calls,
- * a fast-429 storm that escalated to a costlier tier within five seconds,
- * a backoff pause timed as part of the attempt before it, a three-copy
- * loop the repeated-sentence check let through, near-verbatim loops that no
- * exact comparison could see, and an attempt that failed as the user
- * aborted logged as "re-tried" when no retry followed. Each one below is a
- * test, so none of them can quietly come back.
+ * subtle, expensive bugs - an escalation chain that silently never
+ * escalated, a timeout ceiling that ignored prompt size, a degeneration
+ * check blind to its most common signature, a fractional millisecond that
+ * would have crashed half of all real calls, a fast-429 storm that
+ * escalated to a costlier tier within five seconds, a backoff pause timed
+ * as part of the attempt before it, a three-copy loop the
+ * repeated-sentence check let through, near-verbatim loops that no exact
+ * comparison could see, and an attempt that failed as the user aborted
+ * logged as "re-tried" when no retry followed. Most showed up in real use;
+ * the fractional millisecond and the backoff timing were caught by the
+ * offline tests first. Each one below is a test, so none of them can
+ * quietly come back.
  */
 
 const { compileBackend } = require('./support/compile-backend');

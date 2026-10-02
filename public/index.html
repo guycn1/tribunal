@@ -112,8 +112,10 @@
                    these are sized for the narrow case by default. Model
                    is the biggest share deliberately: even with the
                    vendor prefix stripped for display (shortModelName() in
-                   app.js), model ids are still the single longest
-                   realistic content in any column. Time is a bare
+                   app.js), a model id is long, and this share keeps the
+                   longest real one on one line (see below). Status's
+                   captions run longer, but they are prose and wrap
+                   between words. Time is a bare
                    fraction of its old share - each of its two stacked
                    fragments (date, time) is under a dozen characters and
                    never needed anywhere near this much room.
@@ -126,21 +128,25 @@
                    Model and Status, both of which had more room than
                    their content actually needed.
                    Tokens then took 2% back from Model, measured rather
-                   than estimated. The narrowest this table ever renders
-                   is 655px (at a 901px viewport - just wide enough for
-                   the sidebar, which stacks below that and gives the
-                   table more room, not less). At 655px, Tokens' old 15%
-                   was 98px, while the breakdown line needs 100px for an
-                   ordinary judge row and 106px for a five-digit prompt
-                   count - so it wrapped to two lines routinely, not just
-                   in the extreme case. Model gave up the 2% for free:
-                   the longest real model id wraps to exactly two lines
-                   anywhere between 118px and 144px, so its old 144px
-                   share was idle at this width, and at wider viewports
-                   20% still fits the same id on one line everywhere 22%
-                   did. Going further (19%/18%) does start splitting the
-                   model name at ~1100px/~1280px, which is why this
-                   stops at 20/17. -->
+                   than estimated. The table is narrowest at a 901px
+                   viewport - just wide enough for the sidebar, which
+                   stacks below that and gives the table more room, not
+                   less - where it is 655px wide, or 640px once the page
+                   has a classic scrollbar (15px in Edge on Windows). At
+                   655px, Tokens' old 15% was 98px, while the breakdown
+                   line needs 100px for an ordinary judge row and 106px
+                   for a five-digit prompt count - so it wrapped to two
+                   lines routinely, not just in the extreme case. Model
+                   gave up the 2% for free: the longest real model id of
+                   the time, before shortModelName() dropped "-instruct",
+                   wrapped to exactly two lines anywhere between 118px and
+                   144px, so its old 144px share was idle at this width,
+                   and at wider viewports 20% still fit the same id on one
+                   line everywhere 22% did. Going further (19%/18%) did
+                   start splitting the model name at ~1100px/~1280px,
+                   which is why this stops at 20/17. At 640px, the longest
+                   model id now in use, a five-digit token breakdown and
+                   every header all fit on one line (measured 2026-10-03). -->
               <col style="width: 13%" />
               <col style="width: 6%" />
               <col style="width: 20%" />

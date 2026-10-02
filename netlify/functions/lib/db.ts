@@ -21,7 +21,8 @@ import type {
 // attempt it is on, and then logs that attempt as its final, aborted row,
 // with the attempt's real tokens and cost. (It checks for this row before
 // each attempt and as each one ends, and stops there - see isTrialAborted
-// below - and never saves a result into an aborted trial.) Both rows are
+// below - and checks again before saving a result, which it does not save
+// into a trial it finds aborted.) Both rows are
 // legitimate; this schema already allows multiple api_call_logs rows per
 // role per trial (each retry attempt already produces its own row).
 //
@@ -244,8 +245,8 @@ export async function getFullTrial(trialId: string) {
       errorMessage: row.error_message,
       timestamp: row.timestamp,
       // Null on a row that timed no attempt - the abort endpoint's rows,
-      // and a call that stopped on an abort before its next attempt - and
-      // on rows logged before this column existed. The frontend shows a
+      // and a call that ended before starting an attempt - and on rows
+      // logged before this column existed. The frontend shows a
       // plain "—" for those rather than a fabricated 0, which would
       // misleadingly read as an instant response.
       durationMs: row.duration_ms ?? null,
@@ -347,16 +348,19 @@ export async function upsertAgentProgress(params: {
   }
 }
 
-// A hard, site-wide ceiling on how many agent calls (representative or
-// judge, successful or failed) are allowed to reach OpenRouter in any
-// rolling window - independent of which trial, which role, or which IP
-// they come from. This is what actually bounds worst-case spend on a
-// public URL with no login: per-IP measures (the rate limit on the two
-// agent routes in netlify.toml) slow down a single source, but only this
-// count-against-real-persisted-state check can't be defeated by spreading
-// requests across many IPs or by reading/replaying the site-gate header
-// (see siteGate.ts) - it's checked against what actually happened, not
-// against anything the caller can present.
+// A site-wide ceiling on model calls in a rolling 24 hours, independent of
+// which trial, which role, or which IP they come from. It counts the rows
+// in api_call_logs - every attempt, kept or discarded, successful or
+// failed, and a call's own final row - leaving out the abort endpoint's.
+// Once the count reaches GLOBAL_CALL_CAP, no new agent call starts; it is
+// checked as each call starts, so a call already running finishes its
+// chain. This is what bounds spend on a public URL with no login:
+// per-IP measures (the rate limit on the two agent routes in netlify.toml)
+// slow down a single source, but only this count-against-real-persisted-
+// state check can't be defeated by spreading requests across many IPs or
+// by reading/replaying the site-gate header (see siteGate.ts) - it's
+// checked against what actually happened, not against anything the
+// caller can present.
 //
 // Sized generously above any realistic legitimate day (manual testing plus
 // repeated real usage from other visitors) while staying well short of
@@ -367,8 +371,8 @@ export const GLOBAL_CALL_CAP = 350;
 const GLOBAL_CALL_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 /**
- * Whether the site has logged GLOBAL_CALL_CAP model calls in the last 24
- * hours, with the count. Always false under `netlify dev`, and false if the
+ * Whether the site has logged GLOBAL_CALL_CAP call-log rows in the last 24
+ * hours (the abort endpoint's aside), with the count. Always false under `netlify dev`, and false if the
  * count cannot be read.
  *
  * Deliberately does NOT log anything when the cap is hit (unlike every
@@ -388,16 +392,16 @@ const GLOBAL_CALL_WINDOW_MS = 24 * 60 * 60 * 1000;
  * quota is spent (a separate, stricter gate than this one). NETLIFY_DEV
  * is injected as 'true' by the Netlify CLI itself for every invocation
  * under `netlify dev` (confirmed directly in its own source,
- * commands/dev/dev.js) and is not something a real deployed invocation
- * - or a client request - could ever set; a genuine hang chasing this
+ * commands/dev/dev.js). No client request can set it, and a deployed
+ * invocation has it only if someone adds it to Netlify's environment
+ * variables, which the next paragraph rules out; a genuine hang chasing this
  * exact cap during local testing is what prompted checking for a way to
  * exempt local calls instead of only ever raising the number.
  *
  * Never set NETLIFY_DEV by hand - not in .env, and above all not in
  * Netlify's own environment variables. It is deliberately absent from
  * .env.example for this reason. Setting it would silently switch off the
- * only hard ceiling on what the public site can spend, and nothing would
- * look wrong: calls would keep succeeding, the cap would simply never
+ * call cap on the public site, and nothing would look wrong: calls would keep succeeding, the cap would simply never
  * trip. The CLI sets it for you locally; there is no case where you need
  * to.
  */
@@ -433,8 +437,8 @@ export async function isGlobalCallCapExceeded(): Promise<{ exceeded: boolean; co
  * (see the isAborted callback on callOpenRouter), so an abandoned trial
  * stops costing real money; again once a call succeeds, so a reply that
  * finished after the abort is logged as aborted (finishedAfterAbort in
- * openrouter.ts); and once more before a result is saved, so an aborted
- * trial never gains one.
+ * openrouter.ts); and once more before a result is saved, so a result is
+ * not saved into a trial found aborted.
  *
  * abort.ts writes one row carrying exactly ABORTED_BY_USER_MESSAGE per
  * role that was still pending when the user clicked Abort, which makes
@@ -487,7 +491,7 @@ export async function logApiCall(params: {
   errorMessage?: string | null;
   // Optional: a row that timed no attempt has none to report - the abort
   // endpoint's rows (see abort.ts), which record a request to stop, and a
-  // call that stopped on an abort before starting its next attempt.
+  // call that ended before starting an attempt.
   durationMs?: number | null;
   // The model's reply, word for word, for any attempt that got one -
   // including every discarded one. Kept for audit and diagnosis, never

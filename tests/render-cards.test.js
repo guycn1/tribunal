@@ -308,10 +308,11 @@ const footLabelled = (footRow.match(/data-label=/g) || []).length;
 check('totals row labels its three real value cells', footLabelled === 3, String(footLabelled));
 
 console.log('\n=== Model ids shorten to something the table column can hold ===');
-// The Model column is 131px at the narrowest this table ever renders (655px
-// wide, at a 901px viewport - below that the sidebar stacks and the table
-// gets more room, not less). Measured there, the full id needed 161px and
-// wrapped; every id below now fits on one line. These assert the rules, not
+// The table is narrowest at a 901px viewport (below that the sidebar
+// stacks and the table gets more room, not less): 655px wide, with a 131px
+// Model column, or 640px and 128px once the page has a classic scrollbar.
+// Measured at 655px, the id with "-instruct" left in needed 161px and
+// wrapped; every id below now fits on one line, at 640px too. These assert the rules, not
 // the pixels: a vendor prefix goes, a ":free" suffix goes, a standalone
 // "-instruct" segment goes, and the date stamp stays - it is the only thing
 // telling two pinned snapshots of one model apart.

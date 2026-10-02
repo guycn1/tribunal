@@ -16,8 +16,8 @@
 -- backend functions.
 --
 -- Applying this file is meant to be sufficient on its own. That includes the
--- grants at the very bottom, which are required rather than optional — see
--- the comment there for what happens without them.
+-- grants at the very bottom — see the comment there for when they are
+-- needed and what happens without them.
 --
 -- No blank lines anywhere in this file, deliberately: pasting a version with
 -- blank lines into Supabase's SQL Editor triggered some paste-time
@@ -119,7 +119,7 @@ create table if not exists api_call_logs (
   "timestamp" timestamptz not null default now(),
   -- Wall-clock time this specific row's attempt took, in ms. Nullable -
   -- a row that timed no attempt (the abort endpoint's rows, and a call
-  -- that stopped on an abort before its next attempt) has no value here,
+  -- that ended before starting an attempt) has no value here,
   -- nor do rows logged before this column existed, and the frontend
   -- shows a plain placeholder for those rather than a fabricated 0
   -- (which would misleadingly read as an instant response).
@@ -128,9 +128,10 @@ create table if not exists api_call_logs (
   -- including every discarded attempt, so a truncated or degenerate reply
   -- can be read in full after the fact. Kept for audit and diagnosis only:
   -- the trial endpoint never selects it, so it never reaches the page.
-  -- Empty for an attempt with no reply (a timeout, an HTTP error), on the
-  -- rows an abort writes without an attempt behind them, and on rows
-  -- logged before this column existed.
+  -- Empty for an attempt with no reply (a timeout, an HTTP error), on rows
+  -- with no attempt behind them (the abort endpoint's, and a call that
+  -- ended before starting one), and on rows logged before this column
+  -- existed.
   response_text text
 );
 -- Adds the column to a database created before it existed; a no-op on a
@@ -166,15 +167,15 @@ alter table agent_progress enable row level security;
 -- ---------------------------------------------------------------------------
 -- Grants
 -- ---------------------------------------------------------------------------
--- Required, not optional. Without these, every backend call fails with
--- "permission denied for table X" even when the secret key is correct — a
--- Postgres GRANT error, and a different layer from RLS, which fails by
--- silently returning zero rows instead. This was hit for real on this
--- project's own Supabase project, where "Automatically expose new tables"
--- had been left unchecked at creation time (Supabase's own tighter-security
--- suggestion); that setting turns out to gate the grants the newer
+-- Needed on a Supabase project created with "Automatically expose new
+-- tables" unchecked (Supabase's own tighter-security suggestion), as this
+-- project's was. That setting turns out to gate the grants the newer
 -- publishable/secret key system needs, not just anon and authenticated as
--- one would expect. These lived as a separate manual step for a while, which
+-- one would expect, so on such a project every backend call fails without
+-- these with "permission denied for table X" even when the secret key is
+-- correct — a Postgres GRANT error, and a different layer from RLS, which
+-- fails by silently returning zero rows instead. This was hit for real on
+-- this project's own Supabase project. These lived as a separate manual step for a while, which
 -- meant anyone following README's "schema in supabase/schema.sql" got a
 -- correctly-created database that refused every query. They belong here.
 -- RLS is unaffected by any of this: it stays deny-all for anon/authenticated

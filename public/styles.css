@@ -147,21 +147,21 @@ body {
         drop-shadows, same blur radii - so only the colour changes.
      2. The colour must come from color-mix() here too, not the plainer
         `transparent`. color-mix() resolves to a modern color(srgb ...)
-        value, and this engine interpolates a modern colour against a
-        legacy one (`transparent`, or the implied colour of `none`) by
-        producing rgba(1, 0, 0, ...) - a near-black - for the entire
-        transition, snapping to the real colour only at the very end.
-        Measured, not theorised: at the midpoint, from `none` and from
-        `transparent` both give rgba(1, 0, 0, ...) - a near-black - while
-        this gives oklab(0.9389 ...), the correct near-white, and holds
-        that lightness at every step while only the alpha climbs.
+        value, and Edge interpolates a modern colour against a legacy one
+        (`transparent`, or the implied colour of `none`) by producing
+        rgba(1, 0, 0, ...) - a near-black - throughout the transition.
+        Measured in Edge 154 on 2026-10-03, at 25%, 50% and 75% of the
+        way: from `none` and from `transparent` alike, rgba(1, 0, 0, ...)
+        with only the alpha climbing; from this, oklab(0.9389 ...), the
+        correct near-white, at every step. WebKit 26.6 gives the
+        near-white from all three.
         Worth knowing before "simplifying" this: `var(--text) 0%` does
-        not keep the colour - this resolves to color(srgb 0 0 0 / 0),
-        transparent black, same as `transparent` would look. What it
-        keeps is the colour TYPE, and that alone is what makes the
-        interpolation work. Being transparent black costs nothing,
-        because interpolation is premultiplied, so an endpoint at alpha
-        0 contributes no hue to the steps between.
+        not keep the colour - both engines compute it as
+        color(srgb 0 0 0 / 0), transparent black, same as `transparent`
+        would look. What it keeps is the colour TYPE, and that alone is
+        what makes the interpolation work. Being transparent black costs
+        nothing: an endpoint at alpha 0 contributes no hue to the steps
+        between, as the samples above show.
 
      The visible symptom of getting either wrong is a glow that appears to
      do nothing for the length of the transition and then snap in at the
@@ -703,14 +703,10 @@ body {
    The rest<->hover tiers are driven by --scrollbar-thumb-opacity, a CSS
    custom property written every animation frame by attachScrollbarFade()
    in app.js - NOT a bare CSS :hover selector, and NOT a CSS
-   transition/animation on the color itself (real browsers don't support
-   animating ::-webkit-scrollbar-thumb or Firefox's scrollbar-color at
-   all - a transition here would be silently ignored in exactly the
-   browsers, Chrome/Edge, this whole treatment was built to fix). Each
-   individual frame is just an ordinary instant custom-property change,
-   which every browser already handles fine - repeated every frame for
-   ~SCROLLBAR_FADE_MS, that produces a real smooth fade despite no
-   browser ever animating anything itself. The 15% literal below is only
+   transition or animation on the colour itself. Each individual frame is
+   just an ordinary instant custom-property change, which every browser
+   already handles fine - repeated every frame for ~SCROLLBAR_FADE_MS,
+   that produces a real smooth fade with no CSS animation involved. The 15% literal below is only
    the fallback for the (practically unreachable) case the custom
    property was never set - the real values live in app.js's
    SCROLLBAR_REST_OPACITY/SCROLLBAR_HOVER_OPACITY, and this one must be
@@ -735,7 +731,7 @@ body {
    fallback (a real improvement over the older class-swap design: :hover
    was skipped in Firefox there entirely since scrollbar-color has no
    pseudo-classes, but writing a plain custom property recalculates a
-   rule that reads it exactly the same way in every browser, so Firefox
+   rule that reads it the same way in Firefox as in Chromium, so Firefox
    gets the full fade too, not just an instant two-state jump) - at
    least on Firefox versions/settings where scrollbar-color is actually
    honored at all; see the fallback block below for the notes about
@@ -786,8 +782,8 @@ body {
    exactly as it was before any of that; the user confirmed that version
    renders correctly in both Chrome and Edge.
 
-   Bottom line: there is no CSS available to this project (or any
-   website) that restores Firefox's classic scrollbar rendering here -
+   Bottom line: there is no CSS available to this project that restores
+   Firefox's classic scrollbar rendering here -
    confirmed via Firefox's own release notes, a Mozilla engineer's
    direct statement on bugzilla.mozilla.org ("no built-in CSS property
    to globally disable overlay scrollbars; this is controlled by the
@@ -1021,9 +1017,9 @@ table.call-log {
      regardless of viewport, so even a very wide window gives this table
      only ~974px to work with, measured. A viewport media query alone can't
      see that, so a "wide" viewport still looked cramped. Compact is now
-     just the permanent default; see the narrow-phone breakpoint further
-     down for the one case (real viewport under ~480px, sidebar already
-     stacked) that still benefits from shrinking further. */
+     just the permanent default; see the breakpoints further down for the
+     cases that still shrink it further (a viewport under 1150px, and a
+     phone under ~480px, where the sidebar is already stacked). */
   width: 100%;
   border-collapse: collapse;
   table-layout: fixed;

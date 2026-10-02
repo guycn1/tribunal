@@ -18,7 +18,7 @@
  * straight past isRetriedMarkerLog()'s guard in deriveRoleStates() and lands
  * in the terminal-failure branch, so an agent card reads "call failed" while
  * its escalation chain is still running and about to succeed. That is the
- * exact bug 197609b and c1155f3 were written to fix, it fails silently, and
+ * bug 197609b was written to fix, it fails silently, and
  * it only shows on the escalation path - the path a developer sees least.
  */
 

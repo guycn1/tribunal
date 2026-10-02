@@ -80,7 +80,7 @@ const rawHandler: Handler = async (event) => {
     return json(429, {
       role: judgeRole,
       status: 'failed',
-      error: `Site-wide call cap reached (${cap.count}/${GLOBAL_CALL_CAP} calls in the last 24h). Refusing to spend further API budget - try again later.`,
+      error: `Site-wide call cap reached (${cap.count}/${GLOBAL_CALL_CAP} call-log rows in the last 24h). Refusing to spend further API budget - try again later.`,
     });
   }
 

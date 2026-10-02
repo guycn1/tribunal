@@ -7,7 +7,10 @@
  *
  * This file is served as-is: no build step and no modules. It cannot import
  * from the Netlify Functions, so the few values both sides must agree on are
- * duplicated here and checked by tests/shared-constants.test.js. The types
+ * duplicated here and checked by tests/shared-constants.test.js. Two are kept
+ * in step by hand: POLL_TIMEOUT_MS, which must stay above the server's time
+ * budget, and the scrollbar's resting opacity, which styles.css repeats as a
+ * fallback. The types
  * below mirror netlify/functions/lib/types.ts for the same reason. They
  * document the JSON this page receives, for readers and editors - nothing
  * type-checks this file (tsconfig.json covers netlify/functions only).
@@ -50,8 +53,8 @@
  *   *_MARKER prefixes below.
  * @property {string} timestamp ISO 8601.
  * @property {number | null} durationMs Null on a row that timed no attempt
- *   (the abort endpoint's rows, and a call that stopped on an abort before
- *   its next attempt) and on rows logged before the column existed.
+ *   (the abort endpoint's rows, and a call that ended before starting an
+ *   attempt) and on rows logged before the column existed.
  */
 
 /**
@@ -315,9 +318,9 @@ const state = {
 };
 
 /**
- * Every DOM element this script reads or writes, looked up once at load.
- * All are static elements in index.html - only their contents are ever
- * rebuilt.
+ * Every static DOM element this script reads or writes, looked up once at
+ * load. All are in index.html, and none is ever replaced - only their
+ * contents, classes and state change.
  */
 const el = {
   sidebar: document.getElementById('sidebar'),
@@ -410,15 +413,15 @@ function formatDateTimeHtml(dateInput) {
  * All three are dropped for the same reason: none of them tell a reader of
  * this log anything the rest of the id doesn't. "instruct" distinguishes an
  * instruction-tuned model from its base variant, and every model this app
- * can use is instruction-tuned - it is as content-free here as the vendor
+ * runs on is instruction-tuned, so here it is as content-free as the vendor
  * prefix. The date stamp ("-2501") is deliberately kept: it is the only
  * thing separating two pinned snapshots of the same model, which is exactly
  * what this column exists to report.
  *
  * These are generic rules rather than a per-model lookup table on purpose.
  * Every tier's model id is env-var-configurable (see models.ts), so a table
- * could never be relied on to cover whatever is actually running - it would
- * silently miss the one case it was added for. If some future id still reads
+ * covers only the ids written into it, while the rules apply to any id that
+ * is configured. If some future id still reads
  * badly after these rules, an exceptions table consulted ahead of them is
  * the fallback.
  *
@@ -533,7 +536,7 @@ function formatCallTypeHtml(callType) {
  * api_call_logs row for exactly this purpose.
  *
  * A response still truncated after every attempt the escalation chain
- * allows (four tiers, up to seven attempts - see buildRetryTiers in
+ * allows (four tiers, seven counted attempts - see buildRetryTiers in
  * openrouter.ts) is now returned by the server as a real failure, not a
  * "success" for this function to badge - so this can no longer fire for
  * any newly-generated result. It's kept, and checks a *multiple* of
@@ -806,9 +809,9 @@ async function abortCurrentTrial() {
 // Kept rather than removed or "restored," deliberately. The original
 // 3-vs-4 reading came from two runs on 2026-08-28 - on the current default
 // model, but while the agent calls were still synchronous functions - and
-// has since been overtaken by evidence: every clean run behind this
-// project's reliability record was actually made at 4 concurrent, not 3,
-// so there is no demonstrated problem left to solve. Removing the pool
+// has since been overtaken by evidence: the full trials behind this
+// project's reliability record ran with all 4 representatives in flight
+// together, not 3, so there is no demonstrated problem left to solve. Removing the pool
 // would gain nothing either: a bounded, staggered dispatch costs about a
 // second per phase.
 /**
@@ -900,8 +903,8 @@ function sleep(ms, signal) {
  * The agent endpoints now run as Netlify Background Functions (declared
  * by their -background filenames) - the fix for a verified, load-bearing
  * problem: Netlify's real free-tier synchronous function limit is 10
- * seconds, while every real OpenRouter call measured on this project at
- * the time had taken 8-18s+ per attempt, before any retry. A standard
+ * seconds, while real calls on the default model at the time routinely
+ * took longer than that per attempt, before any retry. A standard
  * invocation could not reliably survive that gap no matter how the
  * internal retry/timeout budget was tuned. Background Functions get up to
  * 15 minutes instead - but the platform responds 202 immediately and runs the handler
@@ -939,16 +942,16 @@ async function triggerAgent(url, signal) {
     return { accepted: true };
   }
 
-  // A non-2xx this early can only be a platform-level rejection rather
-  // than anything from this app's own handler code, since a Background
-  // Function's own application-level outcome never reaches this response
-  // at all. Two causes: Netlify's per-IP rate limiter (the rate_limit on
-  // the two agent routes in netlify.toml), which answers 429 with an empty
-  // body, and a routing failure - an immediate 404 on every call, seen on
-  // this project when the function files were renamed and netlify.toml's
-  // redirect targets still pointed at the old names. The second looks
-  // nothing like the first, so don't read every non-2xx here as rate
-  // limiting.
+  // A non-2xx this early comes from the platform rather than from this
+  // app's own handler code, since a Background Function's own
+  // application-level outcome never reaches this response at all. Two
+  // causes have been seen on this project: Netlify's per-IP rate limiter
+  // (the rate_limit on the two agent routes in netlify.toml), which answers
+  // 429 with an empty body, and a routing failure - an immediate 404 on
+  // every call, when the function files were renamed and netlify.toml's
+  // redirect targets still pointed at the old names. Any other platform
+  // error (a 5xx, say) lands in the same branch. They look nothing alike,
+  // so don't read every non-2xx here as rate limiting.
   let message;
   try {
     const data = await res.json();
@@ -1550,15 +1553,19 @@ function buildAgentStatusBody(entry, role, verb) {
 
   // No entry at all is NOT "hasn't started yet" - a live run always seeds
   // state.representatives/judges[role] with {status: 'loading'} the moment
-  // it begins (see beginTrial), before this ever renders. The only way
-  // this function sees a missing entry is loadTrial() viewing a completed,
-  // historical trial whose call log has nothing to show for this role at
-  // all (no logged attempt of any kind - deriveRoleStates() backfills a
-  // proper 'failed' entry from the call log whenever one exists). Showing
-  // the spinner here would claim this dead trial is still working.
+  // it begins (see beginTrial), before this ever renders. A missing entry
+  // means loadTrial() opened the trial from history and the role had no
+  // final outcome in its record: deriveRoleStates() backfills a 'failed' or
+  // 'aborted' entry only from a role's final row, so a role whose only
+  // rows are discarded attempts has none either. That covers a trial that
+  // ended without this role finishing, and one opened while it is still
+  // running (from a second tab, or after reloading the page mid-run),
+  // where the role may still be working. A trial opened from history is
+  // shown as recorded at that moment and not polled, so the text below
+  // holds in both cases, and no spinner is shown.
   if (!entry) {
     body.className = 'card-body dim';
-    body.textContent = 'No result recorded for this role - nothing was logged for it in this trial.';
+    body.textContent = 'No result recorded for this role.';
     return body;
   }
 
@@ -1703,10 +1710,7 @@ const SCROLLBAR_FADE_MS = 220;
  * Fades a scrollbar thumb brighter while the pointer is over its
  * container, and back to rest when it leaves.
  *
- * Real browsers don't support a CSS transition/animation on
- * ::-webkit-scrollbar-thumb or Firefox's scrollbar-color at all - a
- * transition on either is silently ignored, which is why an earlier
- * version of this used a fixed hover-intent delay instead (wait, then
+ * An earlier version of this used a fixed hover-intent delay (wait, then
  * snap) to keep an incidental pointer pass from flashing the scrollbar
  * bright. That read as sluggish on a deliberate hover (real user
  * report, 2026-09-04): motion didn't start until the delay had already
@@ -1717,8 +1721,7 @@ const SCROLLBAR_FADE_MS = 220;
  * instant custom-property change, which every browser already handles
  * fine (that's exactly the mechanism the old .scrollbar-hover class swap
  * used) - repeating it ~13 times over SCROLLBAR_FADE_MS produces a real
- * smooth fade without needing the browser to animate the scrollbar
- * itself. This incidentally fixes the original flash problem better
+ * smooth fade with no CSS transition or animation involved. This incidentally fixes the original flash problem better
  * than the delay did, with no artificial dead time: a quick pass only
  * reaches a small partial brightening before reversing back toward
  * rest, rather than either waiting through a delay or snapping to full
@@ -2084,7 +2087,7 @@ function formatAgentName(role) {
  * Formats a duration as "12,345 ms", or a dash when none was recorded.
  *
  * null on a row that timed no attempt - the abort endpoint's rows, and a
- * call that stopped on an abort before its next attempt - and on rows
+ * call that ended before starting an attempt - and on rows
  * logged before the duration_ms column existed (see ApiCallLogRecord in
  * types.ts). Shown as a plain dash rather than a fabricated 0, which would
  * misleadingly read as an instant response.

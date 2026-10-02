@@ -72,7 +72,7 @@ const rawHandler: Handler = async (event) => {
     return json(429, {
       role: repRole,
       status: 'failed',
-      error: `Site-wide call cap reached (${cap.count}/${GLOBAL_CALL_CAP} calls in the last 24h). Refusing to spend further API budget - try again later.`,
+      error: `Site-wide call cap reached (${cap.count}/${GLOBAL_CALL_CAP} call-log rows in the last 24h). Refusing to spend further API budget - try again later.`,
     });
   }
 
@@ -212,8 +212,8 @@ export const handler = safeHandler(rawHandler);
 //
 // Why a Background Function at all: Netlify's free-tier synchronous limit
 // is 10 seconds (the budget here was first built around a mistaken ~30s),
-// while every real OpenRouter call measured on this project at the time
-// took 8-18s+ per attempt. No retry or timeout tuning inside
+// while real calls on the default model at the time routinely took longer
+// than that per attempt. No retry or timeout tuning inside
 // callOpenRouter() could close that gap; Background Functions get up to 15
 // minutes. The trade-off: the client never receives this handler's return
 // value, since Netlify answers 202 at once, so the frontend learns the

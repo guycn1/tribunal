@@ -51,8 +51,8 @@ export interface ApiCallLogRecord {
   timestamp: string;
   // Wall-clock time this specific row's attempt took, in ms - null on a
   // row that timed no attempt (the abort endpoint's rows, and a call that
-  // stopped on an abort before its next attempt) and on rows logged
-  // before this column existed.
+  // ended before starting an attempt) and on rows logged before this
+  // column existed.
   durationMs: number | null;
 }
 
