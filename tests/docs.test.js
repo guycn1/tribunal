@@ -298,24 +298,19 @@ async function main() {
 
   const agentPara = (api.match(/^\*\*The (\w+) agent endpoints[^\n]*$/m) || [''])[0];
   check('the agent-endpoint paragraph is there', agentPara.length > 0);
-  /**
-   * A function's exported `config` object, as source text, or '' if it has
-   * none. Read from the export only: a comment that merely mentions
-   * background:true must not count.
-   * @param {string} src
-   * @returns {string}
-   */
-  const configOf =(src) => (src.match(/export const config = \{[\s\S]*?\n\};/) || [''])[0];
   const topLevel = FUNCTION_SOURCES.filter(([f]) => !f.includes('/lib/'));
-  const backgroundFns = topLevel.filter(([, src]) => /background:\s*true/.test(configOf(src))).map(([f]) => path.basename(f, '.ts'));
-  const suffixedFns = topLevel.map(([f]) => path.basename(f, '.ts')).filter((fn) => fn.endsWith('-background'));
+  // A function written with a named `handler` export is a Background
+  // Function by its -background filename and nothing else, locally and
+  // deployed alike.
+  const backgroundFns = topLevel.map(([f]) => path.basename(f, '.ts')).filter((fn) => fn.endsWith('-background'));
   const documentedBackground = documentedFns.filter((fn) => fn.endsWith('-background'));
-  check('the Background Functions are the ones documented as such', minus(backgroundFns, documentedBackground).length === 0 && minus(documentedBackground, backgroundFns).length === 0, `config: ${backgroundFns}, README: ${documentedBackground}`);
-  // Local `netlify dev` recognises a Background Function by its -background
-  // filename; the deployed platform by config.background. If the two ever
-  // disagree, one of them runs the function synchronously - under a 10s or
-  // 30s ceiling instead of 15 minutes.
-  check('the -background filename and config.background agree', minus(backgroundFns, suffixedFns).length === 0 && minus(suffixedFns, backgroundFns).length === 0, `config: ${backgroundFns}, filename: ${suffixedFns}`);
+  check('the Background Functions are the ones documented as such', backgroundFns.length > 0 && minus(backgroundFns, documentedBackground).length === 0 && minus(documentedBackground, backgroundFns).length === 0, `filename: ${backgroundFns}, README: ${documentedBackground}`);
+  // Netlify's bundler reads a function's `config` export only when the
+  // function has a default export, so next to a named `handler` export it
+  // is ignored whole - a rate limit, a path or background: true declared
+  // there would read as in force and do nothing.
+  const ignoredConfig = topLevel.filter(([, src]) => /^export const handler\b/m.test(src) && /^export const config\b/m.test(src)).map(([f]) => path.basename(f, '.ts'));
+  check('no function exports a config its bundler ignores', ignoredConfig.length === 0, ignoredConfig.join(', '));
   check(`"the ${(agentPara.match(/^\*\*The (\w+)/) || [])[1]} agent endpoints" is the right count`, wordToNumber((agentPara.match(/^\*\*The (\w+)/) || [])[1]) === backgroundFns.length, String(backgroundFns.length));
   const spenders = FUNCTION_SOURCES.filter(([f, src]) => !f.includes('/lib/') && /callOpenRouter\(/.test(src)).map(([f]) => path.basename(f, '.ts'));
   check('only the agent endpoints spend OpenRouter quota', minus(spenders, backgroundFns).length === 0 && minus(backgroundFns, spenders).length === 0, `callOpenRouter in: ${spenders}`);
@@ -324,13 +319,25 @@ async function main() {
   const documentedGated = [...new Set([...rows.filter((r) => /site-gate/.test(r.text)).map((r) => r.fn), ...(/site-gate/.test(agentPara) ? backgroundFns : [])])];
   check('the site-gate header is documented on exactly the endpoints that check it', minus(gated, documentedGated).length === 0 && minus(documentedGated, gated).length === 0, `code: ${gated}, README: ${documentedGated}`);
 
+  // The per-IP rate limit, read from each [[redirects]] block of
+  // netlify.toml, where it has to live for these functions.
+  const redirectBlocks = TOML.split(/^\[\[redirects\]\]/m).slice(1).map((block) => ({
+    fn: (block.match(/to = "\/\.netlify\/functions\/([\w-]+)/) || [])[1],
+    limit: /^\s*\[redirects\.rate_limit\]/m.test(block) ? {
+      windowLimit: Number((block.match(/window_limit = (\d+)/) || [])[1]),
+      windowSize: Number((block.match(/window_size = (\d+)/) || [])[1]),
+      perIp: /aggregate_by = \[[^\]]*"ip"/.test(block),
+    } : null,
+  }));
+  const limitedFns = redirectBlocks.filter((b) => b.limit).map((b) => b.fn);
+  check('the rate-limited routes are exactly the agent endpoints', limitedFns.length > 0 && minus(limitedFns, backgroundFns).length === 0 && minus(backgroundFns, limitedFns).length === 0, `limited: ${limitedFns}, agents: ${backgroundFns}`);
   const rate = agentPara.match(/(\d+) requests per (\d+) minutes/);
   check('the per-IP rate limit is stated', Boolean(rate));
-  for (const fn of rate ? backgroundFns : []) {
-    const src = functionSource(fn);
-    const limit = Number((src.match(/windowLimit:\s*(\d+)/) || [])[1]);
-    const windowSeconds = Number((src.match(/windowSize:\s*(\d+)/) || [])[1]);
-    check(`${fn}.ts: the rate limit is ${rate && rate[1]} requests per ${rate && rate[2]} minutes`, rate && limit === Number(rate[1]) && windowSeconds === Number(rate[2]) * 60, `${limit} per ${windowSeconds}s`);
+  for (const { fn, limit } of rate ? redirectBlocks.filter((b) => b.limit) : []) {
+    check(`${fn}'s route: the rate limit is ${rate[1]} requests per ${rate[2]} minutes, per IP`, limit.windowLimit === Number(rate[1]) && limit.windowSize === Number(rate[2]) * 60 && limit.perIp, `${limit.windowLimit} per ${limit.windowSize}s, per IP: ${limit.perIp}`);
+    // Netlify's documented maximum; a longer window fails validation at
+    // deploy time, which does not fail the deploy, so nothing else notices.
+    check(`${fn}'s route: the window is within Netlify's 180-second maximum`, limit.windowSize > 0 && limit.windowSize <= 180, `${limit.windowSize}s`);
   }
 
   const listLimit = Number((read('netlify', 'functions', 'lib', 'db.ts').match(/function listTrials\(limit = (\d+)\)/) || [])[1]);

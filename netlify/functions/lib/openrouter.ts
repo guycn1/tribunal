@@ -11,8 +11,8 @@ const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 // try genuinely takes most of its ceiling uses up its tier's attempts.
 //
 // representative-background.ts/judge-background.ts run as Netlify
-// Background Functions (config.background = true), not standard
-// synchronous invocations. Before that move this file budgeted against a
+// Background Functions (declared by their -background filenames), not
+// standard synchronous invocations. Before that move this file budgeted against a
 // tight ~26s ceiling, calibrated against a *standard* Netlify Function
 // invocation limit that turned out to be wrong for what this project
 // actually runs on: the real free-tier synchronous limit is 10

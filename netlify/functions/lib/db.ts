@@ -351,9 +351,8 @@ export async function upsertAgentProgress(params: {
 // judge, successful or failed) are allowed to reach OpenRouter in any
 // rolling window - independent of which trial, which role, or which IP
 // they come from. This is what actually bounds worst-case spend on a
-// public URL with no login: per-IP measures (see the rateLimit config on
-// representative-background.ts/judge-background.ts) slow down a single
-// source, but only this
+// public URL with no login: per-IP measures (the rate limit on the two
+// agent routes in netlify.toml) slow down a single source, but only this
 // count-against-real-persisted-state check can't be defeated by spreading
 // requests across many IPs or by reading/replaying the site-gate header
 // (see siteGate.ts) - it's checked against what actually happened, not
