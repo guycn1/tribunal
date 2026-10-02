@@ -13,11 +13,11 @@ import { ALL_AGENT_ROLES, getModelForRole, AGENT_MAX_TOKENS } from './lib/models
  *
  * Also returns the starting model configured per role and tier 1's shared
  * token cap, so the frontend can show which model a call starts on (a live
- * card then follows the chain through agent_progress) and flag a
- * historical row truncated at the cap (a completion that is a multiple of
- * maxTokens - see isTruncated() in app.js) without hardcoding a copy of
- * models.ts that could silently drift out of sync - this is itself just a
- * config read, no OpenRouter call involved.
+ * card then follows the chain through agent_progress) and flag a row
+ * saved truncated before that became a failure (a completion that is a
+ * multiple of maxTokens - see isLegacyTruncation() in app.js) without
+ * hardcoding a copy of models.ts that could silently drift out of sync -
+ * this is itself just a config read, no OpenRouter call involved.
  */
 const rawHandler: Handler = async (event) => {
   if (event.httpMethod !== 'GET') {

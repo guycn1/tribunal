@@ -724,7 +724,7 @@ async function main() {
   console.log('\n=== README: the badge tables match what app.js renders ===');
   installDom();
   const app = loadApp([
-    'state', 'el', 'renderCallLog', 'trialStatusLabel', 'trialStatusClass', 'POLL_TIMEOUT_MS', 'INTERRUPTED_THRESHOLD_MS', 'TOTAL_EXPECTED_RESULTS', 'ABORTED_BY_USER_MESSAGE',
+    'state', 'el', 'renderCallLog', 'trialStatusLabel', 'trialStatusClass', 'POLL_TIMEOUT_MS', 'INTERRUPTED_THRESHOLD_MS', 'TOTAL_EXPECTED_RESULTS', 'ABORTED_BY_USER_MESSAGE', 'TRUNCATION_BECAME_FAILURE_AT',
     'DEGENERATE_RETRIED_SAME_MODEL_MARKER', 'DEGENERATE_RETRIED_DIFF_MODEL_MARKER', 'DEGENERATE_FINAL_MARKER', 'HTTP_ERROR_ESCALATED_MARKER', 'TRANSIENT_RETRIED_MARKER', 'ABORTED_MID_CALL_MARKER',
   ]);
   // What each badge class looks like, in the words the README uses. Each is
@@ -754,7 +754,7 @@ async function main() {
     { status: 'success' },
     { status: 'failed', errorMessage: 'OpenRouter returned HTTP 402.' },
     { status: 'failed', errorMessage: app.ABORTED_BY_USER_MESSAGE, modelUsed: 'n/a' },
-    { status: 'success', completionTokens: 1400 },
+    { status: 'success', completionTokens: 1400, timestamp: '2026-08-28T20:35:06Z' },
     ...['DEGENERATE_RETRIED_SAME_MODEL_MARKER', 'DEGENERATE_RETRIED_DIFF_MODEL_MARKER', 'DEGENERATE_FINAL_MARKER'].flatMap((m) => [
       { status: 'failed', errorMessage: `${app[m]} ${CAP} - re-tried.` },
       { status: 'failed', errorMessage: `${app[m]} ${LOOP} - re-tried.` },
@@ -768,6 +768,14 @@ async function main() {
   check('the call log table is there', documentedCallLog.size > 0);
   check('every call-log badge app.js can render is in the table', minus(rendered, documentedCallLog).length === 0, minus(rendered, documentedCallLog).join(', '));
   check('every badge in the call log table is one app.js renders', minus(documentedCallLog, rendered).length === 0, minus(documentedCallLog, rendered).join(', '));
+  // The legacy badge, dated where README describes it, against the date the
+  // code draws its line at.
+  const legacyRow = (callLogSection.match(/^\| `truncated` \| amber \| Legacy only:.*$/m) || [''])[0];
+  const legacyDay = new Date(app.TRUNCATION_BECAME_FAILURE_AT).toISOString().slice(0, 10);
+  check(`the legacy "truncated" row dates the change to ${legacyDay}, as app.js does`, legacyRow.includes(legacyDay), legacyRow || 'row not found');
+  const legacyBadges = badgesFor({ status: 'success', completionTokens: 1400, timestamp: new Date(app.TRUNCATION_BECAME_FAILURE_AT - 60000).toISOString() });
+  const laterBadges = badgesFor({ status: 'success', completionTokens: 1400, timestamp: new Date(app.TRUNCATION_BECAME_FAILURE_AT + 60000).toISOString() });
+  check('a success at the cap gets it just before that moment, and not just after', legacyBadges.includes('truncated|amber') && !laterBadges.includes('truncated|amber'), `${legacyBadges} / ${laterBadges}`);
 
   const sidebarSection = section(README, '### Run history sidebar');
   const threshold = Number((sidebarSection.match(/under (\d+) minutes old/) || [])[1]);

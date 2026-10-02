@@ -30,6 +30,8 @@
  *      logs a row with no duration.
  *   5. The abort endpoint's rows do not count against the site-wide call
  *      cap, while real calls still reach it.
+ *   6. The run history's hadFailures counts what README says it counts:
+ *      any call-log row stored as failed, an abort's included.
  */
 
 const { compileBackend } = require('./support/compile-backend');
@@ -55,7 +57,7 @@ function check(name, condition, detail) {
 
 const backend = compileBackend(['lib/db.ts', 'lib/openrouter.ts', 'judge-background.ts', 'representative-background.ts', 'trial.ts']);
 useFakeSupabase(backend.outDir);
-const { markTrialCompletedIfJudgingDone, ABORTED_BY_USER_MESSAGE, isGlobalCallCapExceeded, GLOBAL_CALL_CAP, NO_MODEL_USED } = backend.load('lib/db.js');
+const { markTrialCompletedIfJudgingDone, ABORTED_BY_USER_MESSAGE, isGlobalCallCapExceeded, GLOBAL_CALL_CAP, NO_MODEL_USED, listTrials } = backend.load('lib/db.js');
 const markers = backend.load('lib/openrouter.js');
 
 /**
@@ -205,6 +207,11 @@ async function main() {
   ]));
   check('a judge still retrying keeps the trial open', !r.completed, JSON.stringify(r.updates));
 
+  // A judge whose call never ran - its trigger rejected, or turned away by
+  // the site gate or the call cap - logs nothing, so the trial stays open.
+  r = await quietly(() => runCompletion([judgeRow('barak', null), judgeRow('elon', null)]));
+  check('a judge with no row at all keeps the trial open', !r.completed, JSON.stringify(r.updates));
+
   say('\n=== Every judge with a final outcome completes it ===');
   r = await quietly(() => runCompletion([
     judgeRow('barak', retried(DEGENERATE_RETRIED_SAME_MODEL_MARKER)),
@@ -273,6 +280,23 @@ async function main() {
     check('abort rows do not push the count to the cap', !below.exceeded && below.count === GLOBAL_CALL_CAP - 1, JSON.stringify(below));
     const at = await capWith(Array(GLOBAL_CALL_CAP).fill(call));
     check('real calls still reach it', at.exceeded && at.count === GLOBAL_CALL_CAP, JSON.stringify(at));
+  }
+
+  say('\n=== hadFailures reads any row stored as failed, an abort\'s included ===');
+  {
+    /**
+     * listTrials()'s hadFailures for one trial holding the given rows.
+     * @param {object[]} rows
+     * @returns {Promise<boolean>}
+     */
+    const hadFailuresWith = async (rows) => {
+      global.fakeSupabase = fakeSupabase({ trials: [{ id: 't1', status: 'created', created_at: '1' }], api_call_logs: rows, representative_arguments: [], judge_rulings: [] }).client;
+      const [summary] = await quietly(() => listTrials());
+      return summary.hadFailures;
+    };
+    check('all successes: false', !(await hadFailuresWith([judgeRow('barak', null), judgeRow('elon', null)])));
+    check('a discarded attempt the chain recovered from: true', await hadFailuresWith([judgeRow('barak', retried(TRANSIENT_RETRIED_MARKER)), judgeRow('barak', null)]));
+    check('only the abort endpoint\'s row: true', await hadFailuresWith([judgeRow('barak', null), judgeRow('elon', ABORTED_BY_USER_MESSAGE)]));
   }
 
   say('\n=== The judge endpoint: ruling saved first, then the trial completed ===');

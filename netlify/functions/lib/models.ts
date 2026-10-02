@@ -22,11 +22,11 @@ export const ALL_AGENT_ROLES = Object.keys(ROLE_ENV_VAR);
 // Tier 1's completion-token cap. Shared by representative-background.ts and
 // judge-background.ts, and exposed to the frontend via case.ts, so there is
 // exactly one place this number is defined (test fixtures restate the
-// current value, but nothing reads it from them) - the frontend derives
-// "was this response truncated?" by comparing a completed call's
-// completion_tokens against this same constant (see isTruncated() in
-// app.js, which now fires only on historical rows), and that would
-// silently go wrong if the two ever drifted apart.
+// current value, but nothing reads it from them) - the frontend marks a
+// success saved truncated before that became a failure by comparing its
+// completion_tokens against this same constant (see isLegacyTruncation()
+// in app.js), and that would silently go wrong if the two ever drifted
+// apart.
 // One shared value for both roles rather than two separate ones: real
 // measured calls have shown both representatives and judges capable of
 // running past what their stated word-count target would suggest, so
@@ -46,9 +46,9 @@ export function getModelForRole(role: string): string {
 
 // Tier 2 of the escalation chain (see buildRetryTiers in openrouter.ts),
 // reached once tier 1 is done - normally after both of its attempts are
-// used up, on truncation/degeneration or on transient failures that ran
-// long enough to count, though a plain HTTP failure at tier 1 escalates
-// at once. Deliberately a different, more capable model than whatever
+// used up, on truncation/degeneration or on transient failures that
+// counted against it (a slow one, or a fast one past the tier's few free
+// retries), though a plain HTTP failure at tier 1 escalates at once. Deliberately a different, more capable model than whatever
 // getModelForRole() resolves to, not the same one tried again, and
 // measured as such on this workload: in the targeted trials of 2026-09-27
 // the default model degenerated in 62 of its 157 replies, this one in 1

@@ -86,9 +86,10 @@
  * @property {'created' | 'completed'} status
  * @property {string} createdAt
  * @property {string} updatedAt
- * @property {boolean} hadFailures Whether any attempt was ever logged as
- *   failed, recovered or not. Deliberately not what the sidebar label is
- *   based on - see TOTAL_EXPECTED_RESULTS.
+ * @property {boolean} hadFailures Whether any of the trial's call-log rows
+ *   is stored as failed: a failed attempt, recovered or not, or a row an
+ *   abort wrote. Deliberately not what the sidebar label is based on - see
+ *   TOTAL_EXPECTED_RESULTS.
  * @property {boolean} wasAborted
  * @property {number} resultCount How many of the seven expected results
  *   were saved.
@@ -109,6 +110,8 @@
  * @property {string} [modelUsed] The model that produced the kept result.
  * @property {{prompt: number, completion: number, total: number}} [tokens]
  *   Backfilled from the call log for a success - see isTruncated().
+ * @property {string} [loggedAt] When a success's call-log row was written
+ *   (ISO 8601), backfilled with its tokens - see isTruncated().
  * @property {string} [error] The message shown on a failed, aborted or
  *   timed-out card, with any marker prefix already stripped.
  * @property {AttemptProgress} [currentAttempt] While loading, the attempt in
@@ -523,40 +526,56 @@ function formatCallTypeHtml(callType) {
 }
 
 /**
- * True when a successful call's completion hit the shared token cap
- * (state.maxTokens, from /api/case) rather than finishing naturally - the
- * server already logs this distinctly via finish_reason (see openrouter.ts),
- * but that's only visible in the terminal. This used to be what surfaced
- * it in the UI; it no longer is, for anything newly generated - the server
- * now fails such a call outright, so it reaches the card as a real failure
- * rather than as a badge on a success. See the paragraph below: what
- * remains here is a reader for historical rows. It reads a live entry and
- * one reopened from history alike, since both are built by
- * deriveRoleStates(), which backfills tokens.completion from the matching
- * api_call_logs row for exactly this purpose.
+ * When a reply still truncated at the end of the chain stopped being saved
+ * as a success and became a failure (298d2fa, 2026-08-29 13:19:36 UTC). A
+ * success row logged after this can never be a truncated one: from then on
+ * the server fails such a call outright, so it reaches the card as a real
+ * failure. Every success row at a multiple of the cap in the call log was
+ * logged before it, the last at 13:04 UTC that day.
+ */
+const TRUNCATION_BECAME_FAILURE_AT = Date.parse('2026-08-29T13:19:36Z');
+
+/**
+ * True when a success logged at `loggedAt` with this many completion tokens
+ * is one of the truncated replies saved before TRUNCATION_BECAME_FAILURE_AT:
+ * logged before then, with a completion that is a whole multiple of the
+ * shared token cap (state.maxTokens, from /api/case).
  *
- * A response still truncated after every attempt the escalation chain
- * allows (four tiers, seven counted attempts - see buildRetryTiers in
- * openrouter.ts) is now returned by the server as a real failure, not a
- * "success" for this function to badge - so this can no longer fire for
- * any newly-generated result. It's kept, and checks a *multiple* of
- * state.maxTokens rather than an exact match, specifically for trials
- * recorded before that change: some real historical rows have a
+ * A multiple rather than an exact match, because some of those rows have a
  * completion of exactly 2 x maxTokens (both the original attempt and the
- * retry hit the cap, and the older code still saved that as a success) -
- * an exact `===` check would silently miss those on reopen.
+ * retry hit the cap, and the code of the time saved that as a success). The
+ * date is what keeps a newer success out: the later tiers have larger caps,
+ * so a reply there can finish on its own at exactly 1,400 or 2,800 tokens.
+ *
+ * @param {number} completionTokens
+ * @param {string | undefined} loggedAt ISO 8601, from the call-log row.
+ * @returns {boolean}
+ */
+function isLegacyTruncation(completionTokens, loggedAt) {
+  return Boolean(
+    state.maxTokens &&
+      completionTokens > 0 &&
+      completionTokens % state.maxTokens === 0 &&
+      loggedAt &&
+      Date.parse(loggedAt) < TRUNCATION_BECAME_FAILURE_AT
+  );
+}
+
+/**
+ * True for a successful entry that is one of the truncated replies saved
+ * before TRUNCATION_BECAME_FAILURE_AT - see isLegacyTruncation(). The server
+ * logs a capped reply distinctly via finish_reason (see openrouter.ts), and
+ * fails it outright today; this reads the rows saved before that. It reads
+ * a live entry and one reopened from history alike, since both are built by
+ * deriveRoleStates(), which backfills tokens.completion and loggedAt from
+ * the matching api_call_logs row for exactly this purpose.
  *
  * @param {AgentEntry | undefined} entry
  * @returns {boolean}
  */
 function isTruncated(entry) {
   return Boolean(
-    entry &&
-      entry.status === 'success' &&
-      state.maxTokens &&
-      entry.tokens &&
-      entry.tokens.completion > 0 &&
-      entry.tokens.completion % state.maxTokens === 0
+    entry && entry.status === 'success' && entry.tokens && isLegacyTruncation(entry.tokens.completion, entry.loggedAt)
   );
 }
 
@@ -988,6 +1007,20 @@ function isRetriedMarkerLog(log) {
 }
 
 /**
+ * True for a discarded attempt's message that records an escalation to the
+ * next tier's model rather than a retry of the same one. openrouter.ts
+ * ends every such message with one or the other: "- escalated to
+ * <model id>." or "- re-tried with the same model", the fast-failure form
+ * followed by a parenthesis. Same literal-string coupling as the markers.
+ *
+ * @param {string} message
+ * @returns {boolean}
+ */
+function isEscalationMessage(message) {
+  return / - escalated to \S+\.$/.test(message);
+}
+
+/**
  * Strips a leading marker (plus the space after it) from an error message
  * before it's shown on an agent card - any of the six, not just the
  * DEGENERATE_* ones; the list below is the authority. Those markers exist
@@ -1089,10 +1122,11 @@ function deriveRoleStates(data) {
           ? { status: 'aborted', error: stripMarkerPrefix(log.errorMessage) }
           : { status: 'failed', error: stripMarkerPrefix(log.errorMessage) || 'Unknown failure' };
     } else if (store[log.agentRole] && store[log.agentRole].status === 'success') {
-      // representative_arguments/judge_rulings don't store token counts
-      // (only api_call_logs does) - without this, isTruncated() would have
-      // nothing to compare against.
+      // representative_arguments/judge_rulings don't store token counts or
+      // the call's time (only api_call_logs does) - without these,
+      // isTruncated() would have nothing to compare against.
       store[log.agentRole].tokens = { prompt: log.promptTokens, completion: log.completionTokens, total: log.totalTokens };
+      store[log.agentRole].loggedAt = log.timestamp;
     }
   }
 
@@ -1956,18 +1990,22 @@ function renderRepresentatives() {
  * Shows the banner above the judges' cards when any representative
  * argument is missing, naming which, and hides it otherwise.
  *
- * All three judges in a given trial always see the exact same set of
- * available/unavailable representative arguments - runJudgesPhase() only
- * ever starts after runRepresentativesPhase() has fully resolved every
- * role (success, failure, or abort), so there's no scenario where one
- * judge ruled with 3/4 arguments and another ruled with 4/4 in the same
- * run. That's what makes a single banner above all three cards correct,
- * rather than needing a per-judge-card note or any new stored data - this
- * reads directly off state.representatives, which by the time judges are
- * ever shown (live or historical) already reflects exactly what every
- * judge's own prompt contained (see buildJudgeMessages in prompts.ts,
+ * runJudgesPhase() starts only once runRepresentativesPhase() has an
+ * outcome for every role - success, failure, abort, or 'timeout', the page
+ * giving up waiting - and each judge's prompt carries the arguments saved
+ * by the time that judge starts (see buildJudgeMessages in prompts.ts,
  * which marks a missing seat "[argument unavailable]" rather than
- * fabricating or silently omitting it).
+ * fabricating or silently omitting it). A representative call that runs
+ * has finished, and saved any argument, before the page stops waiting on
+ * it: polling waits POLL_TIMEOUT_MS (700s), longer than the 650s budget a
+ * call runs within. So all three judges in a run see the same set of
+ * arguments, the set state.representatives records, live or historical.
+ * That's what makes a single banner above all three cards correct, rather
+ * than a per-judge-card note or any new stored data.
+ *
+ * "Missing" means no saved argument, whatever the reason: a call that
+ * failed (a reply rejected as truncated or degenerate included), was
+ * aborted, or never ran.
  */
 function updateJudgesCaveat() {
   const missing = REPRESENTATIVE_ROLES.filter(
@@ -1982,7 +2020,7 @@ function updateJudgesCaveat() {
 
   const available = REPRESENTATIVE_ROLES.length - missing.length;
   const names = missing.map((role) => REPRESENTATIVE_META[role].name).join(', ');
-  el.judgesCaveat.textContent = `Reached with ${available} of ${REPRESENTATIVE_ROLES.length} representative arguments available (${names} did not respond) - see Representatives above.`;
+  el.judgesCaveat.textContent = `Reached with ${available} of ${REPRESENTATIVE_ROLES.length} representative arguments available (none from ${names}) - see Representatives above.`;
   el.judgesCaveat.classList.remove('hidden');
 }
 
@@ -2149,8 +2187,8 @@ function renderCallLog() {
     const isAbortRequest = entry.errorMessage === ABORTED_BY_USER_MESSAGE;
     // The content-quality markers cover two different ways an attempt
     // ends, and calling both of them "degenerated" was simply inaccurate:
-    // one ran into the token cap, the other stopped on its own and a
-    // detector flagged it. (The capped kind is usually a repetition loop
+    // one ran into the token cap, the other did not and a detector flagged
+    // it. (The capped kind is usually a repetition loop
     // too - see the NAMING note in openrouter.ts - but the cap, not a
     // detector, is what stopped it.) openrouter.ts writes this exact phrase
     // for the cap case (and quotes the offending text instead for the two
@@ -2166,17 +2204,12 @@ function renderCallLog() {
     }
 
     // A response still truncated after every attempt the escalation chain
-    // allows is now a real failure (openrouter.ts), correctly shown via
-    // the status column below - this badge only still fires for historical
-    // rows recorded before that change, where the log genuinely says
-    // 'success' with a completion that's an exact multiple of the cap (1x
-    // from an older, single-attempt truncation, or 2x from a retry that also truncated
-    // before this fix existed). Same reasoning and formula as isTruncated().
-    const wasTruncated =
-      entry.status === 'success' &&
-      state.maxTokens &&
-      entry.completionTokens > 0 &&
-      entry.completionTokens % state.maxTokens === 0;
+    // allows is a real failure (openrouter.ts), shown via the status column
+    // below. This badge marks the success rows logged before that change
+    // whose completion is a whole multiple of the cap (1x from a
+    // single-attempt truncation, or 2x from a retry that also truncated) -
+    // see isLegacyTruncation().
+    const wasTruncated = entry.status === 'success' && isLegacyTruncation(entry.completionTokens, entry.timestamp);
     // Total is what actually matters at a glance (it's what the cap and
     // cost are driven by); prompt/completion break it down underneath in
     // the same dim, secondary-line treatment status-caption already uses
@@ -2207,10 +2240,13 @@ function renderCallLog() {
         </div>
       `;
     } else if (isTransientRetried) {
+      // One marker covers both moves here, unlike the content-quality pair
+      // above, so the caption reads which one it was from the message's end.
+      const caption = isEscalationMessage(err) ? 'escalated to a different model' : 'retried with the same model';
       statusCellHtml = `
         <div class="cell-stack">
           <span class="badge badge-warn">no response</span>
-          <div class="status-caption">(timed out or refused, retried)</div>
+          <div class="status-caption">(${caption})</div>
         </div>
       `;
     } else if (isAbortedMidCall) {

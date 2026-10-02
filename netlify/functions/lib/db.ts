@@ -57,10 +57,12 @@ export async function createTrial(caseCode: string): Promise<TrialRecord> {
 }
 
 export interface TrialSummary extends TrialRecord {
-  // Whether any individual call for this trial ever logged status='failed'
-  // - including one that was immediately retried and fully recovered. Kept
-  // as a real, honest low-level fact, but deliberately NOT what the
-  // sidebar's status label is based on. A transient failure that the retry
+  // Whether any call-log row for this trial is stored as status='failed':
+  // a final failure, an attempt discarded for a retry or an escalation
+  // (including one the chain then recovered from in full), or a row an
+  // abort wrote (the abort endpoint's, and the stopped call's own). Kept as
+  // a real, honest low-level fact, but deliberately NOT what the sidebar's
+  // status label is based on. A transient failure that the retry
   // chain self-heals within its own budget is an ordinary, expected event
   // here, not an exception - so a label driven by this would fire on most
   // runs and stop meaning anything. (It once did: the label used to read

@@ -7,8 +7,11 @@ const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 // (see buildRetryTiers below), and a total time budget over the whole
 // chain. A call that fails fast (e.g. a burst rate limit, returned in
 // under a second) gets a few extra same-model retries that don't count
-// against its tier - see FAST_FAILURE_THRESHOLD_MS - while one where each
-// try genuinely takes most of its ceiling uses up its tier's attempts.
+// against its tier - up to MAX_FAST_TRANSIENT_RETRIES_PER_TIER at each
+// tier, while the budget has room for another attempt; see
+// FAST_FAILURE_THRESHOLD_MS. Every other failed attempt - one that took
+// 10s or longer, or a fast one past those - uses up one of its tier's
+// attempts.
 //
 // representative-background.ts/judge-background.ts run as Netlify
 // Background Functions (declared by their -background filenames), not
@@ -171,8 +174,9 @@ export interface OpenRouterMessage {
 // its own attempts too. Rather than one fallback, this is a genuine
 // escalation chain - each tier a different model, reached once the tier
 // before it is done - which usually means it spent every attempt allowed
-// it, on truncation, degeneration or a slow transient failure, but not
-// always: a plain HTTP error (a removed model id, say) escalates
+// it, on truncation, degeneration or a transient failure that counted (a
+// slow one, or a fast one past its tier's free retries), but not always:
+// a plain HTTP error (a removed model id, say) escalates
 // immediately and forfeits that tier's remaining attempts, since
 // re-asking a model that just 404'd cannot help. The last two tiers are
 // deliberately from two different companies, not two models in the same
@@ -735,10 +739,12 @@ const CONCISENESS_REMINDER: OpenRouterMessage = {
 //     repetition loop that ran until the cap stopped it (all 48 whose text
 //     was stored, as of 2026-09-27).
 //   - degeneration proper: detectDegenerateRun / detectRepeatedSentences.
-//     The model finished on its own and produced unusable text.
-// They are told apart by how the attempt ended: the detectors only run on
-// a reply that stopped on its own, and a reply that hits the cap is
-// reported as truncated whatever it contains. The umbrella name is a
+//     The reply did not hit the cap, and a detector found it unusable.
+// They are told apart by how the attempt ended: a reply that hits the cap
+// is reported as truncated whatever it contains, and the detectors run on
+// every other reply with text, whatever its finish_reason - 'stop', the
+// usual one, or another of OpenRouter's normalized values
+// ('content_filter', 'error'), or none at all. The umbrella name is a
 // holdover from when the run-on detector was the only content check there
 // was.
 //
@@ -881,7 +887,9 @@ export interface OpenRouterResult {
 /**
  * Asks OpenRouter for one agent's reply, walking the escalation chain
  * (buildRetryTiers) until an attempt is kept, every tier is spent, the time
- * budget runs out or the trial is aborted. Never throws for an API failure:
+ * budget runs out or the trial is aborted - or at once, on a failure no
+ * retry can fix: not enough credit (HTTP 402), a rate limit whose reset
+ * outlasts the budget, or no OpenRouter key configured. Never throws for an API failure:
  * every outcome, success or failure, comes back as an OpenRouterResult, with
  * the attempts discarded on the way listed in it.
  *
@@ -1271,19 +1279,25 @@ export async function callOpenRouter(
       });
 
       if (response.status === 429) {
-        // Distinguish a short burst limit, which retrying inside this call
-        // can clear, from a longer-window quota it cannot. Retrying the
-        // latter just hammers a limiter that will keep refusing for a
-        // while, and reports a useless "gave up after N attempts" instead
-        // of the actual reason. OpenRouter tells us which it is via
-        // X-RateLimit-Reset (epoch ms).
+        // Distinguish a limit that clears while this call can still wait
+        // from one that does not. A 429 from one of OpenRouter's own
+        // platform limits carries X-RateLimit-Limit, -Remaining and -Reset,
+        // describing the limit that was hit (OpenRouter's limits docs, read
+        // 2026-10-03; the reset is in epoch ms, as read from a real 429 on
+        // this project in its free-tier days). A 429 passed on from an
+        // upstream provider carries no reset, and goes to the retry path
+        // below like any burst limit. When the reset is later than this
+        // call's remaining time budget, retrying would only hammer a limiter
+        // that will keep refusing until after the call has to end, and
+        // report a useless "gave up after N attempts" instead of the actual
+        // reason, so the call ends here with that reason.
         const resetAt = Number(response.headers.get('x-ratelimit-reset'));
         const retryAfterMs = Number.isFinite(resetAt) && resetAt > 0 ? resetAt - Date.now() : 0;
 
         if (retryAfterMs > remainingMs()) {
           const resetIso = new Date(resetAt).toISOString();
-          const limit = response.headers.get('x-ratelimit-limit') ?? 'the account';
-          const message = `OpenRouter request quota exhausted (rate limit ${limit}, 0 remaining). Resets at ${resetIso}.`;
+          const limit = response.headers.get('x-ratelimit-limit');
+          const message = `OpenRouter rate-limited this request (HTTP 429${limit ? `, limit ${limit}` : ''}) until ${resetIso}, later than this call's remaining time budget.`;
           console.log(`[openrouter] ${label}: attempt ${attempt} - ${message}`);
           return failure(attemptModel, message, lastUsage, discardedAttempts, Date.now() - lastAttemptStartedAt, { tierIndex, tierCount: tiers.length });
         }
@@ -1321,11 +1335,16 @@ export async function callOpenRouter(
       }
 
       if (response.status === 402) {
-        // Real credit exhaustion on a paid account - the balance is
-        // genuinely at $0, which won't resolve by retrying, so this
-        // returns immediately rather than retrying like the 429 branch
-        // above and the 5xx branch below. The wording matters because it is
-        // what a reader actually sees: this message is persisted to
+        // Not enough credit for this request: OpenRouter answers 402 when
+        // what is left of the account's balance, or of this key's own
+        // spending limit, cannot cover the request at its max_tokens -
+        // which can happen before the balance reaches zero - and when the
+        // balance is negative. Retrying within this call cannot change
+        // that: a same-tier retry would ask for the same, and each later
+        // tier for a larger max_tokens. So this returns immediately rather
+        // than retrying like the 429 branch above and the 5xx branch below,
+        // with OpenRouter's own message appended. The wording matters
+        // because it is what a reader actually sees: this message is persisted to
         // api_call_logs.error_message and rendered verbatim on the agent's
         // card, so it has to explain itself without a status code beside
         // it. (It used to be matched by an isOutOfCredits() helper in
@@ -1335,7 +1354,7 @@ export async function callOpenRouter(
         // Background Functions - the client no longer sees the agent's
         // response at all, only what polling reads back out of the log -
         // so nothing parses this string today.)
-        const message = `OpenRouter account is out of credits (HTTP 402): ${await describeErrorBody(response)}`;
+        const message = `OpenRouter declined the request: not enough credit to cover it (HTTP 402): ${await describeErrorBody(response)}`;
         console.log(`[openrouter] ${label}: attempt ${attempt} - ${message}`);
         return failure(attemptModel, message, undefined, discardedAttempts, Date.now() - lastAttemptStartedAt, { tierIndex, tierCount: tiers.length });
       }
@@ -1404,11 +1423,19 @@ export async function callOpenRouter(
       const totalTokens = usage.total_tokens ?? promptTokens + completionTokens;
 
       if (!content) {
-        // Two distinct shapes land here: (1) HTTP 200 carrying an `error`
-        // object instead of `choices` - a transient upstream condition
-        // rather than anything specific to this request; (2) a genuinely
-        // empty `choices[0].message.content` with no `error` present.
-        // Both get a direct retry.
+        // Three shapes land here: (1) HTTP 200 carrying an `error` object
+        // instead of `choices` - a transient upstream condition rather than
+        // anything specific to this request; (2) a genuinely empty
+        // `choices[0].message.content` with no `error` present; (3) a
+        // reasoning model that spent all of max_tokens on its reasoning and
+        // returned no visible text, as google/gemini-2.5-pro (tier 4, see
+        // modelRequiresReasoning in models.ts) did on 2026-09-20 at a
+        // 20-token cap. Tier 4's 4000 leaves that model room: its six calls
+        // on this project used 2,053-2,564 tokens, reasoning included. All
+        // three are logged as `no response` and retried or escalated like
+        // any transient failure, whatever the finish_reason, which a call
+        // that ends on one names in its message. A capped reply with text
+        // goes to the truncation check below instead.
         const upstreamError = data?.error?.message;
         const finishReason = data?.choices?.[0]?.finish_reason ?? 'unknown';
         lastError = upstreamError
@@ -1462,7 +1489,7 @@ export async function callOpenRouter(
           reason = 'hit the max_tokens limit before finishing naturally';
         } else if (degenerateCheck?.degenerate) {
           console.warn(
-            `[openrouter] ${label}: DEGENERATE - response finished on its own (finish_reason=${finishReason}) but contains a ${degenerateCheck.runLength}-word run with no punctuation ("${degenerateCheck.sample}...") - treating as a failure rather than trusting a technically-complete but incoherent result.`
+            `[openrouter] ${label}: DEGENERATE - response did not hit the cap (finish_reason=${finishReason}) but contains a ${degenerateCheck.runLength}-word run with no punctuation ("${degenerateCheck.sample}...") - treating as a failure rather than trusting a technically-complete but incoherent result.`
           );
           // The offending text is quoted into the persisted reason, not just
           // the console line, so the call log itself shows what tripped the
@@ -1474,7 +1501,7 @@ export async function callOpenRouter(
           reason = `collapsed into a ${degenerateCheck.runLength}-word run with no punctuation ("${degenerateCheck.sample.slice(0, 60)}...")`;
         } else {
           console.warn(
-            `[openrouter] ${label}: DEGENERATE - response finished on its own (finish_reason=${finishReason}) but ${repeatCheck!.reason} - treating as a failure rather than trusting a technically-complete but looping result.`
+            `[openrouter] ${label}: DEGENERATE - response did not hit the cap (finish_reason=${finishReason}) but ${repeatCheck!.reason} - treating as a failure rather than trusting a technically-complete but looping result.`
           );
           // Same reasoning as the run-on case above: the quote, and where
           // the copies sit, show at a glance what tripped the check.
@@ -1599,13 +1626,12 @@ export async function callOpenRouter(
  * escalation tier (tierIndex === tierCount - 1) - i.e. every tier this
  * chain offers was genuinely tried and none of them produced a kept
  * result, regardless of which specific failure mode ended it (an HTTP
- * error, a rate limit or exhausted quota, the account out of credits, a
- * timeout or network error, or an empty response). Truncation and
- * degeneration never come through here: the DEGENERATE_FINAL_MARKER
- * branch above words that case itself. A failure that happens on an
- * EARLIER tier (the time budget running out before the chain reached the
- * last tier, say, or a failure no retry can fix, such as the account being
- * out of credits) is a different, less complete situation and keeps its
+ * error, a rate limit, not enough credit, a timeout or network error, or
+ * an empty response). Truncation and degeneration never come through
+ * here: the DEGENERATE_FINAL_MARKER branch above words that case itself.
+ * A failure that happens on an EARLIER tier (the time budget running out
+ * before the chain reached the last tier, say, or a failure no retry can
+ * fix, such as not enough credit) is a different, less complete situation and keeps its
  * own specific message instead of falsely claiming every tier was
  * exhausted.
  */

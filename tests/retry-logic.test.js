@@ -430,7 +430,7 @@ async function main() {
     const done = finishedAfterAbort({ status: 'success', content: CLEAN, responseText: CLEAN, model: DEFAULT, promptTokens: 1000, completionTokens: 400, totalTokens: 1400, cost: 0.0001, durationMs: 9000 });
     check('a reply finished after the abort is not a success', done.status === 'failed' && done.content === undefined && /^\[aborted-mid-call\] Finished after the user aborted this trial/.test(done.errorMessage), done.errorMessage);
     check('but keeps what it cost', done.completionTokens === 400 && done.cost === 0.0001 && done.durationMs === 9000 && done.responseText === CLEAN);
-    const failedAlready = { status: 'failed', model: DEFAULT, promptTokens: 0, completionTokens: 0, totalTokens: 0, cost: 0, errorMessage: 'OpenRouter account is out of credits (HTTP 402): x', durationMs: 100 };
+    const failedAlready = { status: 'failed', model: DEFAULT, promptTokens: 0, completionTokens: 0, totalTokens: 0, cost: 0, errorMessage: 'OpenRouter declined the request: not enough credit to cover it (HTTP 402): x', durationMs: 100 };
     check('a result that already failed is left as it is', finishedAfterAbort(failedAlready) === failedAlready);
   });
 
@@ -440,6 +440,59 @@ async function main() {
     const r = await callOpenRouter(DEFAULT, [{ role: 'user', content: 'hi' }], 1400, 'rep:test');
     check('terminal failure', r.status === 'failed', r.status);
     check('says every tier was tried', /Every model tier was tried/.test(r.errorMessage), r.errorMessage);
+  });
+
+  // ------------------------------------------------------------------ 10
+  await test('A 429 whose reset outlasts the time budget, and a 402, end the call at once', async () => {
+    const resetAt = Date.now() + 2 * 60 * 60 * 1000;
+    let calls = 0;
+    global.fetch = async () => {
+      calls++;
+      return { ok: false, status: 429, headers: new Map([['x-ratelimit-reset', String(resetAt)], ['x-ratelimit-limit', '20']]), text: async () => '{}' };
+    };
+    let r = await callOpenRouter(DEFAULT, [{ role: 'user', content: 'hi' }], 1400, 'rep:test');
+    check('one request, no retry', calls === 1 && r.status === 'failed', `${calls} / ${r.status}`);
+    check('the message gives the 429 and the time it clears', r.errorMessage === `OpenRouter rate-limited this request (HTTP 429, limit 20) until ${new Date(resetAt).toISOString()}, later than this call's remaining time budget.`, r.errorMessage);
+
+    calls = 0;
+    global.fetch = async () => {
+      calls++;
+      return { ok: false, status: 402, headers: new Map(), text: async () => JSON.stringify({ error: { message: 'This request requires more credits, or fewer max_tokens. You requested up to 1400 tokens, but can only afford 900.' } }) };
+    };
+    r = await callOpenRouter(DEFAULT, [{ role: 'user', content: 'hi' }], 1400, 'rep:test');
+    check('a 402 is not retried either', calls === 1 && r.status === 'failed', `${calls} / ${r.status}`);
+    check('and carries OpenRouter\'s own reason', r.errorMessage === 'OpenRouter declined the request: not enough credit to cover it (HTTP 402): This request requires more credits, or fewer max_tokens. You requested up to 1400 tokens, but can only afford 900.', r.errorMessage);
+  });
+
+  // ------------------------------------------------------------------ 11
+  await test('Every reply with text but a capped one goes through the detectors; a capped one with none is "no response"', async () => {
+    const LOOP = 'I was wrong about the realm. ' + 'I can only tell you that I was wrong, and I am sorry. '.repeat(4);
+    /**
+     * The first attempt's discard reason when the default model answers
+     * `content` with `finishReason`, or null if the reply was kept.
+     * @param {string} content
+     * @param {string | null} finishReason
+     * @returns {Promise<string | null>}
+     */
+    const firstReason = async (content, finishReason) => {
+      global.fetch = async (_u, o) => {
+        const m = JSON.parse(o.body).model;
+        return m === DEFAULT ? reply(m, content, finishReason) : reply(m, CLEAN);
+      };
+      const r = await callOpenRouter(DEFAULT, [{ role: 'user', content: 'hi' }], 1400, 'rep:test');
+      return r.model === DEFAULT && r.status === 'success' ? null : ((r.discardedAttempts || [])[0] || {}).errorMessage || r.errorMessage;
+    };
+    // null stands for a reply that carries no finish_reason at all.
+    for (const finish of ['content_filter', 'error', null]) {
+      const reason = await firstReason(LOOP, finish);
+      check(`a loop with finish_reason ${finish} is caught by the detectors`, /^\[degenerate-retried-same-model\] This attempt repeated/.test(reason || ''), reason);
+    }
+    const runOn = `${Array.from({ length: 45 }, (_, i) => `word${i}`).join(' ')}.`;
+    const runOnReason = await firstReason(runOn, 'content_filter');
+    check('so is a run-on with finish_reason content_filter', /^\[degenerate-retried-same-model\] This attempt collapsed into a 45-word run/.test(runOnReason || ''), runOnReason);
+    check('a clean reply with finish_reason content_filter is kept', (await firstReason(CLEAN, 'content_filter')) === null);
+    const empty = await firstReason('', 'length');
+    check('a capped reply with no text is a transient failure, not a truncation', /^\[transient-retried\] returned no message content after \d+ms - re-tried with the same model/.test(empty || ''), empty);
   });
 
   console.log = realLog;
