@@ -41,17 +41,19 @@
 # ignored by Netlify's bundler, rate limit included. Netlify allows at most
 # 180 seconds per window, and two rules on this plan - these two. The two
 # rules count one IP's requests together, not separately: measured on the
-# live site on 2026-10-02, 20 requests to the first route left 11 for the
-# second before the 429s began. A full trial sends 7, so 30 per 3 minutes
-# is a backstop against a single source hammering them, not a limit normal
-# use comes near; the site-wide call cap in db.ts is what bounds spend.
+# live site on 2026-10-02, at the 30-request limit of the time, 20
+# requests to the first route left 11 for the second before the 429s
+# began. A full trial sends 7, so 60 per 3 minutes (about 8 full trials)
+# is a backstop against a single source hammering them, not a limit
+# normal use comes near; the site-wide call cap in db.ts is what bounds
+# spend.
 # Keep the two limits equal, so the shared count means one thing.
 [[redirects]]
   from = "/api/trials/:id/representatives/:role"
   to = "/.netlify/functions/representative-background/:id/:role"
   status = 200
   [redirects.rate_limit]
-    window_limit = 30
+    window_limit = 60
     window_size = 180
     aggregate_by = ["ip", "domain"]
 
@@ -60,7 +62,7 @@
   to = "/.netlify/functions/judge-background/:id/:role"
   status = 200
   [redirects.rate_limit]
-    window_limit = 30
+    window_limit = 60
     window_size = 180
     aggregate_by = ["ip", "domain"]
 
