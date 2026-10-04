@@ -10,7 +10,7 @@ export interface RepresentativeDefinition {
 // The seat below fixes only a procedural role (which side of the room a
 // representative stands in). It does not fix an opinion, a reading of the
 // facts, or a conclusion — every system prompt says so explicitly, and none
-// of them instructs a representative toward a predetermined position.
+// of them instructs a representative towards a predetermined position.
 
 const PROCEDURAL_NOTE = `Your seat fixes only your procedural role in this proceeding — it does not fix your opinion, your reading of the facts, or your conclusion. Reason exactly as your character would, honestly and in your own voice, and let your argument land wherever that reasoning actually leads. It is entirely acceptable for your argument not to straightforwardly favor the side you are seated on, if genuine in-character reasoning takes you somewhere else. Do not perform a conclusion you would not actually reach.`;
 

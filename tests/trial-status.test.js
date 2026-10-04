@@ -191,7 +191,8 @@ const LOOPED_RULING = 'VERDICT: justified\n\nThe bells had rung before the fire.
  */
 async function main() {
   say('\n=== One judge with retries does not complete the trial on its own ===');
-  // The exact shape of the bug: three judge rows, all belonging to barak.
+  // The exact shape of the since-fixed bug in item 1 of the header: three
+  // judge rows, all belonging to barak.
   let r = await quietly(() => runCompletion([
     judgeRow('barak', retried(TRANSIENT_RETRIED_MARKER)),
     judgeRow('barak', retried(DEGENERATE_RETRIED_SAME_MODEL_MARKER)),

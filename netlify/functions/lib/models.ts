@@ -62,18 +62,18 @@ export function getModelForRole(role: string): string {
 // Was mistralai/mistral-large-2512 (chosen for the same vendor family as
 // the default model, for style/formatting consistency with prompts tuned
 // without a cross-vendor model in mind) until that model id was
-// deprecated/removed from OpenRouter's catalog sometime after this chain
+// deprecated/removed from OpenRouter's catalogue sometime after this chain
 // was built - confirmed directly (2026-09-20): its own OpenRouter model
 // page now 404s, and every real call that needed to escalate past tier 1
 // failed outright rather than reaching the still-live tiers 3/4 (see
 // HTTP_ERROR_ESCALATED_MARKER in openrouter.ts for the escalation-chain
-// bug that let one dead tier kill the whole call, fixed separately from
+// bug that used to let one dead tier kill the whole call, fixed separately from
 // this).
 //
 // Replaced with anthropic/claude-haiku-4.5 - a genuinely different vendor,
 // breaking the original same-family rationale, but the failure modes this
 // tier exists to fix (truncation, repetition-loop degeneration) are small/
-// weak-model behaviors that a model of this class is expected not to
+// weak-model behaviours that a model of this class is expected not to
 // exhibit at any meaningful rate for a single ~300-600 word structured
 // piece of writing. That was the reason for the choice, and it has since
 // been measured on this workload rather than left as an expectation.

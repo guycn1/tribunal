@@ -6,8 +6,8 @@
  * against a mocked global.fetch, so these assert the actual source rather
  * than a hand-copied imitation of it.
  *
- * This file exists because this specific logic has now produced several
- * subtle, expensive bugs - an escalation chain that silently never
+ * This file exists because this specific logic once produced several
+ * subtle, expensive bugs, all of them since fixed - an escalation chain that silently never
  * escalated, a timeout ceiling that ignored prompt size, a degeneration
  * check blind to its most common signature, a fractional millisecond that
  * would have crashed half of all real calls, a fast-429 storm that

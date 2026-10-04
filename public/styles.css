@@ -65,7 +65,7 @@ body {
      load-bearing, not cosmetic - shrinking the sidebar is real width the
      table gets to work with instead.
      The 220px ceiling this used to have was itself the problem on wide
-     viewports: .main is capped at its own max-width (below) and centered
+     viewports: .main is capped at its own max-width (below) and centred
      within whatever's left over, so once the sidebar stopped growing,
      every extra pixel of a wide window just became empty margin around
      .main instead of going anywhere useful - real, measured waste (over
@@ -91,7 +91,7 @@ body {
      .layout, sharing width with .main exactly as before - fixed would
      take it out of flow entirely and need its own hand-maintained
      width/offset math duplicating the clamp() above. align-self:
-     flex-start stops .layout's default stretch behavior from fighting
+     flex-start stops .layout's default stretch behaviour from fighting
      the explicit height below. Capped at 100vh (never taller than the
      viewport) with overflow hidden - the fix for the sidebar previously
      growing past .main's height and dragging the whole page down with
@@ -205,7 +205,7 @@ body {
      filter above uses the same radii, so only the alpha animates.
      The 20px layer reaches 3px past the sidebar's edge (.sidebar is
      overflow: hidden and the icon sits 17px in) and is clipped there. That
-     was checked and is invisible - it is the last few percent of the
+     was checked and is invisible - it is the last few per cent of the
      falloff - but it is worth knowing before widening either layer. */
   filter: drop-shadow(0 0 10px color-mix(in srgb, var(--text) 38%, transparent))
     drop-shadow(0 0 20px color-mix(in srgb, var(--text) 22%, transparent));
@@ -633,7 +633,7 @@ body {
   position: relative;
 }
 
-/* A real, reported Firefox-only rendering glitch (2026-09-04): the
+/* A reported Firefox-only rendering glitch (2026-09-04): the
    bottom-fade gradient below composited on top of scrolling card text
    came out jagged/"torn" per line instead of a smooth blend (not
    reproduced in Chrome). Two attempted fixes, both transform:
@@ -645,8 +645,7 @@ body {
    the second attempt's scrollbar regression turned out to extend to
    .history-list too, an element with no DOM/CSS relationship to
    .card-body-scroll-wrap at all - a result that contradicts the actual
-   mechanism this fix was supposed to rely on, meaning the diagnosis
-   itself was likely wrong, not just its placement. The fade stays as it
+   mechanism this fix was supposed to rely on. The fade stays as it
    is in every browser: it does its job in Firefox too, and the finish of
    its edge there is a matter of how that engine composites text. */
 
@@ -693,9 +692,9 @@ body {
    same white-opacity tiers for both. .history-list
    previously had NO scrollbar styling at all, which is exactly why
    Chrome/Edge fell back to their bulky native default there (wide enough
-   to visually collide with a history card's own border - a real,
-   reported bug) while .card-body-scroll looked fine - it already had
-   this treatment, .history-list simply never got it.
+   to visually collide with a history card's own border) while
+   .card-body-scroll looked fine - it already had this treatment,
+   .history-list simply never got it.
 
    Three tiers, per exact spec: very transparent white at rest; more
    opaque once the *container* (the card, or the history list) is
@@ -736,7 +735,7 @@ body {
    rule that reads it the same way in Firefox as in Chromium, so Firefox
    gets the full fade too, not just an instant two-state jump) - at
    least on Firefox versions/settings where scrollbar-color is actually
-   honored at all; see the fallback block below for the notes about
+   honoured at all; see the fallback block below for the notes about
    Firefox's behaviour. It is also what Chrome and Edge
    render: the thin width and the thumb colour come from these two
    standard properties, not from the fallback block. */
@@ -759,50 +758,22 @@ body {
    webkit width laid out at 0px, against 8px and 30px on an element
    without it. WebKit also supports scrollbar-width but not
    scrollbar-color, so there the thumb keeps WebKit's own colour.
-   History, worth reading before touching this again
-   (2026-09-04): a non-zero width here was found to have an
-   undocumented-to-us side effect in Firefox 153/154 - per Firefox's own 153 release notes, "rules with
-   non-zero width/height disable overlay scrollbars for the affected
-   container" - which had been silently forcing Firefox into classic,
-   always-visible scrollbar rendering this whole time, unbeknownst to
-   this project. Firefox 155 restricted that recognition to Mozilla's
-   own internal allowlist of sites, closing it off for ordinary sites
-   including this one - confirmed for real, not guessed, with an
-   isolated two-box test page in the user's own Firefox 155: even the
-   RAW rule below, completely unconditional, with zero scrollbar-color
-   involved at all, still showed Firefox's native hidden-until-hover
-   overlay behavior. A same-day attempt to "fix" this by gating the
-   whole block behind @supports not (scrollbar-width: thin) was ALSO
-   reverted, once that same test proved the gate could not possibly be
-   helping Firefox either way (Firefox shows identical behavior gated
-   or not) while, it was then believed, risking modern Chrome/Edge's
-   explicit 8px sizing and :active/dragging tier (they support
-   scrollbar-width too, so the gate excluded them as well). That risk
-   never existed - per the 2026-09-26 measurement above, Chromium ignores
-   this block anyway wherever scrollbar-width is set - but the revert
-   stands on the first ground alone. Restored to plain and unconditional,
-   exactly as it was before any of that; the user confirmed that version
-   renders correctly in both Chrome and Edge.
-
-   Bottom line: there is no CSS available to this project that restores
-   Firefox's classic scrollbar rendering here -
-   confirmed via Firefox's own release notes, a Mozilla engineer's
-   direct statement on bugzilla.mozilla.org ("no built-in CSS property
-   to globally disable overlay scrollbars; this is controlled by the
-   operating system"), and the user's own isolated test. Firefox 155 on
-   Windows renders its own native overlay scrollbar for this page
-   instead - hidden at rest, a thin indicator on hover, expanding
-   further when the pointer moves onto the scrollbar itself - still
-   tinted with the color from scrollbar-color above (confirmed
-   respected even in that mode), just not matching Chrome/Edge's
-   always-visible weight/timing. Two real, user-machine-level (not
-   website-level) ways to get classic rendering back on a specific
-   Windows install: the Windows 11 Settings -> Accessibility -> Visual
-   effects -> "Always show scrollbars" toggle, or the Firefox-internal
-   about:config preference widget.non-native-theme.scrollbar.style set to
-   4 - neither is something this site can turn on for an arbitrary
-   visitor. This is how Firefox draws scrollbars, a documented
-   cross-browser platform difference, not a bug in this codebase. */
+   In Firefox (as of 2026-09-04): versions 153 and 154 treated a non-zero
+   width here as a request for classic, always-visible scrollbars (their
+   release notes: "rules with non-zero width/height disable overlay
+   scrollbars for the affected container"). Firefox 155 limits that to an
+   internal allowlist of sites, which this one is not on; a test page in
+   Firefox 155 confirmed it, and showed the same with or without an
+   @supports gate on this block, so it has none. Firefox on Windows draws
+   its own overlay scrollbar - hidden at rest, a thin indicator on hover,
+   wider with the pointer on it - in the colour scrollbar-color sets, and
+   no CSS property turns that off (a Mozilla engineer on
+   bugzilla.mozilla.org: "no built-in CSS property to globally disable
+   overlay scrollbars; this is controlled by the operating system"). A
+   visitor can bring classic scrollbars back with Windows 11's "Always
+   show scrollbars" setting (Settings -> Accessibility -> Visual effects),
+   or by setting the about:config preference
+   widget.non-native-theme.scrollbar.style to 4. */
 .history-list::-webkit-scrollbar,
 .card-body-scroll::-webkit-scrollbar {
   width: 8px;
@@ -1012,8 +983,7 @@ table.call-log {
      never exceeds its container no matter how narrow, so .table-scroll's
      overflow-x: auto never actually has anything to scroll. A horizontal
      scrollbar is explicitly not wanted here even as a fallback; wrapped
-     text, however imperfect, is the accepted outcome on a narrow viewport
-     instead.
+     text is the accepted outcome on a narrow viewport instead.
      This size (and the padding below) used to be the >1000px-viewport
      default, with a smaller size only kicking in below that - but this
      table's real rendered width is capped by .main's max-width (1040px)
@@ -1122,7 +1092,7 @@ table.call-log .col-full {
   margin-top: 2px;
 }
 
-/* Deterministic centering for a cell that stacks two elements vertically
+/* Deterministic centring for a cell that stacks two elements vertically
    (a bold total over a dim breakdown in the Tokens column; a badge over
    a status-caption in the Status column) - text-align: center on the
    <td> alone left room for doubt here: an inline badge/strong followed
@@ -1130,9 +1100,9 @@ table.call-log .col-full {
    leading inline content in its own anonymous block box, and depending
    on exactly how surrounding template-literal whitespace collapses,
    that anonymous box is not guaranteed to end up the same width as the
-   explicit block below it. flex + align-items: center centers each
+   explicit block below it. flex + align-items: center centres each
    child by its own actual box, sidestepping that question entirely
-   rather than trusting the anonymous-box behavior to work out. */
+   rather than trusting the anonymous-box behaviour to work out. */
 .cell-stack {
   display: flex;
   flex-direction: column;
@@ -1147,11 +1117,11 @@ table.call-log .col-full {
    960px, .main is only left with ~700px after the sidebar and its own
    padding - well under what the base sizing above assumes. Content
    overflowing a column at this width is what produced a "skewed,
-   cropped" look reported at 960px (text-align: center still centers the
-   content, but a neighboring cell's background then paints over
+   cropped" look reported at 960px (text-align: center still centres the
+   content, but a neighbouring cell's background then paints over
    whichever side overflows past the column's real boundary) - the actual
    fix is making sure nothing overflows in the first place, not the
-   centering rule itself.
+   centring rule itself.
    Placed before the narrower 480px breakpoint below, not after - both
    match at a sub-480px viewport, and CSS resolves that tie by source
    order (equal specificity, last one wins), so the more aggressive
@@ -1372,7 +1342,7 @@ table.call-log .col-full {
      both a thicker and a brighter border than the ordinary cards - in the
      table view that separation comes from a heavy top rule and a raised
      background, neither of which reads as a divider once every row is its
-     own box. Mixed toward --text-dim rather than set to a flat lighter
+     own box. Mixed towards --text-dim rather than set to a flat lighter
      grey so it still belongs to the same palette as --border. */
   table.call-log tfoot tr.call-log-total-row {
     border-width: 2px;

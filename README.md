@@ -1,6 +1,6 @@
 # Tribunal
 
-A fixed, canonical fictional tribunal — **Case T-001: The Realm v. Jon Snow** — argued and ruled on by seven independent AI agents: four representatives (two defense, two prosecution) and three judges, each modeled on a distinct real judicial reasoning method (Aharon Barak, Menachem Elon, Meir Shamgar).
+A fixed, canonical fictional tribunal — **Case T-001: The Realm v. Jon Snow** — argued and ruled on by seven independent AI agents: four representatives (two defense, two prosecution) and three judges, each modelled on a distinct real judicial reasoning method (Aharon Barak, Menachem Elon, Meir Shamgar).
 
 The Tribunal decides one question — **justified / not justified** — and gives reasons. It does not impose a sentence, and the three judges' rulings are never combined into a single verdict; they are displayed independently, each on its own card.
 
@@ -26,7 +26,7 @@ Every discarded attempt — including a timeout — gets logged as its own real 
 
 **Abort stops server-side work, not just the UI.** A Background Function can't be cancelled by the browser that started it, so the trial's abort is recorded in the database and each in-flight call checks for it before every attempt and as each attempt ends, and stops itself, rather than continuing to escalate through increasingly expensive models for a result nobody is waiting for. A request already sent is left to finish: this app does not stream, and OpenRouter bills a non-streamed request in full even if it is cancelled. So the attempt that was running is logged as what it was, marked `aborted` — a failed one is not retried, and a finished reply is not saved.
 
-**Anti-abuse / cost controls**, layered since the deployed site runs on a paid model with no login: a site-wide rolling call cap, per-IP rate limiting on the two routes that spend OpenRouter quota, and a lightweight site-gate header that filters traffic that never loaded the page at all (not real access control — the token is a public constant in `app.js` — just a cheap first filter).
+**Anti-abuse / cost controls**, layered since the deployed site runs on a paid model with no login: a site-wide rolling call cap, per-IP rate limiting on the two routes that spend OpenRouter quota, and a lightweight site-gate header that filters traffic that never loaded the page at all.
 
 ### API endpoints
 
@@ -100,7 +100,7 @@ One badge per trial, summarising the whole run.
 | `in progress…` | slate | Not finished, not aborted, and under 40 minutes old — presumably still running. |
 | `interrupted` | red | Not finished, not aborted, and over 40 minutes old, so it is treated as never going to finish — a dev-server restart mid-run, say, the page closed before the judges were started (the browser starts each phase), or a judge whose call never ran (its trigger request rejected, or the call turned away by the site gate or the call cap), since a trial is finished once every judge has an outcome logged. The threshold is sized above the genuine worst case: a full four-tier escalation for every representative, then the same again for every judge — about 22 minutes. |
 
-"Missing N" counts results that were actually saved, **not** whether any individual attempt failed along the way. A failed attempt that a retry or escalation recovered from (a timeout, a rate limit, a truncated or degenerate reply) is logged, but it is not a flaw in the outcome; most complete trials have at least one, so labelling on that basis would mark most runs as damaged. The call log still lists every attempt.
+"Missing N" counts results that were actually saved, **not** whether any individual attempt failed along the way. A failed attempt that a retry or escalation recovered from (a timeout, a rate limit, a truncated or degenerate reply) is logged, but it is not a flaw in the outcome; most complete trials have at least one, so labelling on that basis would falsely mark most runs as damaged. The call log still lists every attempt.
 
 ## Project layout
 

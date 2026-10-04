@@ -40,7 +40,7 @@ const TOTAL_BUDGET_MS = 650000;
 // Don't start an attempt the remaining budget cannot plausibly finish.
 // With a budget measured in minutes rather than the old ~26s, this no
 // longer has to be tuned razor-close to the floor the way it did before
-// (a real, measured mistake at the old tight budget: 8000ms turned out to be
+// (a measured mistake at the old tight budget: 8000ms turned out to be
 // exactly big enough to get eaten by backoff()'s own delay between
 // attempts, silently preventing the retry it existed to allow). 10000ms
 // here has real slack in both directions - comfortably enough for a fast
@@ -73,7 +73,7 @@ const MIN_REMAINING_TO_ATTEMPT_MS = 10000;
 // counts against its tier.
 //
 // The fast path is strictly bounded (see MAX_FAST_TRANSIENT_RETRIES_PER_TIER)
-// so it can never recreate the original unbounded-retry bug: a tier gets at
+// so it can never recreate the original unbounded-retry behaviour: a tier gets at
 // most a few free fast retries before its failures start counting normally.
 const FAST_FAILURE_THRESHOLD_MS = 10000;
 // Per tier, and reset on every escalation. With backoff() this is roughly
@@ -140,7 +140,7 @@ function attemptTimeoutFor(promptTokens: number, maxTokens: number): number {
 /**
  * Rough token estimate from raw characters (~4 chars/token) - only ever
  * used to size the timeout above, never to bill or cap anything, so an
- * approximation is fine and avoids shipping a tokenizer for it.
+ * approximation is fine and avoids shipping a tokeniser for it.
  */
 function estimatePromptTokens(messages: OpenRouterMessage[]): number {
   const chars = messages.reduce((total, m) => total + m.content.length, 0);
@@ -245,7 +245,7 @@ function buildRetryTiers(defaultModel: string, defaultMaxTokens: number): RetryT
 // one. Re-scanning every one of the 168 real texts this project had
 // already generated (every representative argument and judge ruling
 // across 50 real trials, zero additional OpenRouter cost since it only
-// reads already-stored content) found exactly one earlier, unnoticed
+// reads already-stored content) found exactly one earlier
 // occurrence of the same signature (also grey_worm, also on the
 // mistral-large-2512 tier) - 2 of 168 total (166 and 85 words). The next
 // highest real run, at 62 words, was inspected in full and is itself a
@@ -283,14 +283,13 @@ function detectDegenerateRun(content: string): { degenerate: boolean; runLength:
   return { degenerate: max >= DEGENERATE_RUN_THRESHOLD, runLength: max, sample };
 }
 
-// A THIRD failure signal, and the one that had been missing entirely: the
-// same whole sentence emitted over and over, with ordinary punctuation
-// between each copy.
+// A THIRD failure signal: the same whole sentence emitted over and over,
+// with ordinary punctuation between each copy.
 //
 // detectDegenerateRun above only ever catches ONE degeneration signature -
 // a single unbroken run of 40+ words with no punctuation at all (the
 // "...nonetheless nonetheless nonetheless..." collapse it was built for in
-// 2026-09-01). It is structurally blind to a short, well-punctuated clause
+// 2026-09-01). It cannot spot a short, well-punctuated clause
 // repeated dozens of times, because every individual chunk between the
 // periods is short. That second signature is not hypothetical and not
 // rare: re-scanning the entire real corpus this project has generated (689
@@ -300,8 +299,7 @@ function detectDegenerateRun(content: string): { degenerate: boolean; runLength:
 // run detector scored every single one of them clean (their longest
 // punctuation-free runs were only 10-24 words, nowhere near the 40-word
 // threshold). This is the failure mode behind the original
-// frequency_penalty/presence_penalty work, and it had been shipping
-// undetected the whole time since.
+// frequency_penalty/presence_penalty work.
 //
 // It flags a text on any of four verbatim-repetition patterns in its
 // sentences, two more in its clauses (see CLAUSE_SPLIT below), and two
@@ -361,7 +359,7 @@ function detectDegenerateRun(content: string): { degenerate: boolean; runLength:
 //   rejected 12: 10 degenerate and 2 sound. They missed one degenerate
 //   reply - a daenerys_targaryen closing re-emitting a 16-word sentence
 //   after a single sentence in between, which the 15-word minimum would
-//   have caught. That is the recall the 18-word minimum gives up, and the
+//   have caught. That is the recall trade-off of the 18-word minimum, and the
 //   first live case of it.
 // Anaphora does NOT trip the sentence rules: real anaphora repeats an
 // opening phrase and then continues differently ("I ask you to
@@ -500,7 +498,7 @@ const CLOSING_LOOKBACK = 4;
 const MIN_WORDS_FOR_CLOSING_COPY = 8;
 
 /**
- * Word-level similarity of two normalized sentences, given as their words:
+ * Word-level similarity of two normalised sentences, given as their words:
  * one less their word edit distance over the longer one's length - 1 for
  * identical, 0 for nothing in common.
  */
@@ -524,7 +522,7 @@ function normalizeSentenceForRepeatCheck(sentence: string): string {
   return sentence.trim().toLowerCase().replace(/\s+/g, ' ').replace(/[^\w\s]/g, '');
 }
 
-/** The number of words in a sentence already normalized. */
+/** The number of words in a sentence already normalised. */
 function wordCount(normalized: string): number {
   return normalized.split(' ').filter(Boolean).length;
 }
@@ -754,7 +752,7 @@ export const DEGENERATE_RETRIED_DIFF_MODEL_MARKER = '[degenerate-retried-diff-mo
 export const DEGENERATE_FINAL_MARKER = '[degenerate-final]';
 // An HTTP error other than a 402, a 408, a 429 or a 5xx (a removed model
 // id, a request the endpoint refuses, a key it will not take) at any tier
-// but the last, discarded in favor of escalating to the next
+// but the last, discarded in favour of escalating to the next
 // tier - see the `!response.ok` branch below for why this needed its own
 // marker rather than falling straight to a terminal failure() the way it
 // used to.
@@ -768,7 +766,7 @@ export const HTTP_ERROR_ESCALATED_MARKER = '[http-error-escalated]';
 // retried or escalated. These used to leave no trace at all: the retry
 // branches simply `continue`d without logging anything, so a call that
 // timed out repeatedly showed the user a frozen card and left nothing in
-// the call log to explain it afterward - the exact situation that made a
+// the call log to explain it afterwards - the exact situation that made a
 // real 6-minute stall (2026-09-20) impossible to diagnose from the UI. Now
 // each discarded attempt is written as a row of its own the moment it is
 // discarded, whatever discarded it (see onDiscardedAttempt below).
@@ -1040,7 +1038,7 @@ export async function callOpenRouter(
     // Used instead of `marker` when this failure actually moves the chain
     // to a different model, so the call log can distinguish "re-tried the
     // same model" from "escalated" - the two read very differently to
-    // someone reading the log afterward.
+    // someone reading the log afterwards.
     escalatedMarker?: string;
     model: string;
     reason: string;
@@ -1248,7 +1246,7 @@ export async function callOpenRouter(
           // 400 - see modelRequiresReasoning in models.ts) - omitted
           // entirely for those rather than forced off.
           ...(modelRequiresReasoning(attemptModel) ? {} : { reasoning: { enabled: false } }),
-          // A real response was observed spiraling into the same short
+          // A real response was observed spiralling into the same short
           // clause repeated for its entire remaining token budget (never
           // reaching a natural stopping point) - a known small-model
           // degeneration mode, not a prompt-content problem, since the
@@ -1257,7 +1255,7 @@ export async function callOpenRouter(
           // appeared, which specifically counteracts a loop that would
           // otherwise keep reinforcing itself; presence_penalty adds a
           // smaller flat push away from anything already said, encouraging
-          // the response to keep moving toward an actual conclusion.
+          // the response to keep moving towards an actual conclusion.
           //
           // Raised from an earlier 0.4/0.2 after real testing showed that
           // pair wasn't reliably enough: a live response still spiralled
@@ -1389,7 +1387,7 @@ export async function callOpenRouter(
         // Real incident (2026-09-20): mistralai/mistral-large-2512, tier
         // 2's model at the time (it is anthropic/claude-haiku-4.5 now -
         // see models.ts), was deprecated/removed from OpenRouter's
-        // catalog sometime after this chain was built, so every call that
+        // catalogue sometime after this chain was built, so every call that
         // needed to escalate past tier 1 failed outright here with HTTP
         // 404 "No endpoints found for mistralai/mistral-large-2512" - even
         // though tier 3 (openai/gpt-5.6-sol) and tier 4
@@ -1496,7 +1494,7 @@ export async function callOpenRouter(
       // of its own that would otherwise trigger a false positive here.
       const degenerateCheck = !lengthTruncated ? detectDegenerateRun(content) : null;
       // The second degeneration signature, and the one the run-length check
-      // above is structurally blind to - see detectRepeatedSentences. Also
+      // above cannot spot - see detectRepeatedSentences. Also
       // skipped for an already-truncated response, for the same reason: a
       // response cut off mid-thought is being discarded anyway.
       const repeatCheck = !lengthTruncated ? detectRepeatedSentences(content) : null;

@@ -18,9 +18,7 @@
  * that exists on the backend but is missing or misspelled in app.js falls
  * straight past isRetriedMarkerLog()'s guard in deriveRoleStates() and lands
  * in the terminal-failure branch, so an agent card reads "call failed" while
- * its escalation chain is still running and about to succeed. That is the
- * bug 197609b was written to fix, it fails silently, and
- * it only shows on the escalation path - the path a developer sees least.
+ * its escalation chain is still running and about to succeed.
  */
 
 const fs = require('node:fs');

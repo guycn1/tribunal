@@ -7,12 +7,11 @@
  * dev tools or just fetches app.js directly. Its only real job is to
  * reject the laziest class of automated traffic - mass scanners that
  * POST to guessed/scraped API paths without ever having loaded the
- * actual page - for near-zero implementation cost. A caller who has
- * actually looked at app.js first defeats this trivially.
+ * actual page - for near-zero implementation cost.
  *
  * What bounds spend is the site-wide call cap, isGlobalCallCapExceeded()
  * in db.ts, which this cannot substitute for - this is layer three of
- * three, not the load-bearing one.
+ * three.
  *
  * Fails OPEN (allows the request through) when SITE_GATE_TOKEN isn't
  * configured, rather than closed: an env var that didn't get set must
@@ -26,8 +25,8 @@ export function isSiteGateOk(headers: Record<string, string | undefined>): boole
   const expected = process.env.SITE_GATE_TOKEN;
   if (!expected) return true;
 
-  // Netlify Functions normalize incoming header names to lowercase, but
-  // that's normalized by the platform before this code runs, not
+  // Netlify Functions normalise incoming header names to lowercase, but
+  // that's normalised by the platform before this code runs, not
   // guaranteed by the HTTP spec itself - looking the key up
   // case-insensitively costs nothing and removes any doubt.
   for (const key of Object.keys(headers)) {

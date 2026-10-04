@@ -61,7 +61,7 @@ export interface TrialSummary extends TrialRecord {
   // a final failure, an attempt discarded for a retry or an escalation
   // (including one the chain then recovered from in full), or a row an
   // abort wrote (the abort endpoint's, and the stopped call's own). Kept as
-  // a real, honest low-level fact, but deliberately NOT what the sidebar's
+  // a low-level fact, but deliberately NOT what the sidebar's
   // status label is based on. A transient failure that the retry
   // chain self-heals within its own budget is an ordinary, expected event
   // here, not an exception - so a label driven by this would fire on most
@@ -321,7 +321,7 @@ export async function upsertJudgeRuling(params: {
  * model/attempt rather than only learning about it once that attempt is
  * later discarded or kept. Errors are thrown here and swallowed by
  * callOpenRouter(), which catches a failing onAttemptStart callback and
- * carries on - this is a best-effort live-progress signal, never allowed
+ * carries on - this is a live-progress signal, never allowed
  * to interrupt the actual retry logic.
  */
 export async function upsertAgentProgress(params: {
@@ -380,7 +380,7 @@ const GLOBAL_CALL_WINDOW_MS = 24 * 60 * 60 * 1000;
  *
  * Deliberately does NOT log anything when the cap is hit (unlike every
  * other outcome in this file) - a logged row here would itself count
- * toward the very total this function checks, which would make a trip of
+ * towards the very total this function checks, which would make a trip of
  * the cap self-perpetuating: once tripped, every subsequent check would
  * see its own past rejections and stay tripped for the rest of the
  * window even if real traffic had stopped. The caller still returns an
@@ -458,7 +458,7 @@ export async function isGlobalCallCapExceeded(): Promise<{ exceeded: boolean; co
  * Fails open on error - a Supabase hiccup returns false ("not aborted"),
  * so the call carries on, and a transient lookup failure can never
  * silently kill a real, wanted call. Spending a little extra on a call the user abandoned
- * is the far cheaper mistake of the two.
+ * is the far cheaper outcome of the two.
  */
 export async function isTrialAborted(trialId: string): Promise<boolean> {
   const supabase = getSupabaseClient();

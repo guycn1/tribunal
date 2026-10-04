@@ -137,8 +137,7 @@ check('no stale card survives a trial change', beforeTrial.every((c, i) => c !==
 console.log('\n=== Call log distinguishes a truncation from a degeneration ===');
 // Both come through the same content-quality marker, but they are different
 // failures: one ran into the token cap, the other did not and a detector
-// flagged it. Labelling a capped response "degenerated" was simply
-// inaccurate.
+// flagged it. Labelling a capped response "degenerated" was inaccurate.
 const { renderCallLog } = app;
 /**
  * Renders a one-row call log for a representative whose only logged attempt

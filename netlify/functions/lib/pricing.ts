@@ -14,7 +14,7 @@ const PRICING_PER_MILLION_TOKENS: Record<string, { prompt: number; completion: n
   'mistralai/mistral-small-24b-instruct-2501': { prompt: 0.05, completion: 0.08 },
   // No longer used (see getTruncationFallbackModel in models.ts) -
   // mistralai/mistral-large-2512 was deprecated/removed from OpenRouter's
-  // catalog (confirmed 2026-09-20, its model page now 404s). Entry kept,
+  // catalogue (confirmed 2026-09-20, its model page now 404s). Entry kept,
   // not deleted, since real historical api_call_logs rows already
   // reference this model id and this table's only consumer
   // (calculateCost) is never called retroactively against stored rows.

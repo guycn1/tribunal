@@ -186,7 +186,7 @@ const JUDGE_ROLES = ['barak', 'elon', 'shamgar'];
 /**
  * Must match ABORTED_BY_USER_MESSAGE in netlify/functions/lib/db.ts exactly
  * (asserted by tests/shared-constants.test.js)
- * - used to recognize an aborted call's log row (see deriveRoleStates), so
+ * - used to recognise an aborted call's log row (see deriveRoleStates), so
  * it renders with the distinct "aborted" badge instead of the generic
  * "call failed" one.
  */
@@ -258,8 +258,7 @@ const ABORTED_MID_CALL_MARKER = '[aborted-mid-call]';
  * netlify/functions/lib/siteGate.ts). This is NOT a real secret and isn't
  * meant to be one - it's shipped in this public, unauthenticated file, so
  * anyone who looks can read it. Its only job is to reject automated
- * traffic that never loaded this page at all; a caller who did look
- * defeats it trivially. Must match the SITE_GATE_TOKEN environment
+ * traffic that never loaded this page at all. Must match the SITE_GATE_TOKEN environment
  * variable configured on the Netlify Functions side exactly, or every
  * gated request is rejected (creating a trial with a 401; an agent call
  * silently, visible only in Netlify's function logs) - if that env var is
@@ -738,10 +737,10 @@ async function abortCurrentTrial() {
   if (!state.abortController || !state.trialId) return;
 
   // Same loading cue as the other two flows (opening a trial from history,
-  // beginning a new one) - a real, observed 2-3s gap between clicking
+  // beginning a new one) - a 2-3s delay between clicking
   // Abort and the page actually settling (the Abort button disappearing,
   // "Begin new trial" re-enabling), even though the card state below
-  // updates synchronously and immediately. That gap comes from whatever
+  // updates synchronously and immediately. That short delay comes from whatever
   // beginTrial()'s own in-flight chain is doing when the abort signal
   // fires - e.g. pollForRoles()'s GET isn't itself signal-aware, so an
   // already-in-flight poll only notices the abort on its *next* loop
@@ -935,7 +934,7 @@ function sleep(ms, signal) {
  * has two separate steps: triggerAgent() fires the request and reports
  * only what's knowable synchronously (a network failure, or a
  * platform-level rejection like Netlify's own per-IP rate limit); the
- * real, eventual outcome is discovered afterward by polling
+ * real, eventual outcome is discovered afterwards by polling
  * GET /api/trials/:id (see pollForRoles() and deriveRoleStates() below).
  *
  * @param {string} url The role's endpoint, e.g.
@@ -1143,7 +1142,7 @@ function deriveRoleStates(data) {
  * the full 4-tier escalation chain - see openrouter.ts) plus real margin
  * for polling/network overhead. This drifted out of sync once before: the
  * server budget was raised from 120s to 650s to fit the escalation chain,
- * but this constant stayed at its old value (150s) - a real, observed
+ * but this constant stayed at its old value (150s) - an observed
  * consequence was a role that genuinely succeeded server-side (verified
  * directly in the DB) still showing as unresolved on the client because
  * polling gave up first; tests/shared-constants.test.js keeps it above
@@ -1404,7 +1403,7 @@ const HISTORY_RETRY_BACKOFF_MS = 700;
  */
 async function refreshHistory() {
   // Only show the big "fetching" placeholder when there's genuinely
-  // nothing to look at yet - this is what was looking frozen on a slow
+  // nothing to look at yet - this is what used to look frozen on a slow
   // fetch (observed up to ~10s, likely Supabase round-trip time, see the
   // query-shape note on listTrials in db.ts). A refresh of an
   // already-populated list leaves the existing items on screen rather than
@@ -1761,7 +1760,7 @@ const SCROLLBAR_FADE_MS = 220;
  * used) - repeating it ~13 times over SCROLLBAR_FADE_MS produces a real
  * smooth fade with no CSS transition or animation involved. This incidentally fixes the original flash problem better
  * than the delay did, with no artificial dead time: a quick pass only
- * reaches a small partial brightening before reversing back toward
+ * reaches a small partial brightening before reversing back towards
  * rest, rather than either waiting through a delay or snapping to full
  * brightness instantly. animateTo() reverses smoothly from wherever the
  * fade currently is if the target flips mid-animation (e.g. the pointer
@@ -1801,7 +1800,7 @@ function attachScrollbarFade(el) {
   paint(current);
 
   /**
-   * One animation frame: moves linearly from fadeFrom toward target, and
+   * One animation frame: moves linearly from fadeFrom towards target, and
    * schedules the next frame until the fade is complete.
    * @param {DOMHighResTimeStamp} now
    */
@@ -1813,7 +1812,7 @@ function attachScrollbarFade(el) {
   }
 
   /**
-   * Starts a fade toward newTarget from wherever the current one has got to,
+   * Starts a fade towards newTarget from wherever the current one has got to,
    * so a reversal mid-fade doesn't jump. A no-op if that is already the
    * target.
    * @param {number} newTarget A percentage.
@@ -1839,7 +1838,7 @@ function attachScrollbarFade(el) {
 // calling attachScrollbarFade() from any earlier point in the script
 // (this used to sit right after the button listeners near the top)
 // throws a real ReferenceError reading those consts before they're
-// initialized. Real bug, caught live (2026-09-04): the page failed to
+// initialised. Real bug, caught live (2026-09-04): the page failed to
 // load at all, not just a visual glitch.
 attachScrollbarFade(el.historyList);
 
@@ -2110,7 +2109,7 @@ function formatCost(cost) {
  *
  * "Grey Worm" instead of "grey_worm" - REPRESENTATIVE_META already has the
  * proper display name for the four representatives; judges are single
- * words, so plain capitalization gives "Barak"/"Elon"/"Shamgar" directly
+ * words, so plain capitalisation gives "Barak"/"Elon"/"Shamgar" directly
  * (deliberately not JUDGE_META's name, which is "Judge — Barak method" -
  * too long for this column and redundant with the Type column showing
  * "J" already). Also means text wraps at the space in a name like
@@ -2181,7 +2180,7 @@ function renderCallLog() {
     // A transient failure (timeout/408/429/5xx/empty or cut-short reply)
     // that was retried or escalated. These are the rows that did not exist at all before
     // 2026-09-20 - the retry branches used to loop silently, which is
-    // exactly why a six-minute stall left nothing to read here afterward.
+    // exactly why a six-minute stall left nothing to read here afterwards.
     const isTransientRetried = err.startsWith(TRANSIENT_RETRIED_MARKER);
     const isAbortedMidCall = err.startsWith(ABORTED_MID_CALL_MARKER);
     // The row the abort endpoint writes for each role still pending when
@@ -2190,7 +2189,7 @@ function renderCallLog() {
     // sidebar's aborted badge, rather than as a red failure.
     const isAbortRequest = entry.errorMessage === ABORTED_BY_USER_MESSAGE;
     // The content-quality markers cover two different ways an attempt
-    // ends, and calling both of them "degenerated" was simply inaccurate:
+    // ends, and calling both of them "degenerated" was inaccurate:
     // one ran into the token cap, the other did not and a detector flagged
     // it. (The capped kind is usually a repetition loop
     // too - see the NAMING note in openrouter.ts - but the cap, not a
@@ -2370,7 +2369,7 @@ function renderCallLogTotals() {
  * slot, which would push the worst case to ~32.5 min (see the comment on
  * MAX_CONCURRENT_CALLS above). Kept at 40 minutes: real margin above that,
  * so a trial that's actually still working - however slowly - doesn't get
- * mislabeled "interrupted" in the history sidebar before it's had a real
+ * mislabelled "interrupted" in the history sidebar before it's had a real
  * chance to finish. tests/shared-constants.test.js keeps it above twice
  * TOTAL_BUDGET_MS.
  */
