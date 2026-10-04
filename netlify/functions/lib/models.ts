@@ -22,11 +22,13 @@ export const ALL_AGENT_ROLES = Object.keys(ROLE_ENV_VAR);
 // Tier 1's completion-token cap. Shared by representative-background.ts and
 // judge-background.ts, and exposed to the frontend via case.ts, so there is
 // exactly one place this number is defined (test fixtures restate the
-// current value, but nothing reads it from them) - the frontend marks a
-// success saved truncated before that became a failure by comparing its
-// completion_tokens against this same constant (see isLegacyTruncation()
-// in app.js), and that would silently go wrong if the two ever drifted
-// apart.
+// current value, but nothing reads it from them). The frontend uses it to
+// mark a success saved truncated before that became a failure (see
+// isLegacyTruncation() in app.js): those rows were logged under a cap of
+// 1,400, this constant's value since 2026-08-28, and are read against it.
+// Should this value ever change, give isLegacyTruncation() a 1,400 of its
+// own, so those rows are still read against the cap they were written
+// under.
 // One shared value for both roles rather than two separate ones: real
 // measured calls have shown both representatives and judges capable of
 // running past what their stated word-count target would suggest, so

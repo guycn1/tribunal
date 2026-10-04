@@ -540,7 +540,9 @@ const TRUNCATION_BECAME_FAILURE_AT = Date.parse('2026-08-29T13:19:36Z');
  * True when a success logged at `loggedAt` with this many completion tokens
  * is one of the truncated replies saved before TRUNCATION_BECAME_FAILURE_AT:
  * logged before then, with a completion that is a whole multiple of the
- * shared token cap (state.maxTokens, from /api/case).
+ * shared token cap (state.maxTokens, from /api/case). Those rows were written
+ * under a 1,400-token cap, the value state.maxTokens carries - see the
+ * comment on AGENT_MAX_TOKENS in models.ts.
  *
  * A multiple rather than an exact match, because some of those rows have a
  * completion of exactly 2 x maxTokens (both the original attempt and the
@@ -737,15 +739,13 @@ async function abortCurrentTrial() {
   if (!state.abortController || !state.trialId) return;
 
   // Same loading cue as the other two flows (opening a trial from history,
-  // beginning a new one) - a 2-3s delay between clicking
-  // Abort and the page actually settling (the Abort button disappearing,
-  // "Begin new trial" re-enabling), even though the card state below
-  // updates synchronously and immediately. That short delay comes from whatever
-  // beginTrial()'s own in-flight chain is doing when the abort signal
-  // fires - e.g. pollForRoles()'s GET isn't itself signal-aware, so an
-  // already-in-flight poll only notices the abort on its *next* loop
-  // check, not instantly - not something worth fixing request-by-request
-  // when a loading overlay already covers exactly this kind of short delay.
+  // beginning a new one) - the card state below updates synchronously and
+  // immediately, but the page settles (the Abort button disappearing,
+  // "Begin new trial" re-enabling) only after a few network round trips,
+  // 2-3s in all: the abort POST below, and beginTrial()'s own unwinding,
+  // which ends any poll in flight (a GET already sent finishes first), then
+  // refreshes the call log and the run history before its finally block
+  // runs. The overlay covers that.
   el.mainLoadingOverlay.classList.remove('hidden');
   el.sidebar.classList.add('loading-locked');
 
@@ -1381,13 +1381,12 @@ function renderHistoryPlaceholder(message, showSpinner) {
 // This endpoint only touches Supabase, no OpenRouter/Netlify quota at
 // stake, so a few quick retries on a transient failure are cheap and
 // worthwhile - a fetch failure here is much more likely to be a passing
-// blip (a real one was observed: this exact local dev setup is documented
-// to occasionally contend when many requests hit the same long-running
-// process, e.g. a manual test call landing at the same moment as a page
-// load) than a persistent problem, so it deserves the same "self-heal
-// before showing an alarming error" treatment representative/judge calls
-// already get - just on a much shorter, lighter budget suited to a small
-// metadata fetch rather than a real generation.
+// blip than a persistent problem (one was seen in local testing, with a
+// manual test call landing on the dev server at the same moment as a page
+// load), so it gets the same "self-heal before showing an alarming error"
+// treatment representative/judge calls already get - just on a much
+// shorter, lighter budget suited to a small metadata fetch rather than a
+// real generation.
 /** How many times to try GET /api/trials before showing an error. */
 const HISTORY_RETRY_ATTEMPTS = 3;
 /** Pause after a failed attempt, in ms, multiplied by the attempt number. */
@@ -1548,6 +1547,13 @@ function renderCaseSheet() {
  */
 const SPINNER_ANIMATION_MS = 800;
 /**
+ * Duration of one spinner rotation under prefers-reduced-motion, in ms. Must
+ * match the reduced-motion `animation-duration` in styles.css, and be a
+ * whole multiple of SPINNER_ANIMATION_MS - see spinnerHtml() for why, and
+ * tests/shared-constants.test.js, which asserts both.
+ */
+const SPINNER_REDUCED_MOTION_MS = 2400;
+/**
  * Returns the markup for a spinner that looks continuous across
  * re-renders.
  *
@@ -1562,13 +1568,19 @@ const SPINNER_ANIMATION_MS = 800;
  * a negative animation-delay keyed to the real wall clock tells the
  * browser "this animation has already been running for X ms," so a freshly
  * created element starts at exactly the angle a continuously running one
- * would already be at. SPINNER_ANIMATION_MS must match the animation's
- * duration in styles.css (currently 0.8s / 800ms).
+ * would already be at.
+ *
+ * The rotation takes SPINNER_ANIMATION_MS normally and
+ * SPINNER_REDUCED_MOTION_MS under prefers-reduced-motion, and the delay is
+ * the wall clock taken modulo the longer of the two. Because that is a
+ * whole multiple of the shorter one, the same delay lands on the
+ * continuously-running angle at either speed, so the page never needs to
+ * know which one the browser is using.
  *
  * @returns {string} HTML for one spinner element.
  */
 function spinnerHtml() {
-  const offset = -(Date.now() % SPINNER_ANIMATION_MS);
+  const offset = -(Date.now() % SPINNER_REDUCED_MOTION_MS);
   return `<span class="spinner" style="animation-delay: ${offset}ms"></span>`;
 }
 
@@ -2213,10 +2225,11 @@ function renderCallLog() {
     // single-attempt truncation, or 2x from a retry that also truncated) -
     // see isLegacyTruncation().
     const wasTruncated = entry.status === 'success' && isLegacyTruncation(entry.completionTokens, entry.timestamp);
-    // Total is what actually matters at a glance (it's what the cap and
-    // cost are driven by); prompt/completion break it down underneath in
-    // the same dim, secondary-line treatment status-caption already uses
-    // for "why" text, rather than three equally-weighted numbers.
+    // Total leads, as the one figure to read at a glance; prompt/completion
+    // break it down underneath - the split that cost (priced separately for
+    // each) and the token cap (on completion tokens only) turn on - in the
+    // same dim, secondary-line treatment status-caption already uses for
+    // "why" text, rather than three equally-weighted numbers.
     const tokens = `
       <div class="cell-stack">
         <strong>${entry.totalTokens.toLocaleString()}</strong>

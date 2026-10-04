@@ -15,9 +15,10 @@ const PRICING_PER_MILLION_TOKENS: Record<string, { prompt: number; completion: n
   // No longer used (see getTruncationFallbackModel in models.ts) -
   // mistralai/mistral-large-2512 was deprecated/removed from OpenRouter's
   // catalogue (confirmed 2026-09-20, its model page now 404s). Entry kept,
-  // not deleted, since real historical api_call_logs rows already
-  // reference this model id and this table's only consumer
-  // (calculateCost) is never called retroactively against stored rows.
+  // not deleted, as the record of the price that real historical
+  // api_call_logs rows naming this model were costed at. This table's only
+  // consumer (calculateCost) never runs against stored rows, so the entry
+  // has no effect at runtime either way.
   // Source (as it was): https://openrouter.ai/mistralai/mistral-large-2512
   'mistralai/mistral-large-2512': { prompt: 0.5, completion: 1.5 },
   // Tier 2 of the escalation chain (see getTruncationFallbackModel in

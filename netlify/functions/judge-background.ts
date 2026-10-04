@@ -26,8 +26,8 @@ import type { JudgeRole, RepresentativeRole } from './lib/types';
 // the 1.2-1.25 tokens per word the default model's stored replies average
 // (measured on 2026-10-04). Sized
 // with headroom above that target rather than a tight fit against it,
-// since a cap hit exactly mid-sentence reads far worse than a shorter
-// completion under it.
+// since a reply that reaches the cap is never kept: callOpenRouter()
+// retries or escalates it, which costs a further attempt.
 //
 // Asked for, not observed: in practice representatives are the ones that
 // overrun. Counted across every row in api_call_logs as of 2026-09-21,

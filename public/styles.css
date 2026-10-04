@@ -251,10 +251,11 @@ body {
   transition: border-color 0.2s ease;
 }
 
-/* White rather than the theme's gold accent - .active (below) has two
-   classes vs. this rule's one, so it naturally wins on specificity alone
-   when an entry is both the active one and currently hovered, without
-   needing a combined :hover.active selector. */
+/* White rather than the theme's gold accent. This rule and .active (below)
+   have equal specificity - a class and a pseudo-class against two classes -
+   so .active wins by coming later in the file, which keeps an entry that is
+   both the active one and currently hovered at the active brightness
+   without a combined :hover.active selector. Keep .active below this rule. */
 .history-item:hover {
   border-color: color-mix(in srgb, var(--text) 45%, transparent);
 }
@@ -636,18 +637,15 @@ body {
 /* A reported Firefox-only rendering glitch (2026-09-04): the
    bottom-fade gradient below composited on top of scrolling card text
    came out jagged/"torn" per line instead of a smooth blend (not
-   reproduced in Chrome). Two attempted fixes, both transform:
-   translateZ(0) (a real, standard mitigation for exactly this class of
-   text-under-overlay compositing issue in principle) - first directly
-   on .card-body-scroll, then on this wrapper instead once that broke
-   its scrollbar-color styling - were both reverted (2026-09-04): the
-   user reported zero improvement to the jaggedness from either, AND
-   the second attempt's scrollbar regression turned out to extend to
-   .history-list too, an element with no DOM/CSS relationship to
-   .card-body-scroll-wrap at all - a result that contradicts the actual
-   mechanism this fix was supposed to rely on. The fade stays as it
-   is in every browser: it does its job in Firefox too, and the finish of
-   its edge there is a matter of how that engine composites text. */
+   reproduced in Chrome). transform: translateZ(0), a standard mitigation
+   for text-under-overlay compositing, was tried first on
+   .card-body-scroll and then on this wrapper, made no difference to the
+   jaggedness in either place, and was reverted (2026-09-04). A change to
+   the scrollbars seen in Firefox during those attempts, on .history-list
+   as well as here, came from the browser updating to Firefox 155 at the
+   same time (see the fallback block further down), not from the
+   transform. The fade stays as it is in every browser: it does its job in
+   Firefox too. */
 
 /* Hidden by default (opacity 0, see .has-more-below below) - only shown
    once app.js confirms there's real hidden content, and hidden again
@@ -932,9 +930,10 @@ body {
   border-top-color: var(--accent);
   border-radius: 50%;
   /* Duration must match SPINNER_ANIMATION_MS in app.js (asserted by
-     tests/shared-constants.test.js) — that value is
-     what keeps a freshly re-created spinner element visually in sync with
-     ones already on screen, via a computed negative animation-delay. */
+     tests/shared-constants.test.js). With the reduced-motion duration
+     below, it is what keeps a freshly re-created spinner element visually
+     in sync with ones already on screen, via a computed negative
+     animation-delay - see spinnerHtml() in app.js. */
   animation: spin 0.8s linear infinite;
 }
 
@@ -955,6 +954,9 @@ body {
   }
 }
 
+/* Must match SPINNER_REDUCED_MOTION_MS in app.js, and stay a whole multiple
+   of the 0.8s above (both asserted by tests/shared-constants.test.js) - see
+   spinnerHtml() in app.js. */
 @media (prefers-reduced-motion: reduce) {
   .spinner {
     animation-duration: 2.4s;

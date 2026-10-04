@@ -163,7 +163,10 @@ async function main() {
   // ------------------------------------------------------------------ 2
   await test('Deliberate anaphora is NOT mistaken for degeneration', async () => {
     // Real anaphora repeats an opening and continues differently, so the
-    // whole sentences differ. The abandoned 5-word-phrase heuristic used to
+    // whole sentences differ, and here each continuation differs enough that
+    // no two sentences are near-copies either: no pair is 80% alike, and the
+    // closing sentence is at most 55% like any before it, under the closing
+    // rule's 60%. The abandoned 5-word-phrase heuristic used to
     // false-positive on exactly this.
     const anaphora = [
       'I ask you to consider the scale of the harm.',

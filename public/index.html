@@ -142,11 +142,12 @@
                    wrapped to exactly two lines anywhere between 118px and
                    144px, so its old 144px share was idle at this width,
                    and at wider viewports 20% still fit the same id on one
-                   line everywhere 22% did. Going further (19%/18%) did
-                   start splitting the model name at ~1100px/~1280px,
-                   which is why this stops at 20/17. At 640px, the longest
-                   model id now in use, a five-digit token breakdown and
-                   every header all fit on one line (measured 2026-10-03). -->
+                   line everywhere 22% did; going further (19%/18%) split
+                   that id at ~1100px/~1280px. At 640px, the longest model
+                   id now in use, a five-digit token breakdown and every
+                   header all fit on one line (measured 2026-10-03). Model
+                   stays at 20% for the margin: 128px there against the
+                   121px that id needs, where 19% would leave under 1px. -->
               <col style="width: 13%" />
               <col style="width: 6%" />
               <col style="width: 20%" />

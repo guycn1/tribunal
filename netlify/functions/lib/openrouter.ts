@@ -76,10 +76,11 @@ const MIN_REMAINING_TO_ATTEMPT_MS = 10000;
 // so it can never recreate the original unbounded-retry behaviour: a tier gets at
 // most a few free fast retries before its failures start counting normally.
 const FAST_FAILURE_THRESHOLD_MS = 10000;
-// Per tier, and reset on every escalation. With backoff() this is roughly
-// 6s of patience per tier before a persistently-failing tier is escalated
-// off anyway - enough to ride out a burst limit, far too little to hide a
-// real outage.
+// Per tier, and reset on every escalation. The backoff() pauses between
+// these retries add up to about 6.5-7.5s at tier 1 and 8-9s at later tiers
+// (backoff() grows with the call's overall attempt count, not the tier's)
+// before a persistently-failing tier is escalated off anyway - enough to
+// ride out a burst limit, far too little to hide a real outage.
 const MAX_FAST_TRANSIENT_RETRIES_PER_TIER = 4;
 
 /**
@@ -690,17 +691,18 @@ function detectRepeatedSentences(content: string): { degenerate: boolean; reason
 }
 
 // Sent on every attempt after the first, whatever caused the retry - a
-// same-tier retry as much as an escalation to the next tier. Kept
-// deliberately general rather than naming a specific cause, since a wrong
-// guess (e.g. telling a degenerate-but-not-truncated response it was "cut
-// off") would be actively misleading to the model on the retry.
+// same-tier retry as much as an escalation to the next tier. It names both
+// content failures it was written for, a reply cut off at the length limit
+// and one that trailed into repetitive, run-on text, rather than the one
+// that occurred: the retry is not told which, and a single guess (telling
+// a looping reply it was "cut off", say) would point the model the wrong
+// way.
 //
 // `attempt > 1` is the gate, so this is also appended after a transient
 // failure - a timeout, a 429, an empty-content 200 - where the previous
-// attempt produced no content at all and there was nothing to be too long
-// or too repetitive. It suits that case too: the reminder asks for a
-// concise, well-punctuated answer, which is what every retry wants,
-// whatever discarded the attempt before it.
+// attempt produced no content at all. What the reminder asks for - a
+// concise, well-punctuated answer that reaches a clear ending - is what
+// every retry wants, whatever discarded the attempt before it.
 const CONCISENESS_REMINDER: OpenRouterMessage = {
   role: 'user',
   content:
@@ -1356,7 +1358,9 @@ export async function callOpenRouter(
 
       // A 408 is OpenRouter's own "your request timed out" - the same
       // failure as an attempt this code times out itself - so it is
-      // retried like one, alongside the 5xx errors.
+      // retried, not skipped like a refused request (the !response.ok
+      // branch below). It shares this branch with the 5xx errors, the
+      // backoff() pause after it included.
       if (response.status >= 500 || response.status === 408) {
         lastError = `OpenRouter returned HTTP ${response.status}`;
         console.log(`[openrouter] ${label}: attempt ${attempt} - ${lastError}, retrying`);
@@ -1488,15 +1492,12 @@ export async function callOpenRouter(
         `[openrouter] ${label}: attempt ${attempt} - success, served by ${servingModel}, ${completionTokens} completion tokens, finish_reason=${finishReason ?? 'unknown'}, ${Date.now() - startedAt}ms total`
       );
       const lengthTruncated = finishReason === 'length';
-      // Only worth checking when the model didn't already hit the token
-      // cap - that failure is already caught above, and a real cut-off
-      // response is likely to contain an in-progress, comma-less clause
-      // of its own that would otherwise trigger a false positive here.
+      // Not run on a reply that hit the token cap: that reply is reported
+      // as truncated whatever its text holds, and discarded either way.
       const degenerateCheck = !lengthTruncated ? detectDegenerateRun(content) : null;
       // The second degeneration signature, and the one the run-length check
-      // above cannot spot - see detectRepeatedSentences. Also
-      // skipped for an already-truncated response, for the same reason: a
-      // response cut off mid-thought is being discarded anyway.
+      // above cannot spot - see detectRepeatedSentences. Skipped for a
+      // capped reply too, for the same reason.
       const repeatCheck = !lengthTruncated ? detectRepeatedSentences(content) : null;
       if (lengthTruncated || degenerateCheck?.degenerate || repeatCheck?.degenerate) {
         let reason: string;
@@ -1623,10 +1624,11 @@ export async function callOpenRouter(
         if (next.canContinue) {
           // backoff()'s delay exists to avoid hammering a rate limiter that
           // will keep refusing for a moment - a real reason to wait after
-          // the 429/5xx/empty-content branches above, but not after a
-          // timeout, where nothing suggests waiting helps and every
-          // remaining millisecond of a fixed budget matters more than a
-          // precautionary pause.
+          // the 429/408/5xx/empty-content branches above, which can come
+          // back in moments. A timeout here has already run its attempt's
+          // whole ceiling, so a further pause would only spend budget the
+          // next attempt can use. A network error that failed at once
+          // still gets the pause.
           if (!isTimeout) await backoff(attempt);
           continue;
         }
@@ -1718,8 +1720,9 @@ async function describeErrorBody(response: Response): Promise<string> {
 }
 
 /**
- * Exponential backoff with jitter, capped so a long backoff never eats the
- * remaining budget that an actual attempt needs. The jitter matters here:
+ * Exponential backoff with jitter, capped at 2-2.3s, which keeps the
+ * fast-failure retries (MAX_FAST_TRANSIENT_RETRIES_PER_TIER) to a few
+ * seconds of waiting per tier. The jitter matters here:
  * the agents in each phase (all four representatives, then all three
  * judges) run concurrently on one account, and an unjittered backoff
  * makes them all retry in lockstep.

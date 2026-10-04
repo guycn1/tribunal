@@ -160,6 +160,24 @@ check(
   `app.js ${spinnerMs}ms vs styles.css ${spinSeconds}s - a mismatch makes the spinner visibly jump on every re-render`
 );
 
+// Under prefers-reduced-motion the rotation slows, and spinnerHtml() takes
+// the wall clock modulo that longer duration. One delay then suits both
+// speeds only while the longer is a whole multiple of the shorter.
+const reducedMs = Number((appJs.match(/const\s+SPINNER_REDUCED_MOTION_MS\s*=\s*(\d+)/) || [])[1]);
+const reducedSeconds = Number((css.match(/prefers-reduced-motion:\s*reduce\)\s*\{\s*\.spinner\s*\{\s*animation-duration:\s*([\d.]+)s/) || [])[1]);
+check('SPINNER_REDUCED_MOTION_MS found in app.js', Number.isFinite(reducedMs), String(reducedMs));
+check('reduced-motion spinner duration found in styles.css', Number.isFinite(reducedSeconds), String(reducedSeconds));
+check(
+  'the two reduced-motion durations agree',
+  reducedMs === Math.round(reducedSeconds * 1000),
+  `app.js ${reducedMs}ms vs styles.css ${reducedSeconds}s - a mismatch makes the spinner jump on every re-render under reduced motion`
+);
+check(
+  'the reduced-motion duration is a whole multiple of the normal one',
+  Number.isFinite(reducedMs) && Number.isFinite(spinnerMs) && spinnerMs > 0 && reducedMs % spinnerMs === 0,
+  `${reducedMs} is not a multiple of ${spinnerMs} - one animation-delay can no longer suit both speeds`
+);
+
 // --- 4. Sidebar width: .sidebar <-> .main-loading-overlay ----------------
 console.log('\n=== The loading overlay starts where the sidebar ends ===');
 
