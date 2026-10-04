@@ -22,7 +22,9 @@ import type { JudgeRole, RepresentativeRole } from './lib/types';
 
 // Judges are asked for the longest output in this system - a fuller opinion
 // plus the leading VERDICT line, against a ~450-600 word target where a
-// representative gets 300-500 (roughly 600-800 tokens either way). Sized
+// representative gets 300-500 - about 560-750 tokens against 370-610, at
+// the 1.2-1.25 tokens per word the default model's stored replies average
+// (measured on 2026-10-04). Sized
 // with headroom above that target rather than a tight fit against it,
 // since a cap hit exactly mid-sentence reads far worse than a shorter
 // completion under it.

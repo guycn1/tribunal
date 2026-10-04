@@ -2,7 +2,7 @@
 
 **Case T-001: The Realm v. Jon Snow.** A fixed, canonical trial — not a general-purpose "submit any charge" tool — argued and ruled on by seven independent AI agents: four representatives (two defense, two prosecution) and three judges, each modeled on a distinct real judicial reasoning method. This is the ASE course's shared "running project": every submission implements the same fixed specification, graded on directing discipline shown, not on the artifact alone.
 
-This document is the functional/requirements spec, sourced from the ASE Book "Case Design Dossier." For how this particular submission implements it (architecture, live deployment, setup) see `README.md`; for the full build history and every engineering decision behind it, see `CLAUDE.md`.
+This document is the functional/requirements spec, sourced from the ASE Book "Case Design Dossier." For how this particular submission implements it (architecture, live deployment, setup) see `README.md`; for the build history and the engineering decisions behind it, see `CLAUDE.md`.
 
 ## 1. The charge sheet
 
@@ -60,4 +60,4 @@ Daenerys attacks King's Landing. The city surrenders, but Daenerys burns streets
 
 ---
 
-How this repo actually satisfies the above — the specific model(s) used, cost/reliability engineering, anti-abuse measures, the database (defined in `supabase/schema.sql`, and mapped in `README.md`), and every decision behind them — is documented in `README.md` (current state) and `CLAUDE.md` (full running log), not repeated here.
+How this repo actually satisfies the above — the specific model(s) used, cost/reliability engineering, anti-abuse measures, the database (defined in `supabase/schema.sql`, and mapped in `README.md`), and the decisions behind them — is documented in `README.md` (current state) and `CLAUDE.md` (running log), not repeated here.

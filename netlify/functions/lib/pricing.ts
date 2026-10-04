@@ -6,8 +6,8 @@
 // MODEL_<ROLE> override or one of the fallback-tier variables (see
 // models.ts); an unlisted paid model logs a cost of 0 rather than throwing,
 // since an unknown price should never block a real call from being logged.
-// Each entry carries its own source below. All were checked directly
-// against the listed price rather than assumed - re-verify any of them if
+// All were checked directly against OpenRouter's listed price rather
+// than assumed - re-verify any of them if
 // a model's pricing page ever shows a different number, since OpenRouter
 // can reprice a model without notice.
 const PRICING_PER_MILLION_TOKENS: Record<string, { prompt: number; completion: number }> = {

@@ -233,8 +233,10 @@ body {
      overrides flex's default min-height: auto, which would otherwise let
      this list's real content size push .sidebar taller than 100vh
      instead of actually scrolling within the space it's given. This is
-     the one thing inside .sidebar that scrolls; everything above it
-     stays fixed in place regardless of history length or page scroll. */
+     the one thing inside .sidebar that scrolls; above 900px, everything
+     above it stays fixed in place regardless of history length or page
+     scroll. Below 900px the sidebar stacks above .main and scrolls away
+     with the page (see the 900px block at the end). */
   flex: 1 1 auto;
   min-height: 0;
 }
@@ -675,7 +677,7 @@ body {
 /* Only the actual argument/ruling text (buildRepresentativeCard/
    buildJudgeCard in app.js) gets this, not the short status/dim text
    buildAgentStatusBody renders while a call is loading or failed - real
-   arguments/rulings run long enough (up to ~600 words) to make card heights
+   arguments/rulings run long enough to make card heights
    wildly inconsistent across a grid otherwise, forcing a lot of scrolling
    just to reach the call log below. A capped height with its own scrollbar
    keeps every card a predictable size while still showing a real, readable
@@ -709,9 +711,9 @@ body {
    that produces a real smooth fade with no CSS animation involved. The 15% literal below is only
    the fallback for the (practically unreachable) case the custom
    property was never set - the real values live in app.js's
-   SCROLLBAR_REST_OPACITY/SCROLLBAR_HOVER_OPACITY, and this one must be
-   kept in sync with the rest value by hand, since CSS can't read a JS
-   constant.
+   SCROLLBAR_REST_OPACITY/SCROLLBAR_HOVER_OPACITY, and this one must match
+   the rest value. CSS can't read a JS constant, so
+   tests/shared-constants.test.js compares the two.
 
    The dragging tier is unrelated to any of the above: a
    ::-webkit-scrollbar-thumb:active rule (see the fallback block further
@@ -838,7 +840,7 @@ body {
      pill's height; without the trim it also sets that height, about 1.1em
      plus the 6px of padding. */
   line-height: 1.1;
-  /* white-space: normal lets a multi-word badge (e.g. "no response yet")
+  /* white-space: normal lets a multi-word badge (e.g. "abort requested")
      wrap between words when its column is narrow. Deliberately no
      word-break: break-word here, unlike earlier - that broke single-word
      badges like "degenerated" mid-character ("degenerat" / "ed") the
@@ -860,9 +862,10 @@ body {
    pill's centre halfway between the middle of a capital letter and the
    middle of a lowercase one, and the 0.4px, split across top and bottom,
    lowers the text 0.2px from there, which looked better centred on
-   screen. Every badge label is lowercase, some with an ascender and no
-   descender ("truncated", "failed", "aborted") and the rest with a
-   descender ("degenerated") or neither ("success"). Measured by their ink
+   screen. Every badge label is lowercase. Some have an ascender and no
+   descender ("truncated", "failed", "aborted"); the rest have a descender,
+   with or without an ascender ("degenerated"), or neither ("success").
+   Measured by their ink
    in Edge, the first family sits ~0.5-0.6px above the pill's centre and
    the second ~0.6px below it, a descender pulling the ink box down
    further than the letters' bodies; "no response", with a descender and

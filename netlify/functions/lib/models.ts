@@ -52,13 +52,12 @@ export function getModelForRole(role: string): string {
 // getModelForRole() resolves to, not the same one tried again, and
 // measured as such on this workload: in the targeted trials of 2026-09-27
 // the default model degenerated in 62 of its 157 replies, this one in 1
-// of its 22. Real data showed a same-model retry doesn't behave
-// like an independent second attempt: once a role's first attempt
-// truncated, a same-model retry truncated again roughly 60-75% of the
-// time (measured on daenerys_targaryen/grey_worm, the two roles this
-// affects most) - not a fresh roll, closer to "that generation was
-// already in a bad state." A genuinely different model doesn't share
-// whatever drives that correlation.
+// of its 22. In a test on 2026-08-29, once daenerys_targaryen's or
+// grey_worm's first attempt truncated, a same-model retry truncated again
+// 3 times in 5 and 3 times in 4 - closer to "that generation was already
+// in a bad state" than to a fresh roll. That test ran under that day's
+// settings, not today's: the token cap was the only check on a reply, and
+// the retry's added instruction spoke of length alone.
 //
 // Was mistralai/mistral-large-2512 (chosen for the same vendor family as
 // the default model, for style/formatting consistency with prompts tuned
@@ -107,12 +106,10 @@ export function getModelForRole(role: string): string {
 // attempts discarded and retried, and 3 terminal failures.
 //
 // Crossing vendors here is not a new risk either - tiers 3/4 already do
-// it from the default, across many real trials. Real, verified pricing
-// (per pricing.ts): $1.00/$5.00 per million prompt/completion tokens vs.
-// the dead Mistral Large's $0.50/$1.50 - a real 2-3x step up, which is why
-// tier 1 was given a second attempt of its own (see buildRetryTiers) to
-// catch more recoverable failures at the cheap default model before ever
-// reaching this pricier tier.
+// it from the default. Its verified per-token price is in pricing.ts.
+// Tier 1 has a second attempt of its own (see buildRetryTiers), to catch
+// more recoverable failures at the cheap default model before reaching
+// this pricier tier.
 const TRUNCATION_FALLBACK_MODEL = process.env.TRUNCATION_FALLBACK_MODEL || 'anthropic/claude-haiku-4.5';
 
 /** Tier 2's model - see TRUNCATION_FALLBACK_MODEL above. */
@@ -130,7 +127,7 @@ export function getTruncationFallbackModel(): string {
 // deliberately two models from two different companies, neither an
 // incremental step within the same family: escalating vendor as well as
 // capability removes any shared-family quirk as an explanation, not just a
-// shared-size one. Both are flagship models, a class above tier 2.
+// shared-size one.
 //
 // What has been measured, from api_call_logs up to 2026-09-27: every
 // openai/gpt-5.6-sol call was kept, none discarded; google/gemini-2.5-pro's

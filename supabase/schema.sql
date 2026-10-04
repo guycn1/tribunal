@@ -182,8 +182,8 @@ alter table agent_progress enable row level security;
 -- with no policies defined, and GRANT is a separate mechanism from it.
 grant usage on schema public to service_role;
 grant select, insert, update, delete on all tables in schema public to service_role;
--- No table here uses a sequence today (every key is a uuid or a composite of
--- existing columns), so this one is precautionary rather than load-bearing —
+-- No table here uses a sequence today (every key is a uuid, a composite of
+-- existing columns, or case_definitions' text case_code), so this one is precautionary rather than load-bearing —
 -- kept because it matches what was actually run, and costs nothing if a
 -- future table does use one.
 grant usage, select on all sequences in schema public to service_role;

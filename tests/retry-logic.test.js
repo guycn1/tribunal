@@ -14,11 +14,12 @@
  * escalated to a costlier tier within five seconds, a backoff pause timed
  * as part of the attempt before it, a three-copy loop the
  * repeated-sentence check let through, near-verbatim loops that no exact
- * comparison could see, and an attempt that failed as the user aborted
- * logged as "re-tried" when no retry followed. Most showed up in real use;
- * the fractional millisecond and the backoff timing were caught by the
- * offline tests first. Each one below is a test, so none of them can
- * quietly come back.
+ * comparison could see, an attempt that failed as the user aborted logged
+ * as "re-tried" when no retry followed, and a reply an upstream error cut
+ * short that the chain would have kept. Most showed up in real use; the
+ * fractional millisecond and the backoff timing were caught by the offline
+ * tests first, and the cut-short reply in OpenRouter's errors docs. Each
+ * one below is a test, so none of them can quietly come back.
  */
 
 const { compileBackend } = require('./support/compile-backend');
@@ -351,6 +352,37 @@ async function main() {
     check('succeeded at the next tier', r.status === 'success' && r.model === TIER3, `${r.status}/${r.model}`);
   });
 
+  // ------------------------------------------------------------------ 6b
+  await test('A 408 is retried like a timeout, not skipped like a removed model', async () => {
+    // OpenRouter's 408 is "your request timed out": the same failure as an
+    // attempt this code times out itself.
+    const calls = [];
+    global.fetch = async (_u, o) => {
+      const m = JSON.parse(o.body).model;
+      calls.push(m);
+      return calls.length === 1 ? { ok: false, status: 408, headers: new Map(), text: async () => '{}' } : reply(m, CLEAN);
+    };
+    const r = await callOpenRouter(DEFAULT, [{ role: 'user', content: 'hi' }], 1400, 'rep:test');
+    check('retried on the same model', calls.length === 2 && calls[1] === DEFAULT && r.status === 'success' && r.model === DEFAULT, JSON.stringify(calls));
+    const first = ((r.discardedAttempts || [])[0] || {}).errorMessage || '';
+    check('logged as a transient failure', /^\[transient-retried\] timed out at OpenRouter \(HTTP 408\) after \d+ms - re-tried with the same model/.test(first), first);
+  });
+
+  // ------------------------------------------------------------------ 6c
+  await test('Running out of time budget is reported as such, not as every tier tried', async () => {
+    const realNow = Date.now;
+    let skew = 0;
+    Date.now = () => realNow() + skew;
+    // The first reply comes back capped with almost the whole budget gone.
+    global.fetch = async () => { skew += 645000; return reply(DEFAULT, 'cut off mid-', 'length', 1400); };
+    const r = await callOpenRouter(DEFAULT, [{ role: 'user', content: 'hi' }], 1400, 'rep:test');
+    Date.now = realNow;
+    check('the call fails without another attempt', r.status === 'failed' && (r.discardedAttempts || []).length === 0, `${r.status} / ${(r.discardedAttempts || []).length}`);
+    check('saying the budget ran out before another attempt', /^\[degenerate-final\] This attempt \(tier 1 of 4, .*\) hit the max_tokens limit before finishing naturally, and the remaining time budget ran out before another attempt could be made\./.test(r.errorMessage), r.errorMessage);
+    const line = captured.filter((l) => /still unusable/.test(l)).pop() || '';
+    check('and the console says the same', /still unusable with no time budget left for another attempt/.test(line), line);
+  });
+
   // ------------------------------------------------------------------ 7
   await test('Per-attempt timeout scales with prompt size, and is always an integer', async () => {
     // AbortSignal.timeout() throws on a non-integer, which would fail any
@@ -465,7 +497,7 @@ async function main() {
   });
 
   // ------------------------------------------------------------------ 11
-  await test('Every reply with text but a capped one goes through the detectors; a capped one with none is "no response"', async () => {
+  await test('Every reply with text but a capped or cut-short one goes through the detectors; a capped one with none is "no response"', async () => {
     const LOOP = 'I was wrong about the realm. ' + 'I can only tell you that I was wrong, and I am sorry. '.repeat(4);
     /**
      * The first attempt's discard reason when the default model answers
@@ -483,7 +515,7 @@ async function main() {
       return r.model === DEFAULT && r.status === 'success' ? null : ((r.discardedAttempts || [])[0] || {}).errorMessage || r.errorMessage;
     };
     // null stands for a reply that carries no finish_reason at all.
-    for (const finish of ['content_filter', 'error', null]) {
+    for (const finish of ['content_filter', null]) {
       const reason = await firstReason(LOOP, finish);
       check(`a loop with finish_reason ${finish} is caught by the detectors`, /^\[degenerate-retried-same-model\] This attempt repeated/.test(reason || ''), reason);
     }
@@ -493,6 +525,49 @@ async function main() {
     check('a clean reply with finish_reason content_filter is kept', (await firstReason(CLEAN, 'content_filter')) === null);
     const empty = await firstReason('', 'length');
     check('a capped reply with no text is a transient failure, not a truncation', /^\[transient-retried\] returned no message content after \d+ms - re-tried with the same model/.test(empty || ''), empty);
+  });
+
+  // ------------------------------------------------------------------ 12
+  await test('A reply an upstream error cut short is never kept', async () => {
+    // OpenRouter's errors docs: an error after the 200 is committed comes in
+    // the body - for a non-streaming request, inside the choice, with
+    // finish_reason 'error' and whatever text came before it.
+    const PARTIAL = 'The bells had already rung when she turned the dragon on the';
+    /**
+     * A 200 whose only choice carries `content`, `finishReason` and, when
+     * given, an `error` object of its own.
+     * @param {string} content
+     * @param {string} finishReason
+     * @param {object} [error]
+     * @returns {MockResponse}
+     */
+    const cutReply = (content, finishReason, error) => ({
+      ok: true, status: 200, headers: new Map(),
+      json: async () => ({ model: DEFAULT, choices: [{ message: { content }, finish_reason: finishReason, ...(error ? { error } : {}) }], usage: { prompt_tokens: 1000, completion_tokens: 12, total_tokens: 1012 } }),
+    });
+    const DISCONNECT = { code: 502, message: 'Provider disconnected mid-stream' };
+    for (const [what, first] of [
+      ['finish_reason error and an error object', () => cutReply(PARTIAL, 'error', DISCONNECT)],
+      ['finish_reason error alone', () => cutReply(PARTIAL, 'error')],
+      ['an error object alone', () => cutReply(PARTIAL, 'stop', DISCONNECT)],
+    ]) {
+      let n = 0;
+      global.fetch = async (_u, o) => { n++; return n === 1 ? first() : reply(JSON.parse(o.body).model, CLEAN); };
+      const r = await callOpenRouter(DEFAULT, [{ role: 'user', content: 'hi' }], 1400, 'rep:test');
+      const d = (r.discardedAttempts || [])[0] || {};
+      check(`with ${what}, the partial text is not kept`, r.status === 'success' && r.content === CLEAN && n === 2, `${r.status} / ${r.content}`);
+      check(`with ${what}, it is a transient failure, retried on the same model`, /^\[transient-retried\] was cut short by an upstream error partway through its reply after \d+ms - re-tried with the same model/.test(d.errorMessage || ''), d.errorMessage);
+      check(`with ${what}, the partial text is kept for audit`, d.responseText === PARTIAL, d.responseText);
+    }
+    // With no time left for another attempt, the call fails, naming the error.
+    const realNow = Date.now;
+    let skew = 0;
+    Date.now = () => realNow() + skew;
+    global.fetch = async () => { skew += 645000; return cutReply(PARTIAL, 'error', DISCONNECT); };
+    const r = await callOpenRouter(DEFAULT, [{ role: 'user', content: 'hi' }], 1400, 'rep:test');
+    Date.now = realNow;
+    check('a last one fails the call, naming the error', r.status === 'failed' && /upstream error partway through the reply: Provider disconnected mid-stream/.test(r.errorMessage), r.errorMessage);
+    check('and keeps its partial text for audit', r.responseText === PARTIAL, r.responseText);
   });
 
   console.log = realLog;

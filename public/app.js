@@ -3,15 +3,16 @@
  * charge sheet, runs a trial - triggering the seven agent calls as Netlify
  * Background Functions and polling for their results - and displays each
  * argument and ruling, the per-call log, and the run history. The three
- * judges' rulings are always shown side by side and are never combined.
+ * judges' rulings are shown independently, each on its own card, and are
+ * never combined.
  *
  * This file is served as-is: no build step and no modules. It cannot import
- * from the Netlify Functions, so the few values both sides must agree on are
- * duplicated here and checked by tests/shared-constants.test.js. Two are kept
- * in step by hand: POLL_TIMEOUT_MS, which must stay above the server's time
- * budget, and the scrollbar's resting opacity, which styles.css repeats as a
- * fallback. The types
- * below mirror netlify/functions/lib/types.ts for the same reason. They
+ * from the Netlify Functions, so the values both sides must agree on are
+ * duplicated here, and tests/shared-constants.test.js checks them: the
+ * markers and fixed messages, the roles with their names and seats, and
+ * POLL_TIMEOUT_MS and INTERRUPTED_THRESHOLD_MS against the server's time
+ * budget; it also checks the scrollbar's resting opacity, which styles.css
+ * repeats as a fallback. The types below mirror netlify/functions/lib/types.ts for the same reason. They
  * document the JSON this page receives, for readers and editors - nothing
  * type-checks this file (tsconfig.json covers netlify/functions only).
  */
@@ -237,7 +238,8 @@ const DEGENERATE_FINAL_MARKER = '[degenerate-final]';
  */
 const HTTP_ERROR_ESCALATED_MARKER = '[http-error-escalated]';
 /**
- * A transient failure (timeout, 429, 5xx, empty-content 200) that was
+ * A transient failure (a timeout or network error, a 408, a 429, a 5xx, a
+ * 200 with no content or with a reply an upstream error cut short) that was
  * retried or escalated. Before these were logged at all, a call that kept
  * timing out left the card frozen with nothing in the log to explain it.
  */
@@ -828,9 +830,10 @@ async function abortCurrentTrial() {
 // Kept rather than removed or "restored," deliberately. The original
 // 3-vs-4 reading came from two runs on 2026-08-28 - on the current default
 // model, but while the agent calls were still synchronous functions - and
-// has since been overtaken by evidence: the full trials behind this
-// project's reliability record ran with all 4 representatives in flight
-// together, not 3, so there is no demonstrated problem left to solve. Removing the pool
+// has since been overtaken by evidence: since the move, full trials have
+// run with all 4 representatives in flight together (36 of the 41 measured
+// above, and all four production trials of 2026-09-21), so there is no
+// demonstrated problem left to solve. Removing the pool
 // would gain nothing either: a bounded, staggered dispatch costs about a
 // second per phase.
 /**
@@ -1143,7 +1146,8 @@ function deriveRoleStates(data) {
  * but this constant stayed at its old value (150s) - a real, observed
  * consequence was a role that genuinely succeeded server-side (verified
  * directly in the DB) still showing as unresolved on the client because
- * polling gave up first. A role that still hasn't resolved by this
+ * polling gave up first; tests/shared-constants.test.js keeps it above
+ * TOTAL_BUDGET_MS. A role that still hasn't resolved by this
  * timeout was either turned away by the site gate or the call cap, whose
  * rejections show only in Netlify's function logs (see
  * representative-background.ts), or ran into something unexpected; either
@@ -1227,7 +1231,7 @@ async function pollForRoles(pendingRoles, bucket, render, signal) {
     for (const role of remaining) {
       bucket[role] = {
         status: 'timeout',
-        error: `No result after ${Math.round(POLL_TIMEOUT_MS / 1000)}s of polling. The background call may still finish server-side and become visible if you reopen this trial from history later.`,
+        error: `No outcome was recorded for this role in the ${Math.round(POLL_TIMEOUT_MS / 1000)}s the page waits, which is longer than a call is allowed to run. Reopening this trial from history shows everything recorded for it.`,
       };
     }
     render();
@@ -1618,10 +1622,10 @@ function buildAgentStatusBody(entry, role, verb) {
       const suffix = attempt.tierMaxAttempts > 1 ? ` (${ordinalWord(attempt.attemptInTier)} attempt)` : '';
       modelLine = `<div class="model-chain">Model: <span class="model-name">${shortModelName(attempt.model)}${suffix}</span></div>`;
     } else {
-      // No agent_progress row has landed yet - a brief window right at the
-      // very start of the call, before the first attempt's write reaches
-      // the DB. Falls back to the starting default rather than showing
-      // nothing.
+      // No agent_progress row yet: the call's first attempt has not started
+      // or its write has not reached the database - and a call turned away
+      // before any attempt (by the site gate or the call cap) never writes
+      // one. Falls back to the starting model rather than showing nothing.
       const modelId = state.modelInfo && state.modelInfo[role];
       modelLine = modelId ? `<div class="model-chain">Model: <span class="model-name">${shortModelName(modelId)}</span></div>` : '';
     }
@@ -1655,17 +1659,17 @@ function buildAgentStatusBody(entry, role, verb) {
     return wrap;
   }
 
-  // Distinct from 'failed': this role's background call may genuinely
-  // still be running server-side (Background Functions get up to 15
-  // minutes) - polling just stopped waiting on this page. Worded to say
-  // that honestly rather than implying the call itself is known to have
-  // failed, since it may not have. See pollForRoles() for what actually
-  // produces this status.
+  // Distinct from 'failed': the page stopped waiting without any outcome
+  // being recorded for this role. Polling waits POLL_TIMEOUT_MS, longer
+  // than a call's whole time budget, so by then a call that ran has ended,
+  // and one with nothing recorded most likely never started - turned away
+  // by the site gate or the call cap (see POLL_TIMEOUT_MS). See
+  // pollForRoles() for what produces this status.
   if (entry.status === 'timeout') {
     const wrap = document.createElement('div');
     const badge = document.createElement('span');
     badge.className = 'badge badge-fail';
-    badge.textContent = 'no response yet';
+    badge.textContent = 'no result';
     wrap.appendChild(badge);
     const err = document.createElement('p');
     err.className = 'card-body dim';
@@ -2174,8 +2178,8 @@ function renderCallLog() {
     // the degenerate/truncation case), since retrying the exact same
     // broken model id has no plausible upside.
     const isHttpErrorEscalated = err.startsWith(HTTP_ERROR_ESCALATED_MARKER);
-    // A transient failure (timeout/429/5xx/empty response) that was retried
-    // or escalated. These are the rows that did not exist at all before
+    // A transient failure (timeout/408/429/5xx/empty or cut-short reply)
+    // that was retried or escalated. These are the rows that did not exist at all before
     // 2026-09-20 - the retry branches used to loop silently, which is
     // exactly why a six-minute stall left nothing to read here afterward.
     const isTransientRetried = err.startsWith(TRANSIENT_RETRIED_MARKER);
@@ -2264,10 +2268,8 @@ function renderCallLog() {
     } else if (isDegenerateFinal) {
       // Red, not yellow - the chain has nothing left to fall back to: the
       // last tier failed too, or the time budget ran out before another
-      // tier could be tried. As fatal as a 404/429/500. (Last, not
-      // priciest: tier 4 is actually cheaper per call than tier 3 - see
-      // the pricing note in openrouter.ts. What makes this red is that the
-      // chain is out of options, not what the attempt cost.)
+      // tier could be tried. As fatal as a 404/429/500: what makes this red
+      // is that the chain is out of options, not what the attempt cost.
       statusCellHtml = `<span class="badge badge-fail">${hitTokenCap ? 'truncated' : 'degenerated'}</span>`;
     } else {
       const statusBadge = entry.status === 'success' ? 'badge-ok' : 'badge-fail';
@@ -2366,12 +2368,11 @@ function renderCallLogTotals() {
  * end. Both phases run all of their roles concurrently - the
  * representatives are not a 3-slot pool that makes the 4th wait for a free
  * slot, which would push the worst case to ~32.5 min (see the comment on
- * MAX_CONCURRENT_CALLS above). Kept at 40 minutes: real margin above that
- * (not just enough to scrape by, consistent with every other budget in
- * this app), so a trial
- * that's actually still working - however slowly - doesn't get mislabeled
- * "interrupted" in the history sidebar before it's had a real chance to
- * finish.
+ * MAX_CONCURRENT_CALLS above). Kept at 40 minutes: real margin above that,
+ * so a trial that's actually still working - however slowly - doesn't get
+ * mislabeled "interrupted" in the history sidebar before it's had a real
+ * chance to finish. tests/shared-constants.test.js keeps it above twice
+ * TOTAL_BUDGET_MS.
  */
 const INTERRUPTED_THRESHOLD_MS = 40 * 60 * 1000;
 

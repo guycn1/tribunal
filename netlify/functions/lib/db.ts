@@ -83,7 +83,8 @@ export interface TrialSummary extends TrialRecord {
 /**
  * The most recent trials, newest first, each with what the run-history
  * sidebar labels it by: whether it was aborted, how many of its 7 results
- * exist, and whether any call ever failed. Throws if a query fails.
+ * exist, and whether any of its call-log rows is stored as failed. Throws
+ * if a query fails.
  */
 export async function listTrials(limit = 50): Promise<TrialSummary[]> {
   const supabase = getSupabaseClient();

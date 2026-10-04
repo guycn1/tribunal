@@ -2,7 +2,7 @@
 
 A fixed, canonical fictional tribunal — **Case T-001: The Realm v. Jon Snow** — argued and ruled on by seven independent AI agents: four representatives (two defense, two prosecution) and three judges, each modeled on a distinct real judicial reasoning method (Aharon Barak, Menachem Elon, Meir Shamgar).
 
-The Tribunal decides one question — **justified / not justified** — and gives reasons. It does not impose a sentence, and the three judges' rulings are never combined into a single verdict; they are displayed independently, side by side.
+The Tribunal decides one question — **justified / not justified** — and gives reasons. It does not impose a sentence, and the three judges' rulings are never combined into a single verdict; they are displayed independently, each on its own card.
 
 **Live:** https://tribunal-t001.netlify.app
 
@@ -16,9 +16,9 @@ Three-tier: browser (static HTML/CSS/vanilla JS, no build step or framework) →
 
 **Background Functions + polling.** Representative and judge calls run as Netlify Background Functions rather than standard synchronous invocations — a real generation can take well past the ~10s ceiling a synchronous function gets. The browser triggers a call, gets an immediate `202`, and polls `GET /api/trials/:id` until the result lands.
 
-**A 4-tier model escalation chain** guards against unusable output: `default model (2 attempts) → claude-haiku-4.5 (2 attempts) → a top-tier model (2 attempts) → a last-resort model (1 attempt)`, escalating once a tier has used up its attempts. The escalation signals are `finish_reason === 'length'` (hit the token cap), two independent degeneration heuristics (a long punctuation-less run-on, and repetition, verbatim or near-verbatim: the same whole sentence twice in a row, a sentence of 18+ words twice, any sentence 3+ times, a passage of 3+ sentences repeated word for word, the same clause twice in a row, a clause of 6+ words 3 times close together, 2+ consecutive sentences found again almost word for word (80%+ alike, 10+ words), or a sentence in the last 10% that is 60%+ like one of the 4 before it (8+ words each) — a clause being any stretch between commas, semicolons, colons or sentence ends, and two sentences' likeness the share of words that need no change to turn one into the other), a plain HTTP failure such as a removed model id (which skips the tier's remaining attempts, since re-asking a model that just 404'd is pointless), and transient failures (a timeout or network error, a 429, a 5xx, or a 200 with no content). Three failures end the call at once instead, since no retry can fix them: not enough credit for the request (HTTP 402 — what is left of the account's balance, or of the key's own spending limit, cannot cover it), a rate-limit window that outlasts the remaining time budget, and an OpenRouter key missing from the server's configuration.
+**A 4-tier model escalation chain** guards against unusable output: `default model (2 attempts) → claude-haiku-4.5 (2 attempts) → a top-tier model (2 attempts) → a last-resort model (1 attempt)`, escalating once a tier has used up its attempts. The escalation signals are `finish_reason === 'length'` (hit the token cap), two independent degeneration heuristics (a long punctuation-less run-on, and repetition, verbatim or near-verbatim: the same whole sentence twice in a row, a sentence of 18+ words twice, any sentence 3+ times, a passage of 3+ sentences repeated word for word, the same clause twice in a row, a clause of 6+ words 3 times close together, 2+ consecutive sentences found again almost word for word (80%+ alike, 10+ words), or a sentence in the last 10% that is 60%+ like one of the 4 before it (8+ words each) — a clause being any stretch between commas, semicolons, colons or sentence ends, and two sentences' likeness the share of words that need no change to turn one into the other), a plain HTTP failure such as a removed model id (which skips the tier's remaining attempts, since re-asking a model that just 404'd is pointless), and transient failures (a timeout or network error, a 408, a 429, a 5xx, a 200 with no content, or a reply an upstream error cut short). Three failures end the call at once instead, since no retry can fix them: not enough credit for the request (HTTP 402 — what is left of the account's balance, or of the key's own spending limit, cannot cover it), a rate-limit window that outlasts the remaining time budget, and an OpenRouter key missing from the server's configuration.
 
-Transient failures are split by **how long they took**, because the right response differs: a call that bounces back in under 10 seconds (a burst rate limit, say) gets a bounded number of same-model retries that don't count against the tier's attempt budget — escalating to a costlier model within seconds of a rate limit that clears on its own would be exactly the wrong move — while one that burns its whole ceiling is treated as a real failure of that tier and escalates. Per-attempt timeouts scale with both prompt size and the token cap, so a judge's much larger prompt gets a proportionally larger ceiling.
+Transient failures are split by **how long they took**, because the right response differs: a call that bounces back in under 10 seconds (a burst rate limit, say) gets a bounded number of same-model retries that don't count against the tier's attempt budget — escalating to a costlier model within seconds of a rate limit that clears on its own would be exactly the wrong move — while one that takes 10 seconds or longer (a timeout that ran its whole ceiling, say) counts as a real failure of that tier, spending one of its attempts. Per-attempt timeouts scale with both prompt size and the token cap, so a judge's much larger prompt gets a proportionally larger ceiling.
 
 Every tier in the chain is a paid model; none of them runs on a free tier. The tiers differ in cost by a wide margin (the default is $0.05/$0.08 per million prompt/completion tokens, the next is $1.00/$5.00), which is why the chain is built to exhaust the cheapest option before reaching for a better one — not to avoid spending, but to spend proportionately.
 
@@ -65,7 +65,7 @@ Six tables in Supabase/Postgres. `supabase/schema.sql` is the authority on every
 
 ## Reading the UI: status badges
 
-Every model call is shown, whether it was kept or thrown away, and every failure is labelled with what actually went wrong. These two tables are the full set of badges either view can produce.
+Every model call is shown, whether it was kept or thrown away, and every failed attempt carries a badge for the kind of failure it was; a call's final failure is spelled out in full on its agent's card. A request an agent endpoint turns away before any model call (by the site gate or the call cap) makes no call, so it has no row here. These two tables are the full set of badges either view can produce.
 
 ### Call log
 
@@ -81,11 +81,11 @@ One row per real model attempt, including attempts that were discarded in favour
 | `truncated` | red | The same cap hit, with nothing left to fall back to: on the final tier, or with no time budget left for another. Nothing was saved. |
 | `degenerated` | red | The same detector hit, with nothing left to fall back to. Nothing was saved. |
 | `escalated` | amber | A plain HTTP failure from that tier's own model (e.g. a removed model id returning 404). Skips the tier's remaining attempts, since re-asking a model that just 404'd is pointless. On the last tier there is nowhere to escalate, so the same failure ends the call and shows as `failed`. |
-| `no response` | amber | A transient failure — a timeout or network error, HTTP 429, a 5xx, or a 200 carrying no text (including a reasoning model that spent its whole token cap reasoning). Retried on the same model, or escalated once the tier's attempts are used up; the caption says which. Coming back in under 10 seconds *can* make the retry free — not counted against the tier's attempts — but only for the first few at each tier, and only with enough time budget left to try again; past that a fast failure costs an attempt like any other. |
+| `no response` | amber | A transient failure — a timeout or network error, HTTP 408 or 429, a 5xx, a 200 carrying no text (including a reasoning model that spent its whole token cap reasoning), or a reply an upstream error cut short (`finish_reason` `error`), which is never kept. Retried on the same model, or escalated once the tier's attempts are used up; the caption says which. Coming back in under 10 seconds *can* make the retry free — not counted against the tier's attempts — but only for the first few at each tier, and only with enough time budget left to try again; past that a fast failure costs an attempt like any other. |
 | `aborted` | amber | The call's last row when the trial was aborted while it was running server-side, in one of three ways: it stopped before starting an attempt (no tokens, no duration); an attempt that failed as the abort landed is not retried; or a reply that finished after the abort is not saved. The last two keep that attempt's real tokens, cost and reply, since it ran and was paid for. |
 | `truncated` | amber | Legacy only: a second badge shown *next to* a green `success` on a row logged before truncation became a real failure, on 2026-08-29, whose completion is a whole multiple of the 1,400-token cap. New trials never produce it. |
 
-The two labels record how an attempt ended, not what the text was like: `truncated` means the model was still writing when it hit the token cap, and `degenerated` means it did not hit the cap and a detector flagged the text (the detectors run on every reply with text except a capped one, whatever else its `finish_reason` says). In practice a truncated reply is usually degenerate too — a repetition loop that ran until the cap stopped it. Measured on 2026-09-27, all 48 capped replies whose text was stored were loops, and no reply that finished on its own had run past 1,147 of the 1,400 tokens the default model is given.
+The two labels record how an attempt ended, not what the text was like: `truncated` means the model was still writing when it hit the token cap, and `degenerated` means it did not hit the cap and a detector flagged the text (the detectors run on every reply with text except a capped one or one an upstream error cut short, whatever else its `finish_reason` says). In practice a truncated reply is usually degenerate too — a repetition loop that ran until the cap stopped it. Measured on 2026-09-27, all 48 capped replies whose text was stored were loops, and no reply that finished on its own had run past 1,147 of the 1,400 tokens the default model is given.
 
 ### Run history sidebar
 
@@ -139,7 +139,7 @@ Every file tracked in the repository. Not tracked, and git-ignored: `node_module
 │   ├── retry-logic.test.js           the escalation chain, from the real TypeScript
 │   ├── trial-status.test.js          when a trial is completed; aborts; replies kept for audit, off the page
 │   ├── render-cards.test.js          app.js: cards, the call log, failed requests
-│   ├── shared-constants.test.js      values duplicated across files still agree
+│   ├── shared-constants.test.js      values duplicated across files still agree; the page's timeouts outlast the server's
 │   ├── docs.test.js                  README, SPEC.md and CLAUDE.md agree with the code
 │   └── support/                      setup shared by the suites above
 │       ├── compile-backend.js        compiles the real backend TypeScript
@@ -153,7 +153,7 @@ Every file tracked in the repository. Not tracked, and git-ignored: `node_module
 ├── .vscode/settings.json             turns format-on-save off for this workspace
 ├── SPEC.md                           the requirements, from the course's Case Design Dossier
 ├── README.md
-└── CLAUDE.md                         the working brief and full build/decision log
+└── CLAUDE.md                         the working brief and build/decision log
 ```
 
 ## Local development
@@ -175,14 +175,14 @@ npm test                # five regression suites (see below)
 - `tests/retry-logic.test.js` — the escalation chain, driven against a mocked `fetch`.
 - `tests/trial-status.test.js` — when a trial is marked completed, that an aborted trial is never completed and never gains a result, that abort rows do not count against the call cap, what the run history's failure flag counts, and that every model reply is kept in the call log but never sent to the page, against an in-memory stand-in for Supabase, including the real agent and trial endpoints end to end.
 - `tests/render-cards.test.js` — `app.js`'s agent cards and call log, how it shortens model ids, and how it reports a request that fails outright.
-- `tests/shared-constants.test.js` — values that are deliberately duplicated across files still agree.
+- `tests/shared-constants.test.js` — values that are deliberately duplicated across files still agree — the markers and fixed messages, the roles with their names and seats, the scrollbar's resting opacity — and the page's polling and "interrupted" timeouts stay above the server's time budget.
 - `tests/docs.test.js` — this README, `SPEC.md` and the requirement parts of `CLAUDE.md` still say what the code does. Every file, route, table, column, threshold, price and badge they describe is checked against its source, so changing one without the other fails the suite.
 
 `netlify dev` costs no Netlify credits — it never touches the cloud build/deploy pipeline. It does reach the real OpenRouter API for any representative/judge call, so local testing still spends real quota.
 
 ## Project history and directing decisions
 
-This project was built with Claude Code. `CLAUDE.md`, tracked in this repository, is the working brief and running status/decision log used throughout — the case content and requirements it was built against, every architectural decision and why, real bugs found and fixed (with root causes), and the reasoning behind UI/UX choices made along the way.
+This project was built with Claude Code. `CLAUDE.md`, tracked in this repository, is the working brief and running status/decision log used throughout — the case content and requirements it was built against, the architectural decisions and why they were made, real bugs found and fixed (with root causes), and the reasoning behind UI/UX choices made along the way.
 
 ## Status
 

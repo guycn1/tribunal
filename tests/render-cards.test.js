@@ -253,7 +253,7 @@ console.log('\n=== Agent-card badges read in lowercase, like the call log and si
   const cases = [
     ['an aborted call', buildAgentStatusBody({ status: 'aborted' }, 'jon_snow', 'Arguing'), 'aborted'],
     ['a failed call', buildAgentStatusBody({ status: 'failed', error: 'HTTP 402' }, 'jon_snow', 'Arguing'), 'call failed'],
-    ['a call the page stopped waiting on', buildAgentStatusBody({ status: 'timeout', error: 'no reply' }, 'jon_snow', 'Arguing'), 'no response yet'],
+    ['a call the page stopped waiting on', buildAgentStatusBody({ status: 'timeout', error: 'no reply' }, 'jon_snow', 'Arguing'), 'no result'],
   ];
   state.maxTokens = 1400;
   const truncatedCard = document.createElement('div');

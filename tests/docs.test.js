@@ -2,10 +2,11 @@
  * @file Checks that the documentation says what the code does: README.md,
  * SPEC.md, and the requirement sections of CLAUDE.md.
  *
- * Run with `npm test`. No network. Every fact the docs restate from the code
- * - a file, a route, a column, a threshold, a price, a badge - is compared
- * against its source here, so changing one without the other fails this
- * suite instead of leaving the docs quietly wrong. Where the fact is about
+ * Run with `npm test`. No network. Each file, route, table, column,
+ * threshold, price and badge the docs describe is compared against its
+ * source here, as are the agent endpoints' order of checks and which of
+ * their rejections are logged, so changing one without the other fails
+ * this suite instead of leaving the docs quietly wrong. Where the fact is about
  * behaviour, it is checked by running the real code (the backend compiled
  * from its TypeScript, app.js against a stub DOM), not by reading its text.
  *
@@ -187,7 +188,7 @@ const functionSource = (name) => read('netlify', 'functions', `${name}.ts`);
 async function main() {
   // The backend, compiled once for every behavioural check below, with its
   // Supabase client pointed at an in-memory stand-in.
-  const backend = compileBackend(['lib/openrouter.ts', 'lib/representatives.ts', 'lib/judges.ts', 'lib/pricing.ts', 'trials.ts', 'trial.ts', 'case.ts', 'abort.ts']);
+  const backend = compileBackend(['lib/openrouter.ts', 'lib/representatives.ts', 'lib/judges.ts', 'lib/pricing.ts', 'trials.ts', 'trial.ts', 'case.ts', 'abort.ts', 'representative-background.ts', 'judge-background.ts']);
   useFakeSupabase(backend.outDir);
 
   // ======================================================== README: layout
@@ -338,6 +339,69 @@ async function main() {
     // Netlify's documented maximum; a longer window fails validation at
     // deploy time, which does not fail the deploy, so nothing else notices.
     check(`${fn}'s route: the window is within Netlify's 180-second maximum`, limit.windowSize > 0 && limit.windowSize <= 180, `${limit.windowSize}s`);
+  }
+
+  // The agent handlers' checks: the order README gives them in, and which of
+  // their rejections reach Netlify's function logs. Settled by calling the
+  // real handlers with requests that fail one check, or two at once - two
+  // at once answer with the status of whichever check runs first.
+  const { GLOBAL_CALL_CAP } = backend.load('lib/db.js');
+  const STEP_CODE = { post: 405, role: 400, gate: 401, cap: 429, trial: 404 };
+  const orderClause = (agentPara.match(/The handler checks, in order, (.*?)\. Because/) || [])[1] || '';
+  const stepAt = { post: orderClause.indexOf('a POST naming a trial and a role'), role: orderClause.indexOf('role is one it knows'), gate: orderClause.indexOf('site-gate header'), cap: orderClause.indexOf('call cap'), trial: orderClause.indexOf('trial exists') };
+  check('the order of the agent handlers\' checks is stated, naming each one', Object.values(stepAt).every((i) => i >= 0), JSON.stringify(stepAt));
+  const documentedOrder = Object.keys(stepAt).sort((a, b) => stepAt[a] - stepAt[b]);
+  /**
+   * Calls one real agent handler with a request that fails the given checks,
+   * and returns its status and whether it wrote anything to the console.
+   * @param {string} fn 'representative-background' or 'judge-background'.
+   * @param {string[]} failing Keys of STEP_CODE.
+   * @returns {Promise<{status: number, logged: boolean}>}
+   */
+  const callAgent = async (fn, failing) => {
+    const fails = new Set(failing);
+    const role = fails.has('role') ? 'nobody' : fn === 'judge-background' ? 'barak' : 'jon_snow';
+    const id = fails.has('trial') ? UNKNOWN_ID : TRIAL_ID;
+    const recent = new Date().toISOString();
+    global.fakeSupabase = fakeSupabase({
+      case_definitions: [{ ...caseRow }],
+      trials: [{ id: TRIAL_ID, case_code: 'T-001', status: 'created', created_at: '1', updated_at: '1' }],
+      representative_arguments: [], judge_rulings: [], agent_progress: [],
+      api_call_logs: fails.has('cap') ? Array.from({ length: GLOBAL_CALL_CAP }, () => ({ trial_id: TRIAL_ID, model_used: 'vendor/a-model', timestamp: recent })) : [],
+    }).client;
+    global.fetch = async () => { throw new Error('no model call expected'); };
+    process.env.SITE_GATE_TOKEN = GATE;
+    delete process.env.NETLIFY_DEV;
+    let logged = false;
+    const saved = [console.log, console.warn, console.error];
+    console.log = console.warn = console.error = () => { logged = true; };
+    try {
+      const response = await backend.load(`${fn}.js`).handler({
+        httpMethod: fails.has('post') ? 'GET' : 'POST',
+        path: `/api/trials/${id}/${fn === 'judge-background' ? 'judges' : 'representatives'}/${role}`,
+        headers: fails.has('gate') ? {} : { 'x-site-gate': GATE },
+        queryStringParameters: {},
+      }, {});
+      return { status: response.statusCode, logged };
+    } finally {
+      [console.log, console.warn, console.error] = saved;
+      delete process.env.SITE_GATE_TOKEN;
+    }
+  };
+  const loggedClaim = (agentPara.match(/the ([\w-]+) and ([\w-]+) rejections are written to Netlify's function logs, the others are not logged at all/) || []).slice(1);
+  const loggedSteps = loggedClaim.map((w) => ({ 'site-gate': 'gate', 'call-cap': 'cap' })[w]);
+  check('which rejections are logged is stated', loggedSteps.length === 2 && loggedSteps.every(Boolean), loggedClaim.join(', '));
+  for (const fn of backgroundFns) {
+    for (const step of documentedOrder) {
+      const { status, logged } = await callAgent(fn, [step]);
+      check(`${fn}.ts: failing only the ${step} check answers ${STEP_CODE[step]}`, status === STEP_CODE[step], String(status));
+      check(`${fn}.ts: the ${step} rejection is ${loggedSteps.includes(step) ? '' : 'not '}logged, as README says`, logged === loggedSteps.includes(step), `logged: ${logged}`);
+    }
+    for (let i = 0; i + 1 < documentedOrder.length; i++) {
+      const [first, second] = [documentedOrder[i], documentedOrder[i + 1]];
+      const { status } = await callAgent(fn, [first, second]);
+      check(`${fn}.ts: the ${first} check runs before the ${second} check`, status === STEP_CODE[first], `answered ${status}`);
+    }
   }
 
   const listLimit = Number((read('netlify', 'functions', 'lib', 'db.ts').match(/function listTrials\(limit = (\d+)\)/) || [])[1]);
@@ -846,8 +910,23 @@ async function main() {
   check('the bundler is esbuild, as the architecture line says', /bundled by esbuild/.test(threeTier) && /node_bundler = "esbuild"/.test(TOML), threeTier || 'no "Three-tier:" line in README');
 
   // ======================================================== paths named anywhere
-  console.log('\n=== README and SPEC.md: every file they name exists ===');
-  for (const [doc, text] of [['README.md', README], ['SPEC.md', SPEC]]) {
+  console.log('\n=== README, SPEC.md and CLAUDE.md\'s requirement parts: every file and route they name exists ===');
+  const CLAUDE_REQUIREMENTS = `${section(CLAUDE, '## Part 1 — The canonical charge sheet (fixed content, not user input)')}\n${section(CLAUDE, '## Part 5 — Core technical requirements')}`;
+  check('CLAUDE.md Parts 1 and 5 were found', /^## Part 1 /m.test(CLAUDE_REQUIREMENTS) && /^## Part 5 /m.test(CLAUDE_REQUIREMENTS));
+  const docsNamingThings = [['README.md', README], ['SPEC.md', SPEC], ['CLAUDE.md Parts 1 and 5', CLAUDE_REQUIREMENTS]];
+  // A route is named with or without its method ("`GET /api/trials/:id`").
+  // It must be one netlify.toml serves, with a method README's endpoint
+  // table lists for it; a concrete segment such as jon_snow fills a
+  // placeholder such as :role.
+  for (const [doc, text] of docsNamingThings) {
+    const routesNamed = new Map([...text.matchAll(/`(?:(GET|POST|PUT|PATCH|DELETE) )?(\/api\/[^`\s]*)`/g)].map((m) => [m[0], m]));
+    for (const [, [, method, named]] of routesNamed) {
+      const served = redirects.filter((r) => new RegExp(`^${r.path.replace(/:\w+/g, '[^/]+')}$`).test(named));
+      const methods = rows.filter((row) => served.some((r) => r.path === row.path)).map((row) => row.method);
+      check(`${doc}: ${method ? `${method} ` : ''}${named} is a real route`, served.length > 0 && (!method || methods.includes(method)), served.length ? `methods: ${methods}` : 'not in netlify.toml');
+    }
+  }
+  for (const [doc, text] of docsNamingThings) {
     const named = [...new Set([...text.matchAll(/`([^`\s]+)`/g)].map((m) => m[1]))]
       .filter((t) => t !== 'n/a' && !t.startsWith('/') && (t.includes('/') || /\.(ts|js|md|sql|toml|json|css|html|example)$/.test(t)))
       // Git-ignored paths are named on purpose, as things that are generated
