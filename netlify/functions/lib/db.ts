@@ -366,10 +366,11 @@ export async function upsertAgentProgress(params: {
 // caller can present.
 //
 // Sized generously above any realistic legitimate day (manual testing plus
-// repeated real usage from other visitors) while staying well short of
-// meaningfully denting a small prepaid balance. Real per-call cost is now
-// known rather than guessed - see pricing.ts, where every model in the
-// escalation chain carries a verified per-token price.
+// repeated real usage from other visitors). What a day at the cap costs
+// depends on where its calls land: rows from the default model cost a small
+// fraction of a cent each, so a day of them is cheap, while rows from the
+// later escalation tiers cost far more apiece - see pricing.ts, where every
+// model in the chain carries a verified per-token price.
 export const GLOBAL_CALL_CAP = 350;
 const GLOBAL_CALL_WINDOW_MS = 24 * 60 * 60 * 1000;
 

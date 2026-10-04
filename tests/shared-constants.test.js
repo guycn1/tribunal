@@ -281,8 +281,9 @@ console.log('\n=== The page waits longer than a call can run ===');
 // Polling gives up after POLL_TIMEOUT_MS. Were it shorter than the server's
 // budget, a call could succeed after the page had stopped waiting; this
 // happened once, when the budget was raised and this constant was not. The
-// sidebar's "interrupted" label needs more still: both phases, one after the
-// other.
+// sidebar's "interrupted" label needs more still: the representatives
+// phase can last as long as the page polls for it, and the judges phase
+// then runs its own budget.
 /**
  * A numeric constant's value from source, products such as 40 * 60 * 1000
  * included.
@@ -299,7 +300,7 @@ const pollMs = numericConst(appJs, 'POLL_TIMEOUT_MS');
 const interruptedMs = numericConst(appJs, 'INTERRUPTED_THRESHOLD_MS');
 check('TOTAL_BUDGET_MS found in openrouter.ts', Number.isFinite(budgetMs) && budgetMs > 0, String(budgetMs));
 check('POLL_TIMEOUT_MS is above it', Number.isFinite(pollMs) && pollMs > budgetMs, `${pollMs} vs ${budgetMs}`);
-check('INTERRUPTED_THRESHOLD_MS is above twice it', Number.isFinite(interruptedMs) && interruptedMs > 2 * budgetMs, `${interruptedMs} vs ${2 * budgetMs}`);
+check('INTERRUPTED_THRESHOLD_MS is above POLL_TIMEOUT_MS plus it', Number.isFinite(interruptedMs) && interruptedMs > pollMs + budgetMs, `${interruptedMs} vs ${pollMs + budgetMs}`);
 
 // --- 8. The scrollbar's resting opacity: app.js <-> styles.css -----------
 console.log('\n=== The scrollbar rests at the same opacity in JS and CSS ===');

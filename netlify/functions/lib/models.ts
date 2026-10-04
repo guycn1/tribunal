@@ -85,9 +85,8 @@ export function getModelForRole(role: string): string {
 //   - a targeted batch of 16 calls (2026-09-21) that drove the real
 //     callOpenRouter() with the real Grey Worm and Daenerys prompts at this
 //     tier's real 2800-token allowance, omitting the CONCISENESS_REMINDER a
-//     real escalation carries (so slightly harsher than production).
-//     Completion lengths ran 502-789 tokens, the longest reaching 28% of
-//     the cap;
+//     real escalation carries. Completion lengths ran 502-789 tokens, the
+//     longest reaching 28% of the cap;
 //   - the 7 escalations the chain reached on its own in ordinary trials up
 //     to 2026-09-26, each after 2-3 discarded attempts - five locally, and
 //     two on the deployed site on 2026-09-21 (grey_worm, after a
@@ -137,18 +136,17 @@ export function getTruncationFallbackModel(): string {
 // before modelRequiresReasoning() existed below, i.e. a configuration fault
 // rather than anything about the output. Neither had produced a truncated
 // or degenerate result. Reached rarely enough (only after every earlier tier has already
-// failed) that the real cost impact stays small despite a materially
-// higher per-token price than either the default model or tier 2 - see
-// pricing.ts.
-const TOP_TIER_FALLBACK_MODEL = process.env.TOP_TIER_FALLBACK_MODEL || 'openai/gpt-5.6-sol';
+// failed) that the real cost impact stays small despite their being far
+// pricier than the default model - see pricing.ts.
+const THIRD_TIER_FALLBACK_MODEL = process.env.THIRD_TIER_FALLBACK_MODEL || 'openai/gpt-5.6-sol';
 const LAST_RESORT_FALLBACK_MODEL = process.env.LAST_RESORT_FALLBACK_MODEL || 'google/gemini-2.5-pro';
 
-/** Tier 3's model - see the comment above TOP_TIER_FALLBACK_MODEL. */
-export function getTopTierFallbackModel(): string {
-  return TOP_TIER_FALLBACK_MODEL;
+/** Tier 3's model - see the comment above THIRD_TIER_FALLBACK_MODEL. */
+export function getThirdTierFallbackModel(): string {
+  return THIRD_TIER_FALLBACK_MODEL;
 }
 
-/** Tier 4's model - see the comment above TOP_TIER_FALLBACK_MODEL. */
+/** Tier 4's model - see the comment above THIRD_TIER_FALLBACK_MODEL. */
 export function getLastResortFallbackModel(): string {
   return LAST_RESORT_FALLBACK_MODEL;
 }

@@ -1380,10 +1380,9 @@ function renderHistoryPlaceholder(message, showSpinner) {
 
 // This endpoint only touches Supabase, no OpenRouter/Netlify quota at
 // stake, so a few quick retries on a transient failure are cheap and
-// worthwhile - a fetch failure here is much more likely to be a passing
-// blip than a persistent problem (one was seen in local testing, with a
-// manual test call landing on the dev server at the same moment as a page
-// load), so it gets the same "self-heal before showing an alarming error"
+// worthwhile - a brief failure here can clear a moment later (one was seen
+// in local testing, with a manual test call landing on the dev server at
+// the same moment as a page load), so it gets the same "self-heal before showing an alarming error"
 // treatment representative/judge calls already get - just on a much
 // shorter, lighter budget suited to a small metadata fetch rather than a
 // real generation.
@@ -2280,8 +2279,9 @@ function renderCallLog() {
     } else if (isDegenerateFinal) {
       // Red, not yellow - the chain has nothing left to fall back to: the
       // last tier failed too, or the time budget ran out before another
-      // tier could be tried. As fatal as a 404/429/500: what makes this red
-      // is that the chain is out of options, not what the attempt cost.
+      // tier could be tried. As with any failure that ends a call, what makes
+      // this red is that the chain is out of options, not what the attempt
+      // cost.
       statusCellHtml = `<span class="badge badge-fail">${hitTokenCap ? 'truncated' : 'degenerated'}</span>`;
     } else {
       const statusBadge = entry.status === 'success' ? 'badge-ok' : 'badge-fail';
@@ -2373,17 +2373,17 @@ function renderCallLogTotals() {
  * it "interrupted" rather than "in progress".
  *
  * This once assumed TOTAL_BUDGET_MS (openrouter.ts) was ~26s, and so that a
- * whole trial finishes in a few minutes. TOTAL_BUDGET_MS is 650000ms now -
- * real margin for the full 4-tier escalation chain - so the genuine worst
- * case is the representatives phase running its budget out in full, then
- * the judges phase running out its own: ~1300s, roughly 22 minutes end to
- * end. Both phases run all of their roles concurrently - the
- * representatives are not a 3-slot pool that makes the 4th wait for a free
- * slot, which would push the worst case to ~32.5 min (see the comment on
- * MAX_CONCURRENT_CALLS above). Kept at 40 minutes: real margin above that,
- * so a trial that's actually still working - however slowly - doesn't get
- * mislabelled "interrupted" in the history sidebar before it's had a real
- * chance to finish. tests/shared-constants.test.js keeps it above twice
+ * whole trial finishes in a few minutes. TOTAL_BUDGET_MS is now sized for
+ * the full 4-tier escalation chain, so the genuine worst case is the
+ * representatives phase lasting as long as the page polls for it
+ * (POLL_TIMEOUT_MS, a little longer than the budget), then the judges phase
+ * running out its own budget in full. Both phases run all of their roles
+ * concurrently - the representatives are not a 3-slot pool that makes the
+ * 4th wait for a free slot (see the comment on MAX_CONCURRENT_CALLS above).
+ * Kept at 40 minutes: real margin above that, so a trial that's actually
+ * still working - however slowly - doesn't get mislabelled "interrupted" in
+ * the history sidebar before it's had a real chance to finish.
+ * tests/shared-constants.test.js keeps it above POLL_TIMEOUT_MS plus
  * TOTAL_BUDGET_MS.
  */
 const INTERRUPTED_THRESHOLD_MS = 40 * 60 * 1000;

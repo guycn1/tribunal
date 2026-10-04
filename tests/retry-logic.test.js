@@ -402,7 +402,8 @@ async function main() {
     }
     const [rep, judge, odd] = timeouts;
     check('a judge prompt gets a larger ceiling than a representative', judge > rep + 5000, `${rep} vs ${judge}`);
-    check('the judge ceiling clears the real 43.2s worst case', judge > 53000, String(judge));
+    // The slowest judge reply logged as a success took 46.6s (2026-09-20).
+    check('the judge ceiling clears the slowest judge reply logged, with room to spare', judge > 53000, String(judge));
     check('an odd token estimate still yields an integer', Number.isInteger(odd), String(odd));
   });
 

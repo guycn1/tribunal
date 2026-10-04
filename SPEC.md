@@ -40,7 +40,7 @@ Daenerys attacks King's Landing. The city surrenders, but Daenerys burns streets
 - **Grey Worm** (prosecution) — terse, disciplined; weighs witnessed conduct and sequence of events over rhetoric or speculation.
 
 **Judges** (each modelled on a real jurist's documented reasoning method, not a persona):
-- **Judge 1 — the Aharon Barak model.** Systematic and rights-centered; purposive interpretation (text read against a rule's function, structure, and democratic values); tests a rights claim through lawful authority, proper purpose, rational fit, least-harmful means, and proportionality; builds an explicit doctrinal structure before resolving the dispute.
+- **Judge 1 — the Aharon Barak model.** Systematic and rights-centered; purposive interpretation (text read against a rule's function, structure, and democratic values); tests a rights claim through lawful authority, proper purpose, rational fit, less harmful means, and proportionality; builds an explicit doctrinal structure before resolving the dispute.
 - **Judge 2 — the Menachem Elon model.** Tradition-minded; treats Jewish law as a working legal source alongside comparative and historical material; insists courts have limited authority — identifying illegality is not license to supervise every political or social choice; comfortable dissenting on the merits.
 - **Judge 3 — the Meir Shamgar model.** Institutional and fact-heavy; identifies offices, powers, and remedies before moral intuition; treats constitutional development as reasoned legal development from text, precedent, and institutional structure rather than proclamation; returns consistently to the claimant, the right, and the remedy.
 

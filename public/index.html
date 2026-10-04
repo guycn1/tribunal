@@ -122,9 +122,10 @@
                    Type/Cost/Duration are all short data-wise, but their
                    *headers* ("Type", "Cost", "Duration") are single
                    words that must never wrap (see table.call-log th's
-                   white-space: nowrap) - each is sized with real margin
-                   above what its own uppercase, letter-spaced header
-                   text needs, not just its data, funded by trimming
+                   white-space: nowrap) - each is sized to fit its own
+                   uppercase, letter-spaced header text, not just its
+                   data, with a few pixels to spare at the narrowest
+                   table, funded by trimming
                    Model and Status, both of which had more room than
                    their content actually needed.
                    Tokens then took 2% back from Model, measured rather

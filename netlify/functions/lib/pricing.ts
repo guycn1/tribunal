@@ -29,10 +29,10 @@ const PRICING_PER_MILLION_TOKENS: Record<string, { prompt: number; completion: n
   // consistent across all 8 routed providers/regions at the time of
   // checking).
   'anthropic/claude-haiku-4.5': { prompt: 1.0, completion: 5.0 },
-  // Third and fourth escalation tiers (see getTopTierFallbackModel /
+  // Third and fourth escalation tiers (see getThirdTierFallbackModel /
   // getLastResortFallbackModel in models.ts) - reached only after every
-  // earlier tier has already failed, so real usage stays rare despite the
-  // materially higher per-token price.
+  // earlier tier has already failed, so real usage stays rare despite their
+  // being far pricier than the default model.
   // Source: https://openrouter.ai/openai
   'openai/gpt-5.6-sol': { prompt: 2, completion: 10 },
   // Source: https://openrouter.ai/google

@@ -495,7 +495,7 @@ async function main() {
   await quietly(() => callOpenRouter(DEFAULT, [{ role: 'user', content: 'hi' }], 1400, 'docs:chain'));
   const tiers = [];
   for (const m of calls) (tiers.length && tiers[tiers.length - 1].model === m ? tiers[tiers.length - 1].attempts++ : tiers.push({ model: m, attempts: 1 }));
-  const chainText = section(README, '## Architecture').match(/`default model \((\d+) attempts?\) → ([\w.-]+) \((\d+) attempts?\) → a top-tier model \((\d+) attempts?\) → a last-resort model \((\d+) attempts?\)`/);
+  const chainText = section(README, '## Architecture').match(/`default model \((\d+) attempts?\) → ([\w.-]+) \((\d+) attempts?\) → a third model \((\d+) attempts?\) → a last-resort model \((\d+) attempts?\)`/);
   check('the chain is written out', Boolean(chainText));
   const tierWord = (README.match(/A (\d+)-tier model escalation chain/) || [])[1];
   check(`the chain has ${tierWord} tiers`, Number(tierWord) === tiers.length, tiers.map((t) => t.model).join(' -> '));
@@ -506,17 +506,17 @@ async function main() {
   }
   const paid = tiers.filter((t) => !t.model.endsWith(':free') && calculateCost(t.model, 1e6, 1e6) > 0);
   check('every tier is a paid model', /Every tier in the chain is a paid model/.test(README) && paid.length === tiers.length, tiers.filter((t) => !paid.includes(t)).map((t) => t.model).join(', '));
-  const prices = README.match(/the default is \$([\d.]+)\/\$([\d.]+) per million prompt\/completion tokens, the next is \$([\d.]+)\/\$([\d.]+)/);
-  check('the prices are stated', Boolean(prices));
-  if (prices && tiers.length >= 2) {
+  check('tier 2 is said to be significantly pricier than the default', /Tier 2 is significantly pricier than the default tier/.test(README));
+  if (tiers.length >= 2) {
     /**
      * A model's price per million prompt and completion tokens.
      * @param {string} model
      * @returns {[number, number]}
      */
     const perMillion = (model) => [calculateCost(model, 1e6, 0), calculateCost(model, 0, 1e6)];
-    check(`the default costs $${prices[1]}/$${prices[2]}`, JSON.stringify(perMillion(tiers[0].model)) === JSON.stringify([Number(prices[1]), Number(prices[2])]), perMillion(tiers[0].model).join('/'));
-    check(`tier 2 costs $${prices[3]}/$${prices[4]}`, JSON.stringify(perMillion(tiers[1].model)) === JSON.stringify([Number(prices[3]), Number(prices[4])]), perMillion(tiers[1].model).join('/'));
+    const [defaultPrices, tier2Prices] = [perMillion(tiers[0].model), perMillion(tiers[1].model)];
+    // "Significantly": several times the price, for prompt and completion tokens alike.
+    check('tier 2 is several times the default\'s price', tier2Prices.every((p, i) => p >= 3 * defaultPrices[i]), `${defaultPrices.join('/')} vs ${tier2Prices.join('/')}`);
   }
 
   /**
@@ -876,8 +876,11 @@ async function main() {
     check(`"over ${threshold} minutes old" agrees`, sidebarSection.includes(`over ${threshold} minutes old`));
   }
   const budgetMs = Number((OPENROUTER_SRC.match(/const TOTAL_BUDGET_MS = (\d+);/) || [])[1]);
-  const worstCase = (sidebarSection.match(/about (\d+) minutes/) || [])[1];
-  check(`the worst case is about ${worstCase ?? '(not stated)'} minutes: two phases of the ${budgetMs / 1000}s budget`, Math.round((2 * budgetMs) / 60000) === Number(worstCase), String((2 * budgetMs) / 60000));
+  // The worst case: the representatives polled for as long as the page
+  // waits, then the judges running out the server's budget.
+  const worstCaseMs = app.POLL_TIMEOUT_MS + budgetMs;
+  check('the threshold is said to be above the worst case', /sized well above the genuine worst case: the page waiting on the representatives for as long as it polls, then every judge running out its full time budget/.test(sidebarSection));
+  check(`and it is: ${threshold} minutes against ${(worstCaseMs / 60000).toFixed(1)}`, Number(threshold) * 60000 > worstCaseMs, String(worstCaseMs));
   const pollClaim = (api.match(/after about (\d+) minutes/) || [])[1];
   check(`polling gives up after about ${pollClaim ?? '(not stated)'} minutes`, Math.round(app.POLL_TIMEOUT_MS / 60000) === Number(pollClaim), String(app.POLL_TIMEOUT_MS / 60000));
   const expected = app.TOTAL_EXPECTED_RESULTS;

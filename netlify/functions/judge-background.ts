@@ -21,11 +21,9 @@ import { isSiteGateOk } from './lib/siteGate';
 import type { JudgeRole, RepresentativeRole } from './lib/types';
 
 // Judges are asked for the longest output in this system - a fuller opinion
-// plus the leading VERDICT line, against a ~450-600 word target where a
-// representative gets 300-500 - about 560-750 tokens against 370-610, at
-// the 1.2-1.25 tokens per word the default model's stored replies average
-// (measured on 2026-10-04). Sized
-// with headroom above that target rather than a tight fit against it,
+// plus the leading VERDICT line, against a longer word target than a
+// representative's. Sized with headroom above that target rather than a
+// tight fit against it,
 // since a reply that reaches the cap is never kept: callOpenRouter()
 // retries or escalates it, which costs a further attempt.
 //

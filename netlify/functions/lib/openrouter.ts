@@ -1,5 +1,5 @@
 import { calculateCost } from './pricing';
-import { getTruncationFallbackModel, getTopTierFallbackModel, getLastResortFallbackModel, modelRequiresReasoning } from './models';
+import { getTruncationFallbackModel, getThirdTierFallbackModel, getLastResortFallbackModel, modelRequiresReasoning } from './models';
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
@@ -54,8 +54,8 @@ const MIN_REMAINING_TO_ATTEMPT_MS = 10000;
 // Counting EVERY transient failure against a tier's attempt budget (the
 // first version of the escalation fix) turned out to over-correct badly:
 // two burst 429s, returned in 2.3s and 2.9s, consumed both of tier 1's
-// attempts and pushed a representative onto a tier costing roughly 20x
-// more per prompt token, roughly five seconds after the user pressed
+// attempts and pushed a representative onto tier 2, significantly pricier
+// than the default tier, roughly five seconds after the user pressed
 // Begin new trial - for a rate limit that clears on its own in a moment.
 // A burst limit is exactly the failure that deserves a patient retry on
 // the cheapest model, not an immediate escalation to a pricier one.
@@ -77,10 +77,10 @@ const MIN_REMAINING_TO_ATTEMPT_MS = 10000;
 // most a few free fast retries before its failures start counting normally.
 const FAST_FAILURE_THRESHOLD_MS = 10000;
 // Per tier, and reset on every escalation. The backoff() pauses between
-// these retries add up to about 6.5-7.5s at tier 1 and 8-9s at later tiers
-// (backoff() grows with the call's overall attempt count, not the tier's)
-// before a persistently-failing tier is escalated off anyway - enough to
-// ride out a burst limit, far too little to hide a real outage.
+// these retries add up to several seconds per tier, a little more at later
+// tiers (backoff() grows with the call's overall attempt count, not the
+// tier's), before a persistently-failing tier is escalated off anyway -
+// enough to ride out a burst limit, far too little to hide a real outage.
 const MAX_FAST_TRANSIENT_RETRIES_PER_TIER = 4;
 
 /**
@@ -114,8 +114,9 @@ const MAX_FAST_TRANSIENT_RETRIES_PER_TIER = 4;
  * It is NOT inside the budget by construction. The ceiling scales with
  * prompt size and real prompts have a long tail - the largest judge prompt
  * in the log (as of 2026-09-21) is 11318 tokens, which sums to 767s, over
- * budget by nearly two minutes. Even p90 (4483) only reaches 647.5s, so the
- * tail has to be genuinely unusual before this bites, and it bites safely
+ * budget by nearly two minutes. p90 (4483) only just fits, so a judge prompt
+ * a little above it already sums past the budget. That matters only when
+ * every attempt in the chain runs to its ceiling, and it bites safely
  * when it does: remainingMs() clamps the last attempt and the loop reports
  * honestly that the budget ran out before a further tier could be tried.
  * The effect of an outsized prompt is fewer tiers actually reached, not a
@@ -189,11 +190,11 @@ export interface OpenRouterMessage {
 // family, so a shared-vendor quirk can't explain a failure that makes it
 // that far.
 // Every tier also gets more token headroom than the one before it, as a
-// safeguard in case a sound response ever runs past the cap. None has been
-// seen to: all 48 capped replies whose text was stored, as of 2026-09-27,
-// are repetition loops that ran until the cap stopped them, and no tier-1
-// reply that finished on its own had gone past 1,147 of its 1,400 tokens.
-// For a loop, a bigger cap only means a longer loop; what recovers it is
+// safeguard in case a sound response ever runs past the cap. None had been
+// seen to as of 2026-09-27: every capped reply whose text was stored was a
+// repetition loop that ran until the cap stopped it, and every tier-1 reply
+// kept as sound had stayed well short of the cap. (A loop that stops on its
+// own can come much closer to it.) For a loop, a bigger cap only means a longer loop; what recovers it is
 // the fresh attempt itself, on the same model or the next. Reached rarely
 // enough, given how many tiers already stand before it, that the real
 // cost stays small despite the later tiers being far pricier than the
@@ -220,9 +221,8 @@ interface RetryTier {
  * costlier tier. Note that
  * every tier in this chain is a genuinely paid model - nothing here runs
  * on a free tier - so this is about relative cost, not about avoiding
- * spend altogether: the default model is simply the cheapest of the four
- * by a wide margin ($0.05/$0.08 per million prompt/completion tokens
- * against tier 2's $1.00/$5.00 - see pricing.ts). This is also what surfaced
+ * spend altogether: tier 2 is significantly pricier than the default tier
+ * (see pricing.ts). This is also what surfaced
  * the isFallbackAttempt fix below: with tier 1 now allowed more than one
  * attempt, "is this attempt a retry" could no longer be inferred from
  * tierIndex alone.
@@ -231,7 +231,7 @@ function buildRetryTiers(defaultModel: string, defaultMaxTokens: number): RetryT
   return [
     { getModel: () => defaultModel, maxTokens: defaultMaxTokens, maxAttempts: 2 },
     { getModel: getTruncationFallbackModel, maxTokens: 2800, maxAttempts: 2 },
-    { getModel: getTopTierFallbackModel, maxTokens: 3500, maxAttempts: 2 },
+    { getModel: getThirdTierFallbackModel, maxTokens: 3500, maxAttempts: 2 },
     { getModel: getLastResortFallbackModel, maxTokens: 4000, maxAttempts: 1 },
   ];
 }
@@ -311,9 +311,9 @@ function detectDegenerateRun(content: string): { degenerate: boolean; runLength:
 //   4. a passage of 3+ consecutive sentences (12+ words) that appears again
 //      later, word for word.
 // Only sentences of 5+ words count for 1-3, so a short refrain ("Thank
-// you.", "I agree.") can never trip them. The longer a sentence, the less
-// likely a verbatim restatement of it is deliberate, hence 2 copies for a
-// long one against 3 for a short one.
+// you.", "I agree.") can never trip them. A long sentence is flagged at 2
+// copies against 3 for a short one, on the reasoning that a long sentence
+// restated word for word is less often a deliberate choice.
 //
 // Calibrated against the real corpus, and deliberately tuned to miss as
 // little as possible: a degenerate text saved and shown as a successful
@@ -947,9 +947,9 @@ export async function callOpenRouter(
   // (2026-09-20) showed exactly how expensive that gap is: two judge calls
   // kept running for a further 30s and 1m32s after the user hit Abort,
   // completed, and wrote real rulings to the database. With a full
-  // escalation chain now able to run for up to 650s across four
-  // increasingly expensive models, an abandoned trial could otherwise keep
-  // billing for ten more minutes against the priciest tiers in the chain.
+  // escalation chain now able to run for up to 650s across four models,
+  // the later ones far pricier than the default, an abandoned trial could
+  // otherwise keep billing for ten more minutes against those pricier tiers.
   // A cheap poll between attempts closes most of that: it cannot cancel an
   // HTTP request already in flight, but it does stop the *next* one - and
   // the next one is where all the escalation cost lives.
@@ -1267,8 +1267,6 @@ export async function callOpenRouter(
           // truncation retry of the time - whose added instruction then
           // addressed only length, not repetition, so it couldn't have
           // fixed this on its own (CONCISENESS_REMINDER covers both now).
-          // Still comfortably short of values (near the +/-2.0 ends) that
-          // visibly distort normal prose.
           frequency_penalty: 0.7,
           presence_penalty: 0.35,
         }),
@@ -1720,9 +1718,9 @@ async function describeErrorBody(response: Response): Promise<string> {
 }
 
 /**
- * Exponential backoff with jitter, capped at 2-2.3s, which keeps the
- * fast-failure retries (MAX_FAST_TRANSIENT_RETRIES_PER_TIER) to a few
- * seconds of waiting per tier. The jitter matters here:
+ * Exponential backoff with jitter, capped at a couple of seconds, which
+ * keeps the fast-failure retries (MAX_FAST_TRANSIENT_RETRIES_PER_TIER) to
+ * several seconds of waiting per tier. The jitter matters here:
  * the agents in each phase (all four representatives, then all three
  * judges) run concurrently on one account, and an unjittered backoff
  * makes them all retry in lockstep.
