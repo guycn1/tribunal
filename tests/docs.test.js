@@ -436,18 +436,28 @@ async function main() {
   ];
   for (const [where, word] of countClaims) check(`${where} says there are ${tableNames.length} tables`, wordToNumber(word) === tableNames.length, word);
 
-  const paragraphs = Object.fromEntries([...db.matchAll(/^\*\*`(\w+)`\*\* — (.*)$/gm)].map((m) => [m[1], m[2]]));
-  check('every table has a paragraph', minus(tableNames, Object.keys(paragraphs)).length === 0, minus(tableNames, Object.keys(paragraphs)).join(', '));
-  check('every paragraph is about a real table', minus(Object.keys(paragraphs), tableNames).length === 0, minus(Object.keys(paragraphs), tableNames).join(', '));
+  // The section opens with a table of every table, each name linking to
+  // that table's own "#### name" section further down. GitHub gives such a
+  // heading the anchor #name, since a table name is lower case with only
+  // underscores, which its anchors keep.
+  const overview = [...db.matchAll(/^\| \[`(\w+)`\]\(#([^)]*)\) \| .+ \|$/gm)].map((m) => ({ table: m[1], anchor: m[2] }));
+  check('the overview lists every table, in schema.sql\'s order', JSON.stringify(overview.map((o) => o.table)) === JSON.stringify(tableNames), overview.map((o) => o.table).join(', '));
+  const badLinks = overview.filter((o) => o.anchor !== o.table);
+  check('every name in the overview links to its own section', overview.length > 0 && badLinks.length === 0, badLinks.map((o) => `${o.table} -> #${o.anchor}`).join(', '));
+  const headings = [...db.matchAll(/^#### (.+)$/gm)].map((m) => m[1]);
+  check('the per-table sections follow schema.sql\'s order', JSON.stringify(headings) === JSON.stringify(tableNames), headings.join(', '));
+  // Each table's section: its heading line up to the next heading.
+  const sections = Object.fromEntries(headings.map((h) => [h, section(db, `#### ${h}`)]));
   const markerValues = [...OPENROUTER_SRC.matchAll(/export const [A-Z0-9_]+_MARKER = '([^']+)'/g)].map((m) => m[1]);
   for (const [table, info] of Object.entries(TABLES)) {
-    const para = paragraphs[table] || '';
+    const para = sections[table] || '';
     const named = [...para.matchAll(/`([^`]+)`/g)].map((m) => m[1]);
-    // Every column, bookkeeping ones included: each paragraph reads as the
-    // table's full column list, so one that drops id or created_at is
-    // incomplete, not merely brief.
-    const unnamed = info.columns.filter((c) => !named.includes(c));
-    check(`${table}: every column is named`, unnamed.length === 0, unnamed.join(', '));
+    // The Columns line is the table's full column list, bookkeeping ones
+    // included, in schema.sql's order. What a parenthesis holds (a column's
+    // allowed values, or a note) is not a column, so it is dropped first.
+    const columnsLine = (para.match(/^\*\*Columns:\*\* (.+)$/m) || ['', ''])[1];
+    const listed = [...columnsLine.replace(/\([^)]*\)/g, '').matchAll(/`([^`]+)`/g)].map((m) => m[1]);
+    check(`${table}: the Columns line lists exactly its columns, in schema.sql's order`, JSON.stringify(listed) === JSON.stringify(info.columns), listed.join(', ') || 'no Columns line');
     const bogus = named.filter((n) => /^[a-z][a-z0-9_]*$/.test(n) && n.includes('_') && !info.columns.includes(n) && !tableNames.includes(n));
     check(`${table}: every column named exists`, bogus.length === 0, bogus.join(', '));
     const badMarkers = named.filter((n) => n.startsWith('[') && !markerValues.includes(n));
@@ -467,10 +477,10 @@ async function main() {
   const rls = new Set([...SCHEMA.matchAll(/alter table (\w+) enable row level security/g)].map((m) => m[1]));
   check('row-level security is on for every table, with no policies', /Row-level security is on for all \w+ tables, with no policies/.test(db) && tableNames.every((t) => rls.has(t)) && !/create policy/i.test(SCHEMA));
   const logWrites = FUNCTION_SOURCES.filter(([, src]) => /from\('api_call_logs'\)\s*\.(update|upsert|delete)\(/.test(src)).map(([f]) => f);
-  check('api_call_logs is appended and never updated', /appended and never updated/.test(paragraphs.api_call_logs || '') && logWrites.length === 0, logWrites.join(', '));
-  check('agent_progress is overwritten in place', /overwritten/.test(paragraphs.agent_progress || '') && FUNCTION_SOURCES.some(([, src]) => /from\('agent_progress'\)\.upsert\(/.test(src)));
+  check('api_call_logs is appended and never updated', /appended and never updated/i.test(sections.api_call_logs || '') && logWrites.length === 0, logWrites.join(', '));
+  check('agent_progress is overwritten in place', /overwritten/.test(sections.agent_progress || '') && FUNCTION_SOURCES.some(([, src]) => /from\('agent_progress'\)\.upsert\(/.test(src)));
   const caseInCode = [...FUNCTION_SOURCES.map(([f, src]) => [f, src]), ['public/app.js', read('public', 'app.js')]].filter(([, src]) => SEED.agreedFacts.some((fact) => src.includes(fact.slice(0, 60))));
-  check('the case text lives only in the database, not in code', /reads the case from here at runtime/.test(paragraphs.case_definitions || '') && caseInCode.length === 0, caseInCode.map(([f]) => f).join(', '));
+  check('the case text lives only in the database, not in code', /reads the case from here at runtime/.test(sections.case_definitions || '') && caseInCode.length === 0, caseInCode.map(([f]) => f).join(', '));
 
   // ======================================================== README: numbers the code sets
   console.log('\n=== README: the escalation chain, detectors and prices match the code ===');
@@ -979,9 +989,9 @@ async function main() {
   console.log('\n=== SPEC.md, CLAUDE.md and README agree with the schema on what is logged ===');
   const specFields = ((SPEC.match(/Every model call is logged with: ([^.]+)\./) || [])[1] || '').split(/, (?:and )?| and /).map((f) => f.trim().replace(/ /g, '_'));
   const claudeFields = ((CLAUDE.match(/every call must log `([^`]+)`/) || [])[1] || '').split(/,\s*/);
-  // Parentheticals dropped first: they hold a field's allowed values, such
-  // as (`success` or `failed`), not further fields.
-  const readmeFields = [...((paragraphs.api_call_logs || '').match(/requires for every call — (.*?) — plus/) || ['', ''])[1].replace(/\([^)]*\)/g, '').matchAll(/`([a-z_]+)`/g)].map((m) => m[1]);
+  // Parentheticals dropped first: they would hold a field's allowed values,
+  // such as (`success` or `failed`), not further fields.
+  const readmeFields = [...((sections.api_call_logs || '').match(/^- The fields the spec requires for every call: (.*)$/m) || ['', ''])[1].replace(/\([^)]*\)/g, '').matchAll(/`([a-z_]+)`/g)].map((m) => m[1]);
   const logColumns = (TABLES.api_call_logs || { columns: [] }).columns;
   for (const [doc, fields] of [['SPEC.md', specFields], ['CLAUDE.md Part 5', claudeFields], ['README', readmeFields]]) {
     check(`${doc}: every required log field is a real column`, fields.length > 1 && minus(fields, logColumns).length === 0, minus(fields, logColumns).join(', ') || String(fields.length));
