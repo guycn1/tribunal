@@ -9,10 +9,12 @@
  * This file is served as-is: no build step and no modules. It cannot import
  * from the Netlify Functions, so the values both sides must agree on are
  * duplicated here, and tests/shared-constants.test.js checks them: the
- * markers and fixed messages, the roles with their names and seats, and
- * POLL_TIMEOUT_MS and INTERRUPTED_THRESHOLD_MS against the server's time
- * budget; it also checks the scrollbar's resting opacity, which styles.css
- * repeats as a fallback. The types below mirror netlify/functions/lib/types.ts for the same reason. They
+ * markers, the fixed messages and the phrase that marks a truncation, the
+ * roles with their names and seats, and POLL_TIMEOUT_MS and
+ * INTERRUPTED_THRESHOLD_MS against the server's time budget. It also checks
+ * the values this file shares with styles.css: the scrollbar's resting
+ * opacity, which styles.css repeats as a fallback, the spinner's two
+ * durations, and the class that dims a call-log row. The types below mirror netlify/functions/lib/types.ts for the same reason. They
  * document the JSON this page receives, for readers and editors - nothing
  * type-checks this file (tsconfig.json covers netlify/functions only).
  */
@@ -1634,9 +1636,9 @@ function buildAgentStatusBody(entry, role, verb) {
       modelLine = `<div class="model-chain">Model: <span class="model-name">${shortModelName(attempt.model)}${suffix}</span></div>`;
     } else {
       // No agent_progress row yet: the call's first attempt has not started
-      // or its write has not reached the database - and a call turned away
-      // before any attempt (by the site gate or the call cap) never writes
-      // one. Falls back to the starting model rather than showing nothing.
+      // or its write has not reached the database - and a call that ends
+      // before any attempt (turned away by the site gate or the call cap,
+      // say, or stopped by an abort) never writes one. Falls back to the starting model rather than showing nothing.
       const modelId = state.modelInfo && state.modelInfo[role];
       modelLine = modelId ? `<div class="model-chain">Model: <span class="model-name">${shortModelName(modelId)}</span></div>` : '';
     }
@@ -2170,9 +2172,9 @@ function renderCallLog() {
   for (const entry of state.callLog) {
     const tr = document.createElement('tr');
     const err = entry.errorMessage || '';
-    // A discarded attempt (truncated/degenerated, then retried at the
-    // same tier or escalated to the next one) gets its own row, tagged
-    // with one of the two "retried" markers - see the DEGENERATE_*_MARKER
+    // A truncated or degenerate attempt that was discarded (then retried
+    // at the same tier or escalated to the next one) gets its own row,
+    // tagged with one of the two "retried" markers - see the DEGENERATE_*_MARKER
     // comment above. A row tagged with the "final" marker instead means
     // the chain had nothing left to try - the last tier, or no time budget
     // for another - and this attempt was *also* truncated/degenerate: a
@@ -2190,7 +2192,8 @@ function renderCallLog() {
     // the degenerate/truncation case), since retrying the exact same
     // broken model id has no plausible upside.
     const isHttpErrorEscalated = err.startsWith(HTTP_ERROR_ESCALATED_MARKER);
-    // A transient failure (timeout/408/429/5xx/empty or cut-short reply)
+    // A transient failure (timeout or network error/408/429/5xx/empty or
+    // cut-short reply)
     // that was retried or escalated. These are the rows that did not exist at all before
     // 2026-09-20 - the retry branches used to loop silently, which is
     // exactly why a six-minute stall left nothing to read here afterwards.

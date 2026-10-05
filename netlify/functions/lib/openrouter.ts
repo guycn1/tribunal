@@ -844,7 +844,8 @@ export interface DiscardedAttempt {
   errorMessage: string;
   durationMs: number;
   // The model's reply, word for word, when this attempt got one (a
-  // truncated or degenerate response). Stored in the call log for audit
+  // truncated or degenerate response, or the part of one an upstream error
+  // cut short). Stored in the call log for audit
   // and never shown on the page; absent for a timeout, an HTTP error or
   // any other attempt that returned no text.
   responseText?: string;
@@ -1626,7 +1627,8 @@ export async function callOpenRouter(
         if (next.canContinue) {
           // backoff()'s delay exists to avoid hammering a rate limiter that
           // will keep refusing for a moment - a real reason to wait after
-          // the 429/408/5xx/empty-content branches above, which can come
+          // the 429, 408/5xx and empty or cut-short reply branches above,
+          // which can come
           // back in moments. A timeout here has already run its attempt's
           // whole ceiling, so a further pause would only spend budget the
           // next attempt can use. A network error that failed at once

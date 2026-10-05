@@ -15,10 +15,13 @@
  * as part of the attempt before it, a three-copy loop the
  * repeated-sentence check let through, near-verbatim loops that no exact
  * comparison could see, an attempt that failed as the user aborted logged
- * as "re-tried" when no retry followed, and a reply an upstream error cut
- * short that the chain would have kept. Most showed up in real use; the
+ * as "re-tried" when no retry followed, a reply an upstream error cut
+ * short that the chain would have kept, a 408 skipped like a removed model
+ * id rather than retried like the timeout it is, and a time budget that ran
+ * out reported as every tier tried. Most showed up in real use; the
  * fractional millisecond and the backoff timing were caught by the offline
- * tests first, and the cut-short reply in OpenRouter's errors docs. Each
+ * tests first, the cut-short reply in OpenRouter's errors docs, and the
+ * last two in a reading of the code. Each
  * one below is a test, so none of them can quietly come back.
  */
 

@@ -2,10 +2,13 @@
  * @file Checks that the documentation says what the code does: README.md,
  * SPEC.md, and the requirement sections of CLAUDE.md.
  *
- * Run with `npm test`. No network. Each file, route, table, column,
- * threshold and badge the docs describe is compared against its
- * source here, as are the agent endpoints' order of checks and which of
- * their rejections are logged, so changing one without the other fails
+ * Run with `npm test`. No network. Each file, route, role, table, column,
+ * threshold, price claim, environment variable, npm script and badge the
+ * docs describe is compared against its source here, as are the endpoints'
+ * status codes and site-gate requirement, the agent endpoints' order of
+ * checks, which of their rejections are logged and their rate limit, the
+ * case text, the fields every call logs and the verdict vocabulary, so
+ * changing one without the other fails
  * this suite instead of leaving the docs quietly wrong. Where the fact is about
  * behaviour, it is checked by running the real code (the backend compiled
  * from its TypeScript, app.js against a stub DOM), not by reading its text.

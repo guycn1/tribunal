@@ -423,6 +423,7 @@ Progress so far:
   - **Corrected against the log or git:** Mistral Large's fallback results on 2026-08-29 (3 clean, 1 truncated, 1 the wrong-id HTTP 400); the escalation chain's verification runs (24 targeted tests and 4 full trials, 100 calls); the 20-test batch's escalations; the server budget's history (raised twice after the Background Functions move); and the GitHub icon's halo radii.
   - **Dropped where the sentence holds without them:** the judge and representative cap-hit counts, the system-prompt lengths, and undated timings and badge offsets. Two timing claims and a trial count that no record supports were removed.
 - **Cross-references checked across every tracked file (2026-10-05, on the user's request).** Every pointer in the docs, the code comments and the schema - to a file, a function or constant, a section or heading, a log entry, or a position such as "above" or "further down" - was followed to its target, and the few that did not land where they said were corrected. The details are in the commit message.
+- **Lists and enumerations checked across every tracked file (2026-10-05, on the user's request).** Every list in the docs, the code comments and the schema - of failure kinds, badges, columns, checks, rules, test coverage and the like, whether set out as bullets or run into a sentence - was read against what it lists, and the ones that had fallen behind were completed. The details are in the commit message.
 
 ---
 
