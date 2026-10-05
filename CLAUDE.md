@@ -54,7 +54,8 @@ attempt (first attempt delivered no readable content at all, silently). Compared
   length targets were re-confirmed as NOT dossier-specified — the dossier's own
   "under 300 words" notes are about the profile document's own length, not the
   AI's output, consistent with the already-documented `max_tokens`
-  self-imposed-value finding in the bug log below.
+  self-imposed-value finding in the free-tier write-up under "Reliability
+  write-ups" below.
 
 ## HARD RULES — read before touching git, spending any external quota, or editing any doc or comment
 
@@ -613,6 +614,8 @@ Three things hold across the whole log:
 
 ### 2026-08-26/27: setup, first build and first deployment
 
+#### The repository and the first build
+
 - Machine's git identity and push credentials configured — see the "Git identity
   and credentials" subsection under Part 7.
 - New public repo at `github.com/guycn1/tribunal`, using the `draft`/`main`
@@ -640,6 +643,8 @@ Three things hold across the whole log:
   connected.
   - *(Closed the same day: Supabase and OpenRouter were configured and verified
     against the real services - see the next two entries.)*
+
+#### Supabase, OpenRouter and Netlify set up
 
 **Supabase: done.** New project `tribunal` created, schema applied (with the
 blank-line paste fix and the service_role grant fix, both logged below), local
@@ -712,12 +717,14 @@ subsection of the bug log below for full detail:
    by an immediate successful retry with an equivalent prompt) — now retried
    like 429/5xx.
 
+#### First trials and merges
+
 **Free-tier model reliability work (choosing among Nvidia free variants,
 worker-pool saturation, an 8s timeout that was killing successful calls) — all
 superseded by the 2026-08-28 switch to a single paid model.** Full technical
 detail (what was found, what fixed it, what was kept vs. discarded when the
 free-tier architecture was removed) is consolidated in one place further down
-this log rather than spread across multiple dated entries — see "Free-tier
+this file rather than spread across multiple dated entries — see "Free-tier
 multi-model fallback/retry architecture."
 
 **Quota reset the next day, and a real full trial run against local
@@ -3727,9 +3734,9 @@ line-wrapping, and many entries were single dense paragraphs.
 
 - Lines are now wrapped at 80 characters, long entries are split into paragraphs
   and sub-items, and the status log has a heading per day or arc.
-- The sections after the log are grouped under "Operational notes", "Reliability
-  write-ups", "Frontend write-ups" and the bug log, each topic a heading of its
-  own.
+- The sections after the log are grouped under "Operational notes",
+  "Reliability write-ups", "Frontend write-ups", "Anti-abuse layers" and the bug
+  log, each topic a heading of its own.
 - The content is unchanged. Rendered through GitHub's markdown API before and
   after, every sentence of the old text is in the new, apart from the headings
   added and a few pointers ("the next two bullets") reworded for the new layout;
@@ -3811,7 +3818,83 @@ A successful chat completion carries no `X-RateLimit-*` headers (checked on
 2026-10-03 with a real call), so there is no figure to watch before a 429
 arrives. Space tests out rather than trying to query one.
 
+### Netlify credit consumption
+
+Operationally important — the free tier is a hard constraint here.
+
+- **A production deploy costs a real share of the free plan's monthly credits**
+  (recorded on 2026-09-02).
+  - Function compute and bandwidth for an app this size were negligible by
+    comparison when measured: on 2026-08-26, a day with 10 deploys, the deploys
+    accounted for nearly all of the credits used, and all the OpenRouter test
+    traffic for a tiny fraction.
+- **This makes "merge to `main` to test a fix" genuinely expensive**, at a real
+  slice of the monthly allowance per attempt.
+  - `netlify dev` locally costs **zero** credits (it never touches the build
+    pipeline), makes real OpenRouter and real Supabase calls, and is the correct
+    place to iterate. Deploy only at genuine milestones.
+- Netlify's free plan carried **"no overage charges ever"** as of 2026-09-02 —
+  exceeding the month's credits paused the site until the next cycle rather than
+  billing. Worth knowing, but not a reason to be casual: a paused site mid-work
+  is its own problem.
+- As of 2026-09-02, the usage breakdown lived at Team → **Usage & billing**
+  (credit balance) and → **Builds** → "Usage & insights" (per-project build
+  counts, which is what actually reveals deploy spend).
+
 ## Reliability write-ups
+
+### Free-tier multi-model fallback/retry architecture
+
+**Real findings at the time, fully removed 2026-08-28.** This app originally ran
+on OpenRouter's free tier, which meant contending with failure modes a paid
+model doesn't have — measuring the real API directly (timing headers vs. full
+response body separately, rather than trusting a generic failure message) found
+that the single most common failure was a **shared upstream worker-pool limit,
+returned as HTTP 200 with an `error` body instead of `choices`** rather than a
+real error status (so `response.ok` was true and a naive check swallowed it),
+hitting up to ~60% of calls at times.
+
+The fix at the time was a `models` fallback array (each model id has its own
+independent worker pool) plus a distinct, explicitly slower last-ditch model
+tried once after the normal retry ceiling.
+
+Both mechanisms — `FALLBACK_MODELS`/`LAST_DITCH_MODEL` in `models.ts`,
+`callOpenRouterOnce`, the client-side retry-until-success/last-ditch phase in
+`app.js` — were removed entirely in commit `dee917e` when switching to a single
+paid model (`mistralai/mistral-small-24b-instruct-2501`): the specific problem
+they solved (a *shared, account-independent* capacity pool) doesn't exist on
+paid usage, and silently substituting a different, lower-quality free model
+after a paid one fails would be a worse outcome than a clean visible failure.
+
+If a free or multi-provider setup is ever revisited, this same class of problem
+should be expected to recur — the pre-removal code and its full investigation
+are in history before `dee917e` if ever needed again.
+
+What carried forward from that investigation into the current, still-active code
+rather than being lost with the mechanism it was found for:
+
+- retries are bounded by a **time budget**, not a fixed attempt count, since a
+  fast failure (~0.5s) and a real generation (~10-20s) need different retry
+  economics *(today by both: each escalation tier has its own attempt count,
+  inside an overall time budget, and a fast failure gets free retries that don't
+  count - see `openrouter.ts`)*;
+- **a `fetch()` timeout signal stays armed while the response body is read**,
+  not just until headers arrive — an earlier flat 8s value aborted calls that
+  were actually succeeding, which is the general lesson to re-check first any
+  time a call "hangs" inexplicably;
+- OpenRouter distinguishes a short burst rate limit from a longer-window quota
+  via the `X-RateLimit-Reset` header, and only the latter is worth failing fast
+  on rather than retrying (a free-tier daily quota specifically resets at 00:00
+  UTC, confirmed from that header, not on a rolling 24h basis);
+- and judges were found to need an explicit word-count target in their own
+  prompt (currently 450-600 words, `roughly 300-500` for representatives):
+  without one they ran long enough to blow the time budgets of that era
+  regardless of retry logic.
+
+Under today's 650s budget the token cap is what bounds a reply's length, and the
+word target is what shapes it within that — `max_tokens` itself is a
+self-imposed engineering value, never specified by the source requirements, and
+free to tune.
 
 ### Escalation-chain reliability incident and fix (2026-09-20)
 
@@ -3916,7 +3999,7 @@ past tier 1, instead of continuing to the still-live tiers 3/4.
   so removing it would only reduce the table's own documentation value with no
   functional benefit.
 
-### Three real reliability bugs found in one production trial (2026-09-20)
+### Three reliability bugs, and a broken Abort, found in one production trial (2026-09-20)
 
 One real trial against the deployed site surfaced three genuinely separate bugs,
 all confirmed against the trial's own database rows rather than guessed at. The
@@ -4969,6 +5052,118 @@ exercised the thing. Read the generated file's real bytes, and sanity-check the
 *numbers* rather than the verdict - `rgba(1, 0, 0, ...)` being nothing like a
 near-white is what exposed the real bug.
 
+## Anti-abuse layers added ahead of switching to a paid OpenRouter model (2026-08-28)
+
+With the site needing to stay Public for 1-2 weeks of grading, and a real
+(non-`:free`) OpenRouter model about to be funded by a small prepaid balance,
+three independent layers were added - deliberately not just one, since each has
+a different blind spot.
+
+### Global call cap
+
+**Global call cap** (`isGlobalCallCapExceeded` in `db.ts`,
+`GLOBAL_CALL_CAP`/rolling 24h — 150 when first added, **raised to 350 the same
+day and still 350 as of 2026-10-05**; check `db.ts` rather than trusting this
+line): checked in `representative-background.ts`/`judge-background.ts` before
+any Supabase trial lookup or OpenRouter call.
+
+- This is the one that caps spend regardless of source - once the call log holds
+  350 rows from the last 24 hours, the abort endpoint's rows aside, no new agent
+  call starts - and defeating it would require actual, sustained abuse, not just
+  knowing a header value or spreading requests across IPs.
+- Deliberately does NOT log a row when it trips (would make a trip
+  self-perpetuating, since the rejection log itself would count towards the very
+  total being checked, keeping the cap tripped for the rest of the window even
+  after real traffic stopped) - the caller still gets a real error, it just
+  isn't persisted.
+- *(Since the Background Functions move the caller no longer sees it either: the
+  browser gets Netlify's 202, and a trip shows only in Netlify's function
+  logs.)*
+
+### Netlify per-IP rate limiting
+
+**Netlify per-IP rate limiting** (`config.rateLimit` export on
+`representative-background.ts`/`judge-background.ts` — 30 requests/5min/IP when
+first added, **raised to 45 on 2026-08-30**): a real, free-plan-supported
+platform feature (confirmed against Netlify's docs on 2026-08-28, not a paid
+add-on - the free plan then allowed 2 rate-limit rules per project, which is
+exactly the 2 functions that call OpenRouter), declared via the function's own
+`path` glob matching how `netlify.toml` actually routes to it.
+
+- Unverified in production - local `netlify dev` doesn't simulate rate limiting,
+  and this project has separately, repeatedly found its redirect-based routing
+  behaves differently once deployed than locally (see the "Production
+  deployment" entries below), so whether this exact path glob is what the
+  platform matches against is confirmed only by a real deploy.
+- *(Found on 2026-10-02: Netlify's bundler ignores a function's `config` export
+  unless the function has a default export, so with the named `handler` export
+  used here, `background: true`, `path` and `rateLimit` never took effect. The
+  filename made these Background Functions, and the rate limit was never applied
+  until it moved to netlify.toml - see that day's entry.)*
+- As of 2026-08-28, the installed `@netlify/functions` package's
+  `RateLimitConfig` TypeScript type was missing `windowLimit` entirely
+  (confirmed a stale type export by checking the actual zod schema Netlify's own
+  bundler validates against, vendored inside `netlify-cli`) - fixed by dropping
+  the `: Config` annotation on that export rather than fighting a wrong type,
+  since TS types are erased at build time and have zero effect on what the
+  platform reads.
+
+### Site-gate header
+
+**Site-gate header** (`isSiteGateOk` in `siteGate.ts`, `X-Site-Gate` header,
+checked in `trials.ts`'s POST too): explicitly NOT real access control - the
+token is a plain constant in the publicly-downloadable `app.js`, so anyone who
+looks defeats it trivially.
+
+- Its only job is filtering the laziest class of automated traffic (scanners
+  that never loaded the page at all) for near-zero cost.
+- Fails OPEN when `SITE_GATE_TOKEN` is unset server-side, on purpose - an unset
+  env var must never lock a grader out of an otherwise-working site.
+- **Needed `SITE_GATE_TOKEN` set in Netlify's production environment** (matching
+  the constant in `app.js` exactly) before this layer did anything at all -
+  **done since:** the user confirmed it set on 2026-08-30/2026-09-01, along with
+  `DEFAULT_MODEL` and `OPENROUTER_API_KEY`. Nothing outstanding here.
+
+### How the rejections reach the UI
+
+**Every rejection from all three layers surfaces a clear, specific reason in the
+UI**, not a raw status code *(no longer true for the agent endpoints - see the
+"Superseded" note at the end of this section: a site-gate or call-cap rejection
+of an agent call now reaches only Netlify's function logs. The per-IP limiter's
+rejection, which the platform returns before the handler runs, and a site-gate
+rejection of trial creation still reach the UI)* - this took a real fix, not
+just returning better text server-side:
+
+- `callAgentWithRetry()` in `app.js` previously called `res.json()`
+  unconditionally, so a response that DOESN'T come back as this app's own JSON
+  shape (the realistic case for Netlify's platform-level rate-limit block, which
+  returns a plain error page) threw a raw `SyntaxError` that fell into the
+  generic network-failure branch - confusing, and would have incorrectly retried
+  a permanently-blocked request.
+  - Fixed by splitting the fetch and the JSON parse into separate try/catches,
+    with a specific message for a non-JSON 429 (recognised as the platform rate
+    limiter) and a fallback for any other unrecognised non-JSON response.
+- Separately, OpenRouter's real HTTP 402 (not enough credit for the request:
+  what is left of the balance, or of the key's own spending limit, cannot cover
+  it) is now caught explicitly in both `callOpenRouter()` and
+  `callOpenRouterOnce()`, parsed for OpenRouter's own `error.message` where
+  possible (`describeErrorBody()`), and treated as non-retryable via a new
+  `isOutOfCredits()` text match on the client
+  - (mirrors the existing `isQuotaExhausted()` pattern - needed because
+    `representative.ts`/`judge.ts` always wrap an OpenRouter-layer failure as a
+    502, so the client can't rely on the status code alone the way it can for a
+    direct 4xx from this app's own endpoints).
+- The pre-existing free-tier daily-quota message was also reworded to drop
+  "free-tier"-specific language now that a paid model is in the picture.
+- **Superseded by the Background Functions migration:** `callAgentWithRetry()`,
+  `isOutOfCredits()` and `isQuotaExhausted()` no longer exist in `app.js`.
+  - The client stopped seeing an agent call's own response at all once those
+    endpoints became Background Functions - it now learns the outcome by polling
+    and reading the persisted `error_message`, so nothing on the client parses
+    these messages any more.
+  - The server-side wording still matters, because that stored text is what the
+    card displays.
+
 ## Bugs and fixes encountered (running log — add to this, don't replace it)
 
 Kept so a fix already found once doesn't get re-discovered from scratch, and so
@@ -5435,191 +5630,3 @@ Found via the live deployed site, none reproduced in local `netlify dev`.
     `-H "Authorization: Bearer $(grep KEY .env | cut -d= -f2)"` instead of
     interpolating the key directly — so the classifier doesn't see a bare secret
     in the command itself.
-
-### Free-tier multi-model fallback/retry architecture
-
-**Real findings at the time, fully removed 2026-08-28.** This app originally ran
-on OpenRouter's free tier, which meant contending with failure modes a paid
-model doesn't have — measuring the real API directly (timing headers vs. full
-response body separately, rather than trusting a generic failure message) found
-that the single most common failure was a **shared upstream worker-pool limit,
-returned as HTTP 200 with an `error` body instead of `choices`** rather than a
-real error status (so `response.ok` was true and a naive check swallowed it),
-hitting up to ~60% of calls at times.
-
-The fix at the time was a `models` fallback array (each model id has its own
-independent worker pool) plus a distinct, explicitly slower last-ditch model
-tried once after the normal retry ceiling.
-
-Both mechanisms — `FALLBACK_MODELS`/`LAST_DITCH_MODEL` in `models.ts`,
-`callOpenRouterOnce`, the client-side retry-until-success/last-ditch phase in
-`app.js` — were removed entirely in commit `dee917e` when switching to a single
-paid model (`mistralai/mistral-small-24b-instruct-2501`): the specific problem
-they solved (a *shared, account-independent* capacity pool) doesn't exist on
-paid usage, and silently substituting a different, lower-quality free model
-after a paid one fails would be a worse outcome than a clean visible failure.
-
-If a free or multi-provider setup is ever revisited, this same class of problem
-should be expected to recur — the pre-removal code and its full investigation
-are in history before `dee917e` if ever needed again.
-
-What carried forward from that investigation into the current, still-active code
-rather than being lost with the mechanism it was found for:
-
-- retries are bounded by a **time budget**, not a fixed attempt count, since a
-  fast failure (~0.5s) and a real generation (~10-20s) need different retry
-  economics *(today by both: each escalation tier has its own attempt count,
-  inside an overall time budget, and a fast failure gets free retries that don't
-  count - see `openrouter.ts`)*;
-- **a `fetch()` timeout signal stays armed while the response body is read**,
-  not just until headers arrive — an earlier flat 8s value aborted calls that
-  were actually succeeding, which is the general lesson to re-check first any
-  time a call "hangs" inexplicably;
-- OpenRouter distinguishes a short burst rate limit from a longer-window quota
-  via the `X-RateLimit-Reset` header, and only the latter is worth failing fast
-  on rather than retrying (a free-tier daily quota specifically resets at 00:00
-  UTC, confirmed from that header, not on a rolling 24h basis);
-- and judges were found to need an explicit word-count target in their own
-  prompt (currently 450-600 words, `roughly 300-500` for representatives):
-  without one they ran long enough to blow the time budgets of that era
-  regardless of retry logic.
-
-Under today's 650s budget the token cap is what bounds a reply's length, and the
-word target is what shapes it within that — `max_tokens` itself is a
-self-imposed engineering value, never specified by the source requirements, and
-free to tune.
-
-### Anti-abuse layers added ahead of switching to a paid OpenRouter model (2026-08-28)
-
-With the site needing to stay Public for 1-2 weeks of grading, and a real
-(non-`:free`) OpenRouter model about to be funded by a small prepaid balance,
-three independent layers were added - deliberately not just one, since each has
-a different blind spot.
-
-#### Global call cap
-
-**Global call cap** (`isGlobalCallCapExceeded` in `db.ts`,
-`GLOBAL_CALL_CAP`/rolling 24h — 150 when first added, **raised to 350 the same
-day and still 350 as of 2026-10-05**; check `db.ts` rather than trusting this
-line): checked in `representative-background.ts`/`judge-background.ts` before
-any Supabase trial lookup or OpenRouter call.
-
-- This is the one that caps spend regardless of source - once the call log holds
-  350 rows from the last 24 hours, the abort endpoint's rows aside, no new agent
-  call starts - and defeating it would require actual, sustained abuse, not just
-  knowing a header value or spreading requests across IPs.
-- Deliberately does NOT log a row when it trips (would make a trip
-  self-perpetuating, since the rejection log itself would count towards the very
-  total being checked, keeping the cap tripped for the rest of the window even
-  after real traffic stopped) - the caller still gets a real error, it just
-  isn't persisted.
-- *(Since the Background Functions move the caller no longer sees it either: the
-  browser gets Netlify's 202, and a trip shows only in Netlify's function
-  logs.)*
-
-#### Netlify per-IP rate limiting
-
-**Netlify per-IP rate limiting** (`config.rateLimit` export on
-`representative-background.ts`/`judge-background.ts` — 30 requests/5min/IP when
-first added, **raised to 45 on 2026-08-30**): a real, free-plan-supported
-platform feature (confirmed against Netlify's docs on 2026-08-28, not a paid
-add-on - the free plan then allowed 2 rate-limit rules per project, which is
-exactly the 2 functions that call OpenRouter), declared via the function's own
-`path` glob matching how `netlify.toml` actually routes to it.
-
-- Unverified in production - local `netlify dev` doesn't simulate rate limiting,
-  and this project has separately, repeatedly found its redirect-based routing
-  behaves differently once deployed than locally (see the "Production
-  deployment" entries above), so whether this exact path glob is what the
-  platform matches against is confirmed only by a real deploy.
-- *(Found on 2026-10-02: Netlify's bundler ignores a function's `config` export
-  unless the function has a default export, so with the named `handler` export
-  used here, `background: true`, `path` and `rateLimit` never took effect. The
-  filename made these Background Functions, and the rate limit was never applied
-  until it moved to netlify.toml - see that day's entry.)*
-- As of 2026-08-28, the installed `@netlify/functions` package's
-  `RateLimitConfig` TypeScript type was missing `windowLimit` entirely
-  (confirmed a stale type export by checking the actual zod schema Netlify's own
-  bundler validates against, vendored inside `netlify-cli`) - fixed by dropping
-  the `: Config` annotation on that export rather than fighting a wrong type,
-  since TS types are erased at build time and have zero effect on what the
-  platform reads.
-
-#### Site-gate header
-
-**Site-gate header** (`isSiteGateOk` in `siteGate.ts`, `X-Site-Gate` header,
-checked in `trials.ts`'s POST too): explicitly NOT real access control - the
-token is a plain constant in the publicly-downloadable `app.js`, so anyone who
-looks defeats it trivially.
-
-- Its only job is filtering the laziest class of automated traffic (scanners
-  that never loaded the page at all) for near-zero cost.
-- Fails OPEN when `SITE_GATE_TOKEN` is unset server-side, on purpose - an unset
-  env var must never lock a grader out of an otherwise-working site.
-- **Needed `SITE_GATE_TOKEN` set in Netlify's production environment** (matching
-  the constant in `app.js` exactly) before this layer did anything at all -
-  **done since:** the user confirmed it set on 2026-08-30/2026-09-01, along with
-  `DEFAULT_MODEL` and `OPENROUTER_API_KEY`. Nothing outstanding here.
-
-#### How the rejections reach the UI
-
-**Every rejection from all three layers surfaces a clear, specific reason in the
-UI**, not a raw status code *(no longer true for the agent endpoints - see the
-"Superseded" note at the end of this section: a site-gate or call-cap rejection
-of an agent call now reaches only Netlify's function logs. The per-IP limiter's
-rejection, which the platform returns before the handler runs, and a site-gate
-rejection of trial creation still reach the UI)* - this took a real fix, not
-just returning better text server-side:
-
-- `callAgentWithRetry()` in `app.js` previously called `res.json()`
-  unconditionally, so a response that DOESN'T come back as this app's own JSON
-  shape (the realistic case for Netlify's platform-level rate-limit block, which
-  returns a plain error page) threw a raw `SyntaxError` that fell into the
-  generic network-failure branch - confusing, and would have incorrectly retried
-  a permanently-blocked request.
-  - Fixed by splitting the fetch and the JSON parse into separate try/catches,
-    with a specific message for a non-JSON 429 (recognised as the platform rate
-    limiter) and a fallback for any other unrecognised non-JSON response.
-- Separately, OpenRouter's real HTTP 402 (not enough credit for the request:
-  what is left of the balance, or of the key's own spending limit, cannot cover
-  it) is now caught explicitly in both `callOpenRouter()` and
-  `callOpenRouterOnce()`, parsed for OpenRouter's own `error.message` where
-  possible (`describeErrorBody()`), and treated as non-retryable via a new
-  `isOutOfCredits()` text match on the client
-  - (mirrors the existing `isQuotaExhausted()` pattern - needed because
-    `representative.ts`/`judge.ts` always wrap an OpenRouter-layer failure as a
-    502, so the client can't rely on the status code alone the way it can for a
-    direct 4xx from this app's own endpoints).
-- The pre-existing free-tier daily-quota message was also reworded to drop
-  "free-tier"-specific language now that a paid model is in the picture.
-- **Superseded by the Background Functions migration:** `callAgentWithRetry()`,
-  `isOutOfCredits()` and `isQuotaExhausted()` no longer exist in `app.js`.
-  - The client stopped seeing an agent call's own response at all once those
-    endpoints became Background Functions - it now learns the outcome by polling
-    and reading the persisted `error_message`, so nothing on the client parses
-    these messages any more.
-  - The server-side wording still matters, because that stored text is what the
-    card displays.
-
-### Netlify credit consumption
-
-Operationally important — the free tier is a hard constraint here.
-
-- **A production deploy costs a real share of the free plan's monthly credits**
-  (recorded on 2026-09-02).
-  - Function compute and bandwidth for an app this size were negligible by
-    comparison when measured: on 2026-08-26, a day with 10 deploys, the deploys
-    accounted for nearly all of the credits used, and all the OpenRouter test
-    traffic for a tiny fraction.
-- **This makes "merge to `main` to test a fix" genuinely expensive**, at a real
-  slice of the monthly allowance per attempt.
-  - `netlify dev` locally costs **zero** credits (it never touches the build
-    pipeline), makes real OpenRouter and real Supabase calls, and is the correct
-    place to iterate. Deploy only at genuine milestones.
-- Netlify's free plan carried **"no overage charges ever"** as of 2026-09-02 —
-  exceeding the month's credits paused the site until the next cycle rather than
-  billing. Worth knowing, but not a reason to be casual: a paused site mid-work
-  is its own problem.
-- As of 2026-09-02, the usage breakdown lived at Team → **Usage & billing**
-  (credit balance) and → **Builds** → "Usage & insights" (per-project build
-  counts, which is what actually reveals deploy spend).
