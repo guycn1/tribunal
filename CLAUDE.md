@@ -644,7 +644,7 @@ Three things hold across the whole log:
   - *(Closed the same day: Supabase and OpenRouter were configured and verified
     against the real services - see the next two entries.)*
 
-#### Supabase, OpenRouter and Netlify set up
+#### Supabase, OpenRouter and Netlify set up, and the first deploy's bugs
 
 **Supabase: done.** New project `tribunal` created, schema applied (with the
 blank-line paste fix and the service_role grant fix, both logged below), local
@@ -717,7 +717,7 @@ subsection of the bug log below for full detail:
    by an immediate successful retry with an equivalent prompt) — now retried
    like 429/5xx.
 
-#### First trials and merges
+#### First trials, two merges, and the hard rule on asking first
 
 **Free-tier model reliability work (choosing among Nvidia free variants,
 worker-pool saturation, an 8s timeout that was killing successful calls) — all
@@ -819,7 +819,7 @@ time, for the same reason. The 9 commits:
   bug log below (Frontend UX subsection). For the rest, this entry and the
   commits' own messages are the record.
 
-### 2026-08-28: anti-abuse layers, the paid model, and concurrency
+### 2026-08-28: the paid model, timeouts, truncation and concurrency
 
 #### Two merges, and the anti-abuse layers going live
 
@@ -1035,7 +1035,7 @@ the time, for the same reason.
   - Per-IP rate limiting was the third, and was found on 2026-10-02 never to
     have been applied; see that day's entry.
 
-#### Concurrency and repetition
+#### Concurrency, repetition, and the retry budget
 
 **Two full trial runs after the merge above (2026-08-28, local `netlify dev`)
 both had most representative calls fail — a real, reproducible reliability
@@ -1648,7 +1648,7 @@ now identified by name instead of inferred from timing alone.
     without this separate, unrelated 30s artefact interfering.
   - Nothing to fix in this app for it - it isn't this app's constraint to fix.
 
-### 2026-08-29/30: the `-background` rename and the escalation chain
+### 2026-08-29/30: the `-background` rename, truncation and the escalation chain
 
 #### Renaming the agent functions with the `-background` suffix
 
@@ -1755,7 +1755,7 @@ needing a real OpenRouter call - returned Netlify's own `202` in **~50ms**.
   spending quota. *(Confirmed since - see the note under "Not tested against a
   real call at that point" above.)*
 
-#### Truncation retries and the call cap
+#### The free pass, stronger penalties, and the call cap
 
 **The user gave a standing, revocable "free pass" (2026-08-29) to spend
 OpenRouter quota on local testing without asking each time, explicitly excluding
@@ -2424,7 +2424,7 @@ entry): a trial could be marked `completed` while judges were still running.**
   - and an abort after that point read "Aborted (N of 7 completed)".
 - No result is lost or fabricated - it is a status label only.
 
-#### The docs put under test
+#### The trial-status fix, and the docs put under test
 
 **That bug fixed, the docs brought in step, and the docs put under test
 (2026-09-26, on the user's go-ahead: "bring all docs in step and make the tests
@@ -3010,7 +3010,7 @@ rubric.**
   - A full backup of every deleted row, 431 in all, was kept in that session's
     scratch directory.
 
-#### Aborts in the call log
+#### Aborts in the call log, and badge spacing
 
 **An early abort now reads predictably in the call log (2026-09-27, the queued
 investigation of trial `a02b8215`).** On 2026-09-21 the user aborted a trial on
@@ -3578,7 +3578,7 @@ on one shared network could reach; at 60 it has room for about 8.
 - Each new or changed check fails under a targeted break meant for it, every
   file restored byte for byte.
 
-### 2026-10-05: temporal, numeric and other claim sweeps, and README's layout
+### 2026-10-05: claim sweeps, the abort endpoint's reply, and README's layout
 
 #### The claim sweeps
 
@@ -3659,7 +3659,7 @@ had answered `200` naming both roles while the foreign key rejected both rows.
   always reports success, and both new checks fail when the condition is
   inverted.
 
-#### README's layout on a phone
+#### README's endpoint list, database map and badge tables
 
 **README's endpoint table became a list (2026-10-05, the user's choice of
 layout).** On a phone with scaled-up text, the table's Path column took most of
@@ -3931,7 +3931,7 @@ past tier 1, instead of continuing to the still-live tiers 3/4.
   - One dead model id at tier 2 was enough to kill the whole call outright, even
     with two genuinely live tiers still ahead of it.
 
-#### The fixes
+#### The fixes, and what needed no change
 
 - **Fixed:** a plain HTTP failure (non-429/402/5xx) now escalates straight to
   the next tier - skipping the current tier's remaining attempts entirely, since
@@ -5462,10 +5462,6 @@ Not code — Supabase/Netlify UI quirks, not fixed by any file change.
   "Loading available regions…"**, blocking the whole form. Fixed by a full page
   reload — came back populated on the next attempt. If this happens again,
   reload before assuming anything is actually broken.
-- **`gh` (GitHub's CLI) was not installed on this machine as of 2026-10-04**,
-  and installing it wasn't wanted. Repo creation and any other GitHub-side
-  action went through the browser (github.com) instead — don't suggest `gh`
-  commands without checking it's actually available first.
 - **As of 2026-08-27, Supabase offered a newer key system** (Project Settings →
   API Keys → "Publishable and secret API keys" tab) alongside the classic
   "Legacy anon, service_role API keys" tab.
@@ -5588,6 +5584,13 @@ Found via the live deployed site, none reproduced in local `netlify dev`.
   - Previously this returned a permanent failure on the very first empty
     response. Fixed: retried like the existing 429/5xx path instead of failing
     immediately.
+
+### Diagnosing the deployed site
+
+Lessons from investigating the production bugs above: how to tell a network
+fault from a slow model, and what OpenRouter's key-status endpoint can and
+cannot tell you.
+
 - **Diagnosed "is this OpenRouter-specific or a general Netlify networking
   problem?" by adding a temporary control fetch** (to a definitely-reachable
   host, `api.github.com`) alongside the real OpenRouter call, plus richer error
@@ -5629,6 +5632,13 @@ Found via the live deployed site, none reproduced in local `netlify dev`.
     reason to think it does.
   - *(Moot since 2026-08-28: the account is paid, and no daily request allowance
     applies.)*
+
+### Tools on this machine
+
+- **`gh` (GitHub's CLI) was not installed on this machine as of 2026-10-04**,
+  and installing it wasn't wanted. Repo creation and any other GitHub-side
+  action went through the browser (github.com) instead — don't suggest `gh`
+  commands without checking it's actually available first.
 - **`curl`ing a raw API key directly in a Bash command gets blocked by the
   harness's auto-mode safety classifier**, even for a legitimate first-party
   check (OpenRouter's own key-status endpoint, using the key as intended).
