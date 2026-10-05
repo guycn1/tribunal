@@ -19,6 +19,7 @@ Daenerys Targaryen is the exiled heir of the dynasty that once ruled Westeros. S
 Daenerys attacks King's Landing. The city surrenders, but Daenerys burns streets and civilians from her dragon, Drogon. Jon witnesses the destruction. Grey Worm, her commander, joins the killing on the ground. Daenerys promises further campaigns of "liberation." Tyrion Lannister, her chief adviser, resigns in protest and is imprisoned, warning Jon that Daenerys will kill anyone who threatens her rule, including Jon's sisters. Jon asks Daenerys to show mercy and share moral judgment with others. She refuses. During an embrace, he stabs her to death. Her soldiers arrest him.
 
 **Stipulated facts (both sides accept these):**
+
 - King's Landing had surrendered: bells rang, organized resistance had ceased. Daenerys then used Drogon against streets and civilians, causing destruction on a vast scale.
 - After the victory, Daenerys told her assembled forces the campaign of "liberation" would continue beyond King's Landing. Jon had seen the city and heard the speech.
 - Tyrion Lannister renounced his office as Hand and was imprisoned. He warned Jon that Daenerys would treat Jon's sisters, and anyone else she regarded as an obstacle, as enemies.
@@ -34,12 +35,14 @@ Daenerys attacks King's Landing. The city surrenders, but Daenerys burns streets
 **Non-negotiable rule:** a representative's seat (defense or prosecution) fixes only procedural role — never an opinion, a factual inference, or a final position. A judge's named model fixes the reasoning method it applies, never the verdict. No agent is instructed to argue toward a predetermined conclusion; each reasons from its own character/method and may land anywhere, including against "its side." Each agent's full system prompt (real depth, not a one-line trait) lives in [`netlify/functions/lib/representatives.ts`](netlify/functions/lib/representatives.ts) or [`judges.ts`](netlify/functions/lib/judges.ts), and [`prompts.ts`](netlify/functions/lib/prompts.ts) pairs it with the case record (for a judge, with the representatives' arguments too) — this section states identity and required reasoning approach, not the prompts themselves.
 
 **Representatives:**
+
 - **Jon Snow** (defense) — plain-spoken, duty- and protection-driven; accepts blame readily; changes position when honor or evidence requires it.
 - **Tyrion Lannister** (defense) — quick, ironic, skeptical of purity and inherited power; favors persuasion and outcomes that leave people alive.
 - **Daenerys Targaryen** (prosecution) — commanding, morally intense; prizes liberation and loyalty; reacts sharply to betrayal but can be reached by genuine respect; interprets the record herself, including evidence against her.
 - **Grey Worm** (prosecution) — terse, disciplined; weighs witnessed conduct and sequence of events over rhetoric or speculation.
 
 **Judges** (each modelled on a real jurist's documented reasoning method, not a persona):
+
 - **Judge 1 — the Aharon Barak model.** Systematic and rights-centered; purposive interpretation (text read against a rule's function, structure, and democratic values); tests a rights claim through lawful authority, proper purpose, rational fit, less harmful means, and proportionality; builds an explicit doctrinal structure before resolving the dispute.
 - **Judge 2 — the Menachem Elon model.** Tradition-minded; treats Jewish law as a working legal source alongside comparative and historical material; insists courts have limited authority — identifying illegality is not license to supervise every political or social choice; comfortable dissenting on the merits.
 - **Judge 3 — the Meir Shamgar model.** Institutional and fact-heavy; identifies offices, powers, duties, and remedies before moral intuition; treats constitutional development as reasoned legal development from text, precedent, and institutional structure rather than proclamation; returns consistently to the claimant, the right, and the remedy.

@@ -61,8 +61,9 @@ attempt (first attempt delivered no readable content at all, silently). Compared
 
 Rules 1 and 2 were restated explicitly by the user on 2026-08-27, specifically
 so they survive a context compaction; rule 3 was added by the user on
-2026-09-27, and applies retroactively as well as to new text; rule 4 was added
-by the user on 2026-10-06, after another project's rule of the same kind.
+2026-09-27, and applies retroactively as well as to new text; rules 4 and 5
+were added by the user on 2026-10-06, each after another project's rule of the
+same kind.
 
 Together they govern almost every action taken in this repo and are not
 situational — they apply the same way regardless of how routine the action
@@ -104,15 +105,15 @@ that specific action.**
     spends real quota, so it still needs permission first.
 - Being told once to proceed does not carry forward. Each new call or deploy is
   its own ask.
-- See also [[economical-openrouter-testing]] and [[netlify-free-tier-credits]]
-  in memory, which carry the same rule and the reasoning behind it.
+- See also the `economical-openrouter-testing` and `netlify-free-tier-credits`
+  notes in memory, which carry the same rule and the reasoning behind it.
 
 ### 2. Only merge to `main` once a substantial milestone is genuinely done, and ask first
 
 `draft` gets every commit. `main` only receives a `git merge draft --no-ff` once
 a real phase of work is settled — not as a reflex after each fix (this was got
-wrong earlier in this project: see the "Known trap" note in
-[[tribunal-git-workflow]] in memory).
+wrong earlier in this project: see the "Known trap" part of the
+`tribunal-git-workflow` note in memory).
 
 Per rule 1 above, merging to `main` and pushing triggers a deploy, so it already
 requires explicit permission — but treat "is this actually a milestone" as its
@@ -267,6 +268,74 @@ link's words describe its target are reading jobs no script can do.
 A pass that adds links is proven to have changed nothing else by rendering each
 file through GitHub's markdown API before and after, stripping every `<a>` tag
 from both, normalising whitespace, and requiring the two to be identical.
+
+### 5. Every Markdown file renders exactly as written
+
+It covers every Markdown file in the repository, this one included.
+
+**No Markdown file may ship with a rendering defect: GitHub's page must show
+every word of the source, print none of its syntax as text, and build exactly
+the headings, lists, tables and links the source asks for.** A rendering defect
+is invisible in the source, and can stay on the page unnoticed: HARD RULE 3 read
+"until &lt;date&gt;" in its source and "until ," on GitHub from the day it was
+added, 2026-09-27, until `27103e4` on 2026-10-06, because GitHub drops an HTML
+tag it does not know.
+
+#### The two checks
+
+- **`tests/markdown.test.js`,** part of `npm test` and offline, checks every
+  Markdown file for the defects already known: an HTML tag GitHub would drop, a
+  code span left open or holding an escape it would print, a line of `-` or `=`
+  that turns the text above into a heading, a list, heading or quote starting
+  mid-paragraph, a separator right before a heading, a table missing its `|---|`
+  row, with a row of the wrong width or with a pipe inside a code span, an
+  unmatched `**`, an asterisk between two letters or digits, a broken link, two
+  trailing spaces, a paragraph indented into a code block, and a
+  `[[wiki-style]]` link. Each rule was established by rendering the defect
+  through GitHub's own Markdown API and watching it break; the comment on each
+  says what GitHub does.
+- **`npm run check-render`** (`scripts/check-render.js`) renders every Markdown
+  file through GitHub's Markdown API and compares the page with the source:
+  every word of the source must reach the page, no Markdown may be printed as
+  text, and the page must have as many headings, tables, table cells, rules,
+  code blocks, list items, quotes, line breaks, links and bold spans as the
+  source asks for. This is the check that catches a defect nobody has listed
+  yet. It needs the network - one unauthenticated GitHub request per file, 60 an
+  hour, and none of this project's quota - so it is not part of `npm test`.
+
+#### When to run them
+
+- `npm test`, with the offline half in it, before every commit, as always.
+- `npm run check-render` before every commit that touches a Markdown file, and
+  before every merge to `main`. A defect it finds blocks the commit, as a
+  failing test does.
+- If GitHub cannot be reached, the script exits 2 rather than passing: the check
+  has not run, and the commit should say so rather than claim it.
+
+#### When a check finds something
+
+- Fix the source so the page shows what was meant. Never weaken a rule to make a
+  file pass.
+- If a check flags something that in fact renders correctly, render it through
+  GitHub to prove so, then narrow the rule, saying why in its comment - the same
+  proof that set the rule in the first place.
+- When `npm run check-render` finds a defect the offline suite missed, add an
+  offline rule for it, established by rendering the defect first, so `npm test`
+  catches the next one without the network.
+
+#### Writing so it renders
+
+- A literal angle bracket outside a code span is `&lt;` or `&gt;`. The only raw
+  tags are `<code>` and `<b>`, which GitHub keeps, in README's endpoint list and
+  badge tables.
+- A list follows a blank line, and a wrapped line never starts with `- `, `+ `,
+  `* `, `1. `, `#` or `>`.
+- Nothing but a blank line sits directly above a `---`, and no `---` sits right
+  before a heading.
+- No pipe inside a code span in a table, no `[[wiki-style]]` link, and no line
+  ending in two spaces.
+- A memory note is named in a code span (the `tribunal-git-workflow` note), not
+  linked.
 
 ## What this project is
 
@@ -659,6 +728,8 @@ session from the top. Keep its layout:
 - **After a structural change, render the file through GitHub's markdown API
   before and after and compare the text**, so that a dropped line or a heading
   swallowed into a paragraph shows up.
+- **Run `npm run check-render` after editing any Markdown file,** as HARD RULE 5
+  says, and keep to what that rule's last part lists.
 - **Point to another place in this file by quoting its heading, not by a link:**
   HARD RULE 4 exempts this file. When a heading is renamed, find every quote of
   its old name, line breaks included, and update it.
@@ -3820,7 +3891,7 @@ descriptions, and left free they wrapped at every space, `aborted (N` / `of 7` /
   it starts with, and any dash - and fails on any other; 14 targeted breaks were
   each caught by the checks meant for them.
 
-### 2026-10-06: this file's layout, and HARD RULE 4
+### 2026-10-06: this file's layout, and HARD RULES 4 and 5
 
 **This file restructured (2026-10-06, on the user's request, after the layout of
 another project's CLAUDE.md).** Before, many of its lines ran to thousands of
@@ -3873,6 +3944,32 @@ files it covers, `README.md` and `SPEC.md`:
   routes), every file restored byte for byte. Three changes that should pass
   did: a valid compare page, and a table and a route linked from SPEC.md to
   their README sections.
+
+**HARD RULE 5 added (2026-10-06, by the user): every Markdown file renders
+exactly as written** - see the HARD RULES block at the top. Prompted by HARD
+RULE 3's "until &lt;date&gt;", which GitHub had shown as "until ," from
+2026-09-27 until `27103e4` found it by chance. The idea is another project's
+Markdown checker; the rules and the code were built afresh, from what GitHub was
+seen to do.
+
+- `tests/markdown.test.js`, now part of `npm test`, checks every Markdown file,
+  this one included, for 15 known defects, each first rendered through GitHub in
+  a probe of 25 candidate defects read back as GitHub's HTML. Each of its 45
+  checks (15 rules in each of the three files) fails when its defect is appended
+  to that file, and 7 controls that render correctly pass in all three.
+- `scripts/check-render.js` (`npm run check-render`) renders each Markdown file
+  through GitHub's Markdown API and compares the page with the source. Proven
+  through GitHub on 22 small files: every kind of defect it reports - words
+  lost, eight kinds of Markdown printed as text, and ten structure counts -
+  fires on a file built to cause it, a controls file renders as written, and it
+  exits 1 on a defect and 2 when GitHub cannot be reached. A probe for a
+  backslash printed in prose was dropped on the way: a backslash the source
+  writes outside a code span is what it shows.
+- On today's files both pass. The audit that started this found one thing to
+  fix: the three `[[memory-note]]` pointers in HARD RULES 1 and 2, which GitHub
+  prints with their brackets, are now note names in code spans. SPEC.md's three
+  lists gained a blank line before them, rendering identically, so the offline
+  check can tell a list from a wrapped line.
 
 ## Operational notes
 
