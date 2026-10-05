@@ -441,8 +441,8 @@ it should be.
   - **There is no request allowance to budget against.** The free-tier daily
     request cap (50/day, or 1000/day with $10+ of credit added) applied only
     until 2026-08-28; since then every model this project calls is a genuinely
-    paid one - the default model from that day's switch (logged under "Current
-    status"), and every tier of the escalation chain built after it (see the
+    paid one - the default model from that day's switch (logged under "Status
+    log"), and every tier of the escalation chain built after it (see the
     note in the comment above `buildRetryTiers()` in `openrouter.ts` that every
     tier is a paid model).
   - The spend to be careful with is real money per token (`pricing.ts`), and the
@@ -545,7 +545,7 @@ Machine-local setup — redo this if `.git/` or the machine is ever lost again.
 - Before changing any representative's prompt because an argument landed against
   its seat - a prosecution representative concluding that Jon was justified,
   say. That is the dossier's own requirement being met, not a defect; see the
-  2026-09-28 entry on prosecution seats under "Current status".
+  2026-09-28 entry on prosecution seats under "Status log".
 - Before introducing any verdict-combination logic, under any framing.
 - Before making architectural choices not covered by Part 5 (e.g. SQL vs NoSQL
   specifics, exact model-per-role assignments) — surface these as open decisions
@@ -576,7 +576,9 @@ session from the top. Keep its layout:
   before and after and compare the text**, so that a dropped line or a heading
   swallowed into a paragraph shows up.
 
-## Current status (check this is still accurate before trusting it)
+## Status log
+
+Check this is still accurate before trusting it.
 
 ### How to read this log
 
@@ -3781,7 +3783,7 @@ same session.
 **When it happens: run `/compact`, or start a fresh Claude Code session in this
 same project directory (`d:\Misc\tribunal-project-guy-cohen`) and tell it what's
 in progress.** A fresh session is exactly the scenario this file exists for — a
-fresh session reads the "Current status" section (kept live-updated for exactly
+fresh session reads the "Status log" section (kept live-updated for exactly
 this reason) plus memory (see below) plus the real repo state, and can resume
 with zero context loss and a full fresh image budget.
 
@@ -4144,7 +4146,7 @@ standing permission):
   - *(Changed on 2026-09-27: a reply that finishes after the abort is now logged
     as an `aborted` row rather than a `success`, and an attempt that fails as
     the abort lands is no longer logged as re-tried - see that day's entry on
-    early aborts under "Current status".)*
+    early aborts under "Status log".)*
 - That abort run incidentally validated the transient-retry work under genuine
   load: real
   `[transient-retried] was rate limited (HTTP 429) - escalated to anthropic/claude-haiku-4.5`
@@ -4516,7 +4518,7 @@ to `draft` by 2026-09-03:
      "Call failed."
    - *(The `currentModels` half was replaced the next day: a discarded row is
      always one attempt behind, so the live model now comes from the
-     `agent_progress` table - see the 2026-09-03 entry under "Current status".
+     `agent_progress` table - see the 2026-09-03 entry under "Status log".
      The "keep waiting, don't show Call failed" half still stands.)*
 3. **Smooth-scroll to Representatives** on "Begin new trial." `54b2cba`.
 4. **Loading overlay for run-history clicks** — full-`.main` overlay with a
@@ -5205,8 +5207,8 @@ this log didn't exist yet to check against).
     singular — replaced the batch `representatives.ts` / `judges.ts`), fanned
     out in parallel by the frontend instead of internally by one invocation.
   - (Those two files were later renamed to `representative-background.ts` /
-    `judge-background.ts` — see the 2026-08-29 rename entry under "Current
-    status" — so those are the names to look for today.)
+    `judge-background.ts` — see the 2026-08-29 rename entry under "Status
+    log" — so those are the names to look for today.)
 - **429s from OpenRouter's free-tier rate limit were expected and real, and kept
   happening for as long as the project ran on the free tier (until 2026-08-28)**
   — not a bug to fix, but the system's handling of them is deliberate
@@ -5242,7 +5244,7 @@ this log didn't exist yet to check against).
     a one-off.
   - *(Superseded on 2026-08-28: the ~30s cut traced that day was
     `lambda-local`'s fixed synchronous-function timeout, which a restart does
-    not change - see that day's entries under "Current status". The agent
+    not change - see that day's entries under "Status log". The agent
     functions' `-background` names took them out of it.)*
 - **`netlify dev`'s redirect layer does not correctly forward path-segment
   `:id`/`:role` placeholders to the invoked function locally**, even though
@@ -5574,7 +5576,7 @@ Found via the live deployed site, none reproduced in local `netlify dev`.
     are long gone: Netlify's documented limit for a synchronous function on the
     free plan, checked on 2026-08-28, was 10 seconds, and the agent calls have
     run as Background Functions since 2026-08-29 - see the CRITICAL CORRECTION
-    entry under "Current status". `MAX_RETRIES` no longer exists, and
+    entry under "Status log". `MAX_RETRIES` no longer exists, and
     per-attempt timeouts now scale with prompt size and token cap inside a 650s
     Background Function budget. See `openrouter.ts`.)*
 - **A live call returned HTTP 200 with a well-formed response but empty
