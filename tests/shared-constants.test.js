@@ -234,7 +234,7 @@ const quoted = (text) => [...String(text || '').matchAll(/'([^']*)'/g)].map((m) 
 const sameSet = (a, b) => a.length === b.length && new Set(a).size === a.length && a.every((x) => b.includes(x));
 
 const backendReps = [...representativesTs.matchAll(/^ {2}(\w+): \{\r?\n {4}role: '(\w+)',\r?\n {4}name: '([^']+)',\r?\n {4}seat: '(\w+)'/gm)].map((m) => ({ key: m[1], role: m[2], name: m[3], seat: m[4] }));
-const backendJudges = [...judgesTs.matchAll(/^ {2}(\w+): \{\r?\n {4}role: '(\w+)',/gm)].map((m) => ({ key: m[1], role: m[2] }));
+const backendJudges = [...judgesTs.matchAll(/^ {2}(\w+): \{\r?\n {4}role: '(\w+)',\r?\n {4}name: '([^']+)',/gm)].map((m) => ({ key: m[1], role: m[2], name: m[3] }));
 check('found the representatives in representatives.ts', backendReps.length > 0, String(backendReps.length));
 check('found the judges in judges.ts', backendJudges.length > 0, String(backendJudges.length));
 check('each definition is keyed by its own role', [...backendReps, ...backendJudges].every((d) => d.key === d.role), JSON.stringify([...backendReps, ...backendJudges].filter((d) => d.key !== d.role)));
@@ -273,6 +273,13 @@ const frontendMeta = Object.fromEntries([...metaBlock.matchAll(/^ {2}(\w+): \{ n
 for (const d of backendReps) {
   const f = frontendMeta[d.role];
   check(`${d.role}: app.js shows the same name and seat`, Boolean(f) && f.name === d.name && f.seat === d.seat, f ? `${f.name}/${f.seat} vs ${d.name}/${d.seat}` : 'missing from REPRESENTATIVE_META');
+}
+
+// Each judge's card heading, likewise.
+const judgeMetaBlock = (appJs.match(/const JUDGE_META = \{([\s\S]*?)\};/) || [])[1] || '';
+const frontendJudgeNames = Object.fromEntries([...judgeMetaBlock.matchAll(/^ {2}(\w+): \{ name: '([^']+)' \}/gm)].map((m) => [m[1], m[2]]));
+for (const d of backendJudges) {
+  check(`${d.role}: app.js shows the same name`, frontendJudgeNames[d.role] === d.name, `${frontendJudgeNames[d.role] ?? 'missing from JUDGE_META'} vs ${d.name}`);
 }
 
 // --- 7. The page's timeouts outlast the server's budget ------------------

@@ -2018,6 +2018,10 @@ function renderRepresentatives() {
  * it: polling waits POLL_TIMEOUT_MS (700s), longer than the 650s budget a
  * call runs within. So all three judges in a run see the same set of
  * arguments, the set state.representatives records, live or historical.
+ * One rare edge case is the exception: a trigger whose fetch() fails after
+ * the server has already accepted it. During that live run the card shows
+ * the failure while the call itself goes on and can save an argument the
+ * judges then read; reopened from history, the trial shows it.
  * That's what makes a single banner above all three cards correct, rather
  * than a per-judge-card note or any new stored data.
  *

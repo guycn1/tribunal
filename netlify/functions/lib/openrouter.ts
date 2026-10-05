@@ -428,8 +428,10 @@ const MIN_WORDS_FOR_REPEATED_PASSAGE = 12;
 // she would choose to cause, ..." 84 times over in a stored grey_worm reply
 // (2026-08-29) - which the sentence rules read as one long sentence and
 // the run-on check never sees, since every comma resets its count. That
-// one ran into the token cap and was discarded as truncated; the same
-// loop ending on its own would have been saved as a success.
+// one ran into the token cap on both of its attempts and was saved as a
+// success, minutes before a reply still capped at the end of the chain
+// became a failure (trial a0f41cbd); the same loop ending on its own,
+// below the cap, would have passed every rule above.
 //
 // Two rules, calibrated on 2026-09-27 against the 692 of 844 stored texts
 // the rules above pass:

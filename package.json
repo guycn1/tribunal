@@ -2,7 +2,7 @@
   "name": "tribunal",
   "version": "1.0.0",
   "private": true,
-  "description": "A multi-agent tribunal that runs a fixed fictional case through four representative agents and three judge agents, each modeled on a distinct reasoning style.",
+  "description": "A multi-agent tribunal that runs a fixed fictional case through four representative agents, each reasoning in character, and three judge agents, each modelled on a distinct real judicial reasoning method.",
   "scripts": {
     "dev": "netlify dev",
     "typecheck": "tsc --noEmit",
