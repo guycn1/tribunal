@@ -27,12 +27,10 @@ import type { JudgeRole, RepresentativeRole } from './lib/types';
 // since a reply that reaches the cap is never kept: callOpenRouter()
 // retries or escalates it, which costs a further attempt.
 //
-// Asked for, not what was observed: counted across every row in
-// api_call_logs as of 2026-09-21, judges had hit the cap 2 times in 363
-// calls (0.6%), representatives 67 times in 897 (7.5%) - the
-// representatives had run out of room about thirteen times as often as the
-// role with the longer word target. The stated targets did not decide it,
-// so do not reason about the cap from the targets alone.
+// Asked for, not what was observed: in api_call_logs as of 2026-09-21,
+// the representatives had run out of room several times as often as the
+// judges, the role with the longer word target. The stated targets did not
+// decide it, so do not reason about the cap from the targets alone.
 //
 // Shares AGENT_MAX_TOKENS with representative-background.ts - see the
 // comment on that constant in models.ts for why one shared value across

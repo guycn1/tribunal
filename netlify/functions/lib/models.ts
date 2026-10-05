@@ -23,9 +23,9 @@ export const ALL_AGENT_ROLES = Object.keys(ROLE_ENV_VAR);
 // judge-background.ts, and exposed to the frontend via case.ts, so there is
 // exactly one place this number is defined (test fixtures restate the
 // current value, but nothing reads it from them). The frontend uses it to
-// mark a success saved truncated before that became a failure (see
-// isLegacyTruncation() in app.js): those rows were logged under a cap of
-// 1,400, this constant's value since 2026-08-28, and are read against it.
+// mark a success saved truncated under this cap before that became a
+// failure (see isLegacyTruncation() in app.js): it reads a completion at a
+// multiple of 1,400, this constant's value since 2026-08-28, as one.
 // Should this value ever change, give isLegacyTruncation() a 1,400 of its
 // own, so those rows are still read against the cap they were written
 // under.
@@ -123,8 +123,8 @@ export function getTruncationFallbackModel(): string {
 // plain HTTP error there escalates at once and forfeits the rest (see the
 // tiered retry loop in openrouter.ts). They exist because real measured
 // data on tier 2's original model (mistralai/mistral-large-2512) found it
-// not reliable enough on its own (in targeted tests on 2026-08-29, 2 of its
-// 5 fallback attempts truncated too). These two are
+// not reliable enough on its own (in targeted tests on 2026-08-29, some of
+// its fallback attempts truncated too). These two are
 // deliberately two models from two different companies, neither an
 // incremental step within the same family: escalating vendor as well as
 // capability removes any shared-family quirk as an explanation, not just a

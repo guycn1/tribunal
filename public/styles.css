@@ -200,8 +200,8 @@ body {
      The inner layer's alpha was cut harder than the outer one's (60 -> 38
      against 35 -> 22): the complaint that addressed was the mark reading
      too hot, not the surround being too wide. Both radii were later
-     doubled, from 5px and 13px, at unchanged alpha - the same light spread
-     wider, so it reads as a soft aura rather than a bright rim. The resting
+     widened, from 5px and 13px to the 10px and 20px below, at unchanged
+     alpha - the same light spread wider, so it reads as a soft aura rather than a bright rim. The resting
      filter above uses the same radii, so only the alpha animates.
      The 20px layer reaches 3px past the sidebar's edge (.sidebar is
      overflow: hidden and the icon sits 17px in) and is clipped there. That
@@ -838,15 +838,14 @@ body {
    screen. Every badge label is lowercase. Some have an ascender and no
    descender ("truncated", "failed", "aborted"); the rest have a descender,
    with or without an ascender ("degenerated"), or neither ("success").
-   Measured by their ink
-   in Edge, the first family sits ~0.5-0.6px above the pill's centre and
-   the second ~0.6px below it, a descender pulling the ink box down
-   further than the letters' bodies; "no response", with a descender and
-   no ascender to balance it, measures ~1.8px low. Measured instead by
-   where the ink's weight sits, it is 0.6px low, the same as every other
-   label (0.0-0.7px): its thin descender stretches the ink's box far more
-   than it moves the letters' visual centre. Rendering snaps to the
-   screen's pixel grid, so sub-pixel changes here show only approximately.
+   Measured by their ink in Edge on 2026-09-27, the first family sat
+   slightly above the pill's centre and the second slightly below it, a
+   descender pulling the ink box down further than the letters' bodies;
+   "no response", with a descender and no ascender to balance it, measured
+   lowest. Measured instead by where the ink's weight sits, it sat as close
+   to centre as every other label: its thin descender stretches the ink's
+   box far more than it moves the letters' visual centre. Rendering snaps
+   to the screen's pixel grid, so sub-pixel changes here show only approximately.
    The total, 0.8em + 6px plus a capital's height (~0.7em), makes a
    one-line pill about 1.5em + 6px tall (22px at the default text size)
    whatever the line-height. */

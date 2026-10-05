@@ -538,11 +538,11 @@ const TRUNCATION_BECAME_FAILURE_AT = Date.parse('2026-08-29T13:19:36Z');
 
 /**
  * True when a success logged at `loggedAt` with this many completion tokens
- * is one of the truncated replies saved before TRUNCATION_BECAME_FAILURE_AT:
- * logged before then, with a completion that is a whole multiple of the
- * shared token cap (state.maxTokens, from /api/case). Those rows were written
- * under a 1,400-token cap, the value state.maxTokens carries - see the
- * comment on AGENT_MAX_TOKENS in models.ts.
+ * is one of the replies saved truncated under the 1,400-token cap before
+ * TRUNCATION_BECAME_FAILURE_AT: logged before then, with a completion that is
+ * a whole multiple of the shared token cap (state.maxTokens, from /api/case),
+ * which carries that 1,400 - see the comment on AGENT_MAX_TOKENS in
+ * models.ts.
  *
  * A multiple rather than an exact match, because some of those rows have a
  * completion of exactly 2 x maxTokens (both the original attempt and the
@@ -806,15 +806,15 @@ async function abortCurrentTrial() {
 // alone (kickoffs 400ms apart) did not fix it in a later run either: three
 // of four still failed, two of them with a genuine no-response timeout
 // rather than a fast 429. A few hundred ms of head start barely matters
-// when each call's real generation takes 15-20s. The same run's judges
+// when each call's real generation takes many seconds. The same run's judges
 // phase - 3 calls, same stagger - all succeeded on attempt 1, which read at
 // the time as "this account takes 3 simultaneous calls cleanly but not 4,"
 // so a worker pool was added to cap how many were ever in flight at once.
 //
 // That cap no longer does that job, and hasn't since the agent endpoints
 // became Background Functions. runWithConcurrencyLimit wraps triggerAgent,
-// which returns the moment Netlify's automatic 202 arrives (~0.3-0.5s)
-// rather than when the generation finishes - so a slot frees almost
+// which returns the moment Netlify's automatic 202 arrives rather than
+// when the generation finishes - so a slot frees almost
 // immediately and all 4 representatives end up genuinely in flight
 // together. Measured, not assumed: as of 2026-09-21, across the 41 trials
 // in this project's own api_call_logs that carry real duration data, 36 ran
@@ -1141,8 +1141,8 @@ function deriveRoleStates(data) {
  * Comfortably above openrouter.ts's own TOTAL_BUDGET_MS (650s, sized for
  * the full 4-tier escalation chain - see openrouter.ts) plus real margin
  * for polling/network overhead. This drifted out of sync once before: the
- * server budget was raised from 120s to 650s to fit the escalation chain,
- * but this constant stayed at its old value (150s) - an observed
+ * server budget was raised twice, for a fallback model and then for the
+ * escalation chain, while this constant stayed at its old value - an observed
  * consequence was a role that genuinely succeeded server-side (verified
  * directly in the DB) still showing as unresolved on the client because
  * polling gave up first; tests/shared-constants.test.js keeps it above

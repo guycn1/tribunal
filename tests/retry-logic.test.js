@@ -11,7 +11,7 @@
  * escalated, a timeout ceiling that ignored prompt size, a degeneration
  * check blind to its most common signature, a fractional millisecond that
  * would have crashed half of all real calls, a fast-429 storm that
- * escalated to a costlier tier within five seconds, a backoff pause timed
+ * escalated to a costlier tier within seconds, a backoff pause timed
  * as part of the attempt before it, a three-copy loop the
  * repeated-sentence check let through, near-verbatim loops that no exact
  * comparison could see, an attempt that failed as the user aborted logged
@@ -303,8 +303,8 @@ async function main() {
 
   // ------------------------------------------------------------------ 4
   await test('Fast 429 bounces do NOT burn tier attempts', async () => {
-    // The over-correction: two burst 429s (2.3s and 2.9s in the real trial)
-    // consumed tier 1 entirely and escalated to a costlier tier in ~5 seconds.
+    // The over-correction: two burst 429s consumed tier 1 entirely and
+    // escalated to a costlier tier within seconds.
     // (Every tier here is a paid model; tier 1 is simply the cheapest by far.)
     const calls = [];
     global.fetch = async (_u, o) => {

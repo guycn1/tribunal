@@ -5,8 +5,8 @@ const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
 // Retries are bounded two ways: each escalation tier's own attempt count
 // (see buildRetryTiers below), and a total time budget over the whole
-// chain. A call that fails fast (e.g. a burst rate limit, returned in
-// under a second) gets a few extra same-model retries that don't count
+// chain. A call that fails fast (e.g. a burst rate limit, returned almost
+// at once) gets a few extra same-model retries that don't count
 // against its tier - up to MAX_FAST_TRANSIENT_RETRIES_PER_TIER at each
 // tier, while the budget has room for another attempt; see
 // FAST_FAILURE_THRESHOLD_MS. Every other failed attempt - one that took
@@ -24,8 +24,8 @@ const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 // however carefully the old budget was tuned - no amount of
 // constant-tuning fixes an architecture mismatch.
 // Background Functions get far longer instead, which is what makes
-// the current value possible at all: this was first set to 120000ms (2
-// minutes) on that move, then raised again to fit the full escalation
+// the current value possible at all: it was set lower on that move, then
+// raised twice - for a fallback model, then to fit the full escalation
 // chain (see buildRetryTiers below).
 // Worst case is sized by attemptTimeoutFor()'s prompt-aware formula -
 // see its own comment for the arithmetic: ~649s of attempt ceilings for a
@@ -55,22 +55,20 @@ const MIN_REMAINING_TO_ATTEMPT_MS = 10000;
 //
 // Counting EVERY transient failure against a tier's attempt budget (the
 // first version of the escalation fix) turned out to over-correct badly:
-// two burst 429s, returned in 2.3s and 2.9s, consumed both of tier 1's
-// attempts and pushed a representative onto tier 2, significantly pricier
-// than the default tier, roughly five seconds after the user pressed
-// Begin new trial - for a rate limit that clears on its own in a moment.
+// two burst 429s in quick succession consumed both of tier 1's attempts
+// and pushed a representative onto tier 2, significantly pricier than the
+// default tier, within seconds of the user pressing Begin new trial - for
+// a rate limit that clears on its own in a moment.
 // A burst limit is exactly the failure that deserves a patient retry on
 // the cheapest model, not an immediate escalation to a pricier one.
 //
 // A genuine hang is the opposite case and is what the escalation budget
 // exists for: it consumes the whole per-attempt ceiling before failing.
-// The line was set from those two: the 429 bounces observed when it was
-// set landed at 1.7-4.3s (and as of 2026-10-04, every 429 in the call log
-// had come back in 0.4-3.6s), while a timeout runs the full per-attempt ceiling, which was
-// 43s flat then and is longer now that attemptTimeoutFor() scales with
-// prompt size (~50s for a representative, ~58s for a judge, more at later
-// tiers). The same 10s line applies to every other transient failure - a
-// 408, a 5xx, a network error, a 200 with no usable content: one back in
+// The line was set from those two: a 429 comes back within a few seconds,
+// while a timeout runs the full per-attempt ceiling, which was several
+// times the line then and is longer now that attemptTimeoutFor() scales
+// with prompt size. The same 10s line applies to every other transient
+// failure - a 408, a 5xx, a network error, a 200 with no usable content: one back in
 // under 10s gets the free same-model retry, and one that took longer
 // counts against its tier.
 //
@@ -179,7 +177,7 @@ export interface OpenRouterMessage {
 // for a pricier tier - it just isn't relied on alone. A single
 // different-model fallback helped but still wasn't reliable enough on its
 // own either: in targeted tests on 2026-08-29 against Mistral Large, tier
-// 2's original model, 2 of its 5 fallback attempts truncated too. Rather
+// 2's original model, some of its fallback attempts truncated too. Rather
 // than one fallback, this is a genuine
 // escalation chain - each tier a different model, reached once the tier
 // before it is done - which usually means it spent every attempt allowed
@@ -192,10 +190,11 @@ export interface OpenRouterMessage {
 // family, so a shared-vendor quirk can't explain a failure that makes it
 // that far.
 // Every tier also gets more token headroom than the one before it, as a
-// safeguard in case a sound response ever runs past the cap. None had been
-// seen to as of 2026-09-27: every capped reply whose text was stored was a
-// repetition loop that ran until the cap stopped it, and every tier-1 reply
-// kept as sound had stayed well short of the cap. (A loop that stops on its
+// safeguard in case a sound response ever runs past the cap. None from the
+// default model had been seen to as of 2026-09-27: every capped reply from
+// it whose text was stored was a repetition loop that ran until the cap
+// stopped it, and every tier-1 reply kept as sound had stayed well short
+// of the cap. (A loop that stops on its
 // own can come much closer to it.) For a loop, a bigger cap only means a longer loop; what recovers it is
 // the fresh attempt itself, on the same model or the next. Reached rarely
 // enough, given how many tiers already stand before it, that the real
@@ -732,8 +731,8 @@ const CONCISENESS_REMINDER: OpenRouterMessage = {
 //   - truncation: finish_reason === 'length'. The model was still going
 //     when max_tokens stopped it. That says how the attempt ended, not
 //     what the text was like - though a capped reply is usually a
-//     repetition loop that ran until the cap stopped it (all 48 whose text
-//     was stored, as of 2026-09-27).
+//     repetition loop that ran until the cap stopped it (every one from
+//     the default model whose text was stored, as of 2026-09-27).
 //   - degeneration proper: detectDegenerateRun / detectRepeatedSentences.
 //     The reply did not hit the cap, and a detector found it unusable.
 // They are told apart by how the attempt ended: a reply that hits the cap
