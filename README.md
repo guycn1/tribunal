@@ -53,20 +53,64 @@ Each route below is a rewrite in `netlify.toml` to one function in `netlify/func
 
 Six tables in Supabase/Postgres. `supabase/schema.sql` is the authority on every column, type and constraint; what follows is a map of what each table holds and the rules worth knowing, not a copy of that file.
 
+| Table | One row per |
+| --- | --- |
+| [`case_definitions`](#case_definitions) | case |
+| [`trials`](#trials) | run |
+| [`representative_arguments`](#representative_arguments) | representative whose argument was kept |
+| [`judge_rulings`](#judge_rulings) | judge whose ruling was kept |
+| [`api_call_logs`](#api_call_logs) | model-call attempt, kept or discarded |
+| [`agent_progress`](#agent_progress) | trial and role |
+
 - Row-level security is on for all six tables, with no policies, so the public (anon) key can read or write nothing. Only the backend's service-role key can, and the browser never talks to Supabase directly.
 - Every table except `case_definitions` and `trials` itself belongs to a single trial through `trial_id`, and deleting a trial deletes its rows in all of them.
 
-**`case_definitions`** — one row per case, keyed by `case_code`. Holds the charge sheet: `title`, `accused`, `deceased`, `act_alleged`, `background`, `agreed_facts` (a JSON array of strings), `question` and `scope_note`. `schema.sql` seeds the only row, `T-001`, and the app reads the case from here at runtime rather than from any copy in the code.
+#### case_definitions
 
-**`trials`** — one row per run: `id` (a UUID — the `:id` in every route above), `case_code`, `status`, `created_at` and `updated_at`. `status` is `created` until every judge has a final outcome logged — a ruling, a failure the chain gave up on, or an abort — and then `completed`, set by the judge endpoint that finds it so. A judge that notices its trial was aborted stops without setting it, so a trial aborted while any judge is still running stays `created`, however many judges had already finished; it is `completed` only when the last judge had finished before the abort was recorded.
+**Columns:** `case_code` (the key), `title`, `accused`, `deceased`, `act_alleged`, `background`, `agreed_facts`, `question`, `scope_note`
 
-**`representative_arguments`** — one row per representative whose argument was kept: `id`, `trial_id`, `role` (one of the four representatives), `seat` (`defense` or `prosecution`), `argument_text`, `model_used` and `created_at`. There is at most one row per trial and role, so a representative that needed several attempts still counts once; this table and `judge_rulings` are what the sidebar's "N of 7" counts. Discarded attempts never land here — they live in `api_call_logs`.
+- Holds the charge sheet. `agreed_facts` is a JSON array of strings.
+- `schema.sql` seeds the only row, `T-001`, and the app reads the case from here at runtime rather than from any copy in the code.
 
-**`judge_rulings`** — one row per judge whose ruling was kept: `id`, `trial_id`, `role` (one of the three judges), `verdict` (`justified` or `not justified`), `reasoning_text`, `model_used` and `created_at`. At most one row per trial and role. A trial's three rulings are independent rows, and nothing in the schema or the code combines them.
+#### trials
 
-**`api_call_logs`** — one row per model-call attempt, kept or discarded, appended and never updated. It carries the fields the spec requires for every call — `agent_role`, `model_used`, `prompt_tokens`, `completion_tokens`, `total_tokens`, `cost` (in US dollars), `status` (`success` or `failed`) and `timestamp` — plus the row's own `id`, `trial_id`, `call_type` (`representative` or `judge`), `error_message`, `duration_ms` and `response_text`. `response_text` is the model's reply word for word, stored for every attempt that got one — discarded attempts included, so a truncated or degenerate reply can be read in full afterwards — and empty for an attempt with no reply. It is kept for audit only: the trial endpoint never selects it, so it never reaches the page. A discarded attempt's `error_message` starts with a marker saying what happened to it, such as `[transient-retried]`, and `duration_ms` is empty on a row that timed no attempt — the abort endpoint's rows (they record a decision, not an attempt), and a call's last row when it ended before starting an attempt: an `aborted` row when it stopped for an abort, or a `failed` one when the server has no OpenRouter key — and on rows logged before that column existed. An abort is recorded here too, as a `failed` row with the model `n/a` for each pending role; that row is what running calls look for to know they should stop.
+**Columns:** `id` (a UUID, and the `:id` in every route above), `case_code`, `status`, `created_at`, `updated_at`
 
-**`agent_progress`** — one row per trial and role (`trial_id` and `role` together are its key), overwritten each time a new attempt starts: `model`, `tier_index`, `attempt_in_tier`, `tier_max_attempts` and `updated_at`. It drives the live "Model: … (second attempt)" line on a card that is still running. A row left behind after a role has finished is harmless: the page only reads it for a role with no final result yet.
+- `status` is `created` until every judge has a final outcome logged — a ruling, a failure the chain gave up on, or an abort — and then `completed`, set by the judge endpoint that finds it so.
+- A judge that notices its trial was aborted stops without setting it, so a trial aborted while any judge is still running stays `created`, however many judges had already finished. It is `completed` only when the last judge had finished before the abort was recorded.
+
+#### representative_arguments
+
+**Columns:** `id`, `trial_id`, `role` (one of the four representatives), `seat` (`defense` or `prosecution`), `argument_text`, `model_used`, `created_at`
+
+- At most one row per trial and role, so a representative that needed several attempts still counts once. This table and `judge_rulings` are what the sidebar's "N of 7" counts.
+- Discarded attempts never land here — they live in `api_call_logs`.
+
+#### judge_rulings
+
+**Columns:** `id`, `trial_id`, `role` (one of the three judges), `verdict` (`justified` or `not justified`), `reasoning_text`, `model_used`, `created_at`
+
+- At most one row per trial and role.
+- A trial's three rulings are independent rows, and nothing in the schema or the code combines them.
+
+#### api_call_logs
+
+**Columns:** `id`, `trial_id`, `agent_role`, `call_type` (`representative` or `judge`), `model_used`, `prompt_tokens`, `completion_tokens`, `total_tokens`, `cost` (in US dollars), `status` (`success` or `failed`), `error_message`, `timestamp`, `duration_ms`, `response_text`
+
+- Appended and never updated.
+- The fields the spec requires for every call: `agent_role`, `model_used`, `prompt_tokens`, `completion_tokens`, `total_tokens`, `cost`, `status` and `timestamp`.
+- `response_text` is the model's reply word for word, stored for every attempt that got one — discarded attempts included, so a truncated or degenerate reply can be read in full afterwards — and empty for an attempt with no reply. It is kept for audit only: the trial endpoint never selects it, so it never reaches the page.
+- A discarded attempt's `error_message` starts with a marker saying what happened to it, such as `[transient-retried]`.
+- `duration_ms` is empty on a row that timed no attempt — the abort endpoint's rows (they record a decision, not an attempt), and a call's last row when it ended before starting an attempt: an `aborted` row when it stopped for an abort, or a `failed` one when the server has no OpenRouter key — and on rows logged before that column existed.
+- An abort is recorded here too, as a `failed` row with the model `n/a` for each pending role; that row is what running calls look for to know they should stop.
+
+#### agent_progress
+
+**Columns:** `trial_id`, `role`, `model`, `tier_index`, `attempt_in_tier`, `tier_max_attempts`, `updated_at`
+
+- One row per trial and role (`trial_id` and `role` together are its key), overwritten each time a new attempt starts.
+- It drives the live "Model: … (second attempt)" line on a card that is still running.
+- A row left behind after a role has finished is harmless: the page only reads it for a role with no final result yet.
 
 ## Reading the UI: status badges
 
