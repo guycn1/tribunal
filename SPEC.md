@@ -2,13 +2,13 @@
 
 **Case T-001: The Realm v. Jon Snow.** A fixed, canonical trial — not a general-purpose "submit any charge" tool — argued and ruled on by seven independent AI agents: four representatives (two defense, two prosecution) and three judges, each modelled on a distinct real judicial reasoning method. This is the ASE course's shared "running project": every submission implements the same fixed specification, graded on directing discipline shown, not on the artefact alone.
 
-This document is the functional/requirements spec, sourced from the ASE Book "Case Design Dossier." For how this particular submission implements it (architecture, live deployment, setup) see `README.md`; for the build history and the engineering decisions behind it, see `CLAUDE.md`.
+This document is the functional/requirements spec, sourced from the ASE Book "Case Design Dossier." For how this particular submission implements it (architecture, live deployment, setup) see [`README.md`](README.md); for the build history and the engineering decisions behind it, see [`CLAUDE.md`](CLAUDE.md).
 
 ## 1. The charge sheet
 
 **Accused:** Jon Snow · **Deceased:** Daenerys Targaryen · **Act alleged:** Jon intentionally killed Daenerys by stabbing her during a private meeting in the throne room after the fall of King's Landing.
 
-This section is the case exactly as the app serves it — word for word the record seeded into the database by `supabase/schema.sql`. The stipulated facts in particular are quoted, not paraphrased: they are what both sides accept, and a restatement can shift what was agreed.
+This section is the case exactly as the app serves it — word for word the record seeded into the database by [`supabase/schema.sql`](supabase/schema.sql). The stipulated facts in particular are quoted, not paraphrased: they are what both sides accept, and a restatement can shift what was agreed.
 
 **Background.**
 
@@ -31,7 +31,7 @@ Daenerys attacks King's Landing. The city surrenders, but Daenerys burns streets
 
 ## 2. The seven agents
 
-**Non-negotiable rule:** a representative's seat (defense or prosecution) fixes only procedural role — never an opinion, a factual inference, or a final position. A judge's named model fixes the reasoning method it applies, never the verdict. No agent is instructed to argue toward a predetermined conclusion; each reasons from its own character/method and may land anywhere, including against "its side." Each agent's full system prompt (real depth, not a one-line trait) lives in `netlify/functions/lib/representatives.ts` or `judges.ts`, and `prompts.ts` pairs it with the case record (for a judge, with the representatives' arguments too) — this section states identity and required reasoning approach, not the prompts themselves.
+**Non-negotiable rule:** a representative's seat (defense or prosecution) fixes only procedural role — never an opinion, a factual inference, or a final position. A judge's named model fixes the reasoning method it applies, never the verdict. No agent is instructed to argue toward a predetermined conclusion; each reasons from its own character/method and may land anywhere, including against "its side." Each agent's full system prompt (real depth, not a one-line trait) lives in [`netlify/functions/lib/representatives.ts`](netlify/functions/lib/representatives.ts) or [`judges.ts`](netlify/functions/lib/judges.ts), and [`prompts.ts`](netlify/functions/lib/prompts.ts) pairs it with the case record (for a judge, with the representatives' arguments too) — this section states identity and required reasoning approach, not the prompts themselves.
 
 **Representatives:**
 - **Jon Snow** (defense) — plain-spoken, duty- and protection-driven; accepts blame readily; changes position when honor or evidence requires it.
@@ -60,4 +60,4 @@ Daenerys attacks King's Landing. The city surrenders, but Daenerys burns streets
 
 ---
 
-How this repo actually satisfies the above — the specific model(s) used, cost/reliability engineering, anti-abuse measures, the database (defined in `supabase/schema.sql`, and mapped in `README.md`), and the decisions behind them — is documented in `README.md` (current state) and `CLAUDE.md` (running log), not repeated here.
+How this repo actually satisfies the above — the specific model(s) used, cost/reliability engineering, anti-abuse measures, the database (defined in [`supabase/schema.sql`](supabase/schema.sql), and mapped in [`README.md`](README.md#database)), and the decisions behind them — is documented in [`README.md`](README.md) (current state) and [`CLAUDE.md`](CLAUDE.md#status-log) (running log), not repeated here.

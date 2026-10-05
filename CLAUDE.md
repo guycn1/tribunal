@@ -61,7 +61,8 @@ attempt (first attempt delivered no readable content at all, silently). Compared
 
 Rules 1 and 2 were restated explicitly by the user on 2026-08-27, specifically
 so they survive a context compaction; rule 3 was added by the user on
-2026-09-27, and applies retroactively as well as to new text.
+2026-09-27, and applies retroactively as well as to new text; rule 4 was added
+by the user on 2026-10-06, after another project's rule of the same kind.
 
 Together they govern almost every action taken in this repo and are not
 situational — they apply the same way regardless of how routine the action
@@ -183,6 +184,89 @@ Worth a search before committing:
 
 Not every match is narration: "read" can mean "looked", as in "this row read too
 tall". Borderline cases need a human judgement; no pattern can make the call.
+
+### 4. In every Markdown file but CLAUDE.md, a reference is a link
+
+It applies to every Markdown file in the repository except this one: today
+`README.md` and `SPEC.md`, and any added later.
+
+**If the prose names something with a home of its own, the name is a link to
+that home; if it names a section of a document, the link goes to the section
+rather than the file.** A reader of the repository who never runs the app cannot
+ask what "see `schema.sql`" means; a link answers it in one click.
+
+#### What counts as a reference
+
+- **Another document, or a section of one:** `README.md`, or the map of the
+  tables in its "Database" section, `README.md#database`.
+- **A file or directory in the repository,** named by its path or by a file name
+  only one file has: `netlify.toml`, `case.ts`, `netlify/functions/`. The link
+  is relative.
+- **A commit.** A quoted hash links to its commit page by the full hash,
+  `https://github.com/guycn1/tribunal/commit/<full hash>`, the one kind of link
+  into this repository that is absolute.
+  - So does a mention of a commit that quotes no hash, such as the date a change
+    was made or a description of what a commit did, wherever the commit can be
+    identified: the words already there become the link text.
+  - A hash is linked at every mention, even where the paragraph already links
+    that commit; a prose mention is linked only where it does not.
+  - A contiguous, clearly bounded run of commits links its compare page,
+    `compare/<base>...<head>`, by full hashes, the base being the commit just
+    before the run. A set that is not contiguous stays plain.
+- **`npm test`** links to `tests/`, and an `npm run` script to `package.json`.
+- **A database table named outside its own section of README** links to that
+  section, `#api_call_logs` (or `README.md#api_call_logs` from another file).
+- **An API route named outside README's endpoint list** links to the list,
+  `#api-endpoints`.
+- **A badge label named outside its own table** links to that table's section,
+  `#call-log` or `#run-history-sidebar`.
+- **An outside source a claim rests on,** such as a vendor's documentation page,
+  links to that page.
+
+#### Once per paragraph
+
+A target is linked at its first mention in a paragraph, and later mentions of it
+in the same paragraph stay plain; a hash is the exception, linked every time.
+Each list item and each table row counts as a paragraph of its own. "The same
+target" means the same destination, so a file and a section of it are two
+targets.
+
+#### What stays plain
+
+- Headings and fenced code blocks, which cannot hold a link: the project-layout
+  tree in README is one.
+- A file's mention of itself, and a mention inside the section it would link to.
+- What has no home a reader can open: `.env` and other git-ignored paths, a
+  model id, a column name or a status value, a command-line tool.
+- A mention quoted as an example of an unlinked reference.
+
+#### Why this file is exempt
+
+This file is loaded into every session's context, so each link would be a
+permanent cost, and the agent reading it finds a section by searching for its
+name rather than by clicking. Its pointers stay quoted names ("see "Production
+deployment" in the bug log"), which is also why renaming a heading here means
+finding every quote of the old name, across line breaks too, and updating it.
+
+#### How it is checked
+
+`tests/docs.test.js` checks every Markdown file the rule covers:
+
+- every link lands: a tracked file or directory, a heading's anchor in the file
+  it names, or a commit or compare page by full hashes, the base an ancestor of
+  the head;
+- no link destination holds whitespace, since an unclosed `](` silently swallows
+  the text after it;
+- every hash is linked to its own commit, and the first mention in each
+  paragraph of a file, a directory or another Markdown file, `npm test`, a table
+  or a route is linked to the right place.
+
+A prose mention of a commit, a badge label, an outside source, and whether a
+link's words describe its target are reading jobs no script can do.
+
+A pass that adds links is proven to have changed nothing else by rendering each
+file through GitHub's markdown API before and after, stripping every `<a>` tag
+from both, normalising whitespace, and requiring the two to be identical.
 
 ## What this project is
 
@@ -575,6 +659,9 @@ session from the top. Keep its layout:
 - **After a structural change, render the file through GitHub's markdown API
   before and after and compare the text**, so that a dropped line or a heading
   swallowed into a paragraph shows up.
+- **Point to another place in this file by quoting its heading, not by a link:**
+  HARD RULE 4 exempts this file. When a heading is renamed, find every quote of
+  its old name, line breaks included, and update it.
 
 ## Status log
 
@@ -3733,7 +3820,7 @@ descriptions, and left free they wrapped at every space, `aborted (N` / `of 7` /
   it starts with, and any dash - and fails on any other; 14 targeted breaks were
   each caught by the checks meant for them.
 
-### 2026-10-06: this file laid out for reading in Code view
+### 2026-10-06: this file's layout, and HARD RULE 4
 
 **This file restructured (2026-10-06, on the user's request, after the layout of
 another project's CLAUDE.md).** Before, many of its lines ran to thousands of
@@ -3753,6 +3840,31 @@ line-wrapping, and many entries were single dense paragraphs.
 - Three `<date>` placeholders in HARD RULE 3, which GitHub's renderer dropped as
   unknown HTML tags, are now written so they show.
 - "Writing in this file", above this log, sets out how to keep the layout.
+
+**HARD RULE 4 added (2026-10-06, by the user): in every Markdown file but this
+one, a reference is a link** - see the HARD RULES block at the top, which adapts
+another project's rule in its broader reading. Applied the same day to the two
+files it covers, `README.md` and `SPEC.md`:
+
+- 50 links added: every file and directory they name, the other documents and
+  the sections meant (`README.md#database`, `CLAUDE.md#status-log`), the two
+  commits README describes in prose (the `-background` rename and truncation
+  becoming a failure), `npm test`, tables, routes and a badge named away from
+  their own sections.
+- Rendered through GitHub's markdown API before and after with every `<a>` tag
+  stripped, the two files are identical apart from one new sentence in README's
+  description of `tests/docs.test.js` saying it checks this rule, so nothing
+  else but links changed.
+- `tests/docs.test.js` now checks the rule on every Markdown file but this one -
+  a new one included - as the rule's last section describes, and reads README's
+  endpoint list with each function linked to its own file.
+- 27 targeted breaks were each caught by the check meant for them, every file
+  restored byte for byte: an unlinked file, document, `npm test`, table, route
+  or hash; a link to the wrong file, table or commit; a misspelt anchor in
+  either file; a short or non-existent hash; a missing file; whitespace in a
+  destination; an absolute link into the repository; and a new Markdown file
+  with an unlinked file name. Two more confirmed what stays plain passes: a
+  table named in its own section, and a second mention in one paragraph.
 
 ## Operational notes
 

@@ -13,6 +13,9 @@
  * behaviour, it is checked by running the real code (the backend compiled
  * from its TypeScript, app.js against a stub DOM), not by reading its text.
  *
+ * It also holds every Markdown file but CLAUDE.md to HARD RULE 4: references
+ * are links, and every link lands (see checkReferencesAreLinks()).
+ *
  * CLAUDE.md's running status log is deliberately not checked: it records
  * what was true when each entry was written, as history rather than as a
  * claim about the current code.
@@ -228,11 +231,13 @@ async function main() {
   // Each endpoint is a list item of two lines: its route, as one code
   // element with the method in bold and padded so that every path starts in
   // the same column ("<code><b>GET</b>  /api/case</code>\"), then its
-  // function and what it does ("  `case.ts`: The fixed case record ...").
-  // Every list item in the section is read, so one in any other shape fails
-  // here rather than dropping out of the checks below unseen.
+  // function, linked to its own file, and what it does
+  // ("  [`case.ts`](netlify/functions/case.ts): The fixed case record ...").
+  // Every list item in the section is read, so one in any other shape - or
+  // linking a file other than the one it names - fails here rather than
+  // dropping out of the checks below unseen.
   const entries = [...api.matchAll(/^- .*(?:\n(?!- ).+)*/gm)].map((m) => m[0]);
-  const ENTRY = /^- <code><b>(GET|POST|PUT|PATCH|DELETE)<\/b>( +)(\/api\/[^\s<]*)<\/code>\\\n {2}`([\w-]+)\.ts`: (.+)$/;
+  const ENTRY = /^- <code><b>(GET|POST|PUT|PATCH|DELETE)<\/b>( +)(\/api\/[^\s<]*)<\/code>\\\n {2}\[`([\w-]+)\.ts`\]\(netlify\/functions\/\4\.ts\): (.+)$/;
   const parsed = entries.map((entry) => ({ entry, m: entry.match(ENTRY) }));
   const rows = parsed.filter((p) => p.m).map(({ m }) => ({ method: m[1], gap: m[2].length, path: m[3], fn: m[4], text: m[5] }));
   const redirects = [...TOML.matchAll(/from = "([^"]+)"\s*\n\s*to = "\/\.netlify\/functions\/([\w-]+)[^"]*"/g)].map((m) => ({ path: m[1], fn: m[2] }));
@@ -1034,6 +1039,204 @@ async function main() {
   check('SPEC.md states the same vocabulary', specVocabulary === schemaVerdicts.join(' / '), specVocabulary);
   check("the judge's parser accepts exactly those", minus(parserVerdicts, schemaVerdicts).length === 0 && minus(schemaVerdicts, parserVerdicts).length === 0, parserVerdicts.join(', '));
   check('README names exactly those', minus(readmeVerdicts, schemaVerdicts).length === 0 && minus(schemaVerdicts, readmeVerdicts).length === 0, readmeVerdicts.join(', '));
+
+  checkReferencesAreLinks();
+}
+
+// ======================================================== HARD RULE 4
+/**
+ * The anchors GitHub gives a Markdown file's headings: lower case, anything
+ * but letters, digits, spaces, hyphens and underscores dropped, spaces turned
+ * into hyphens, and a repeat suffixed -1, -2 and so on.
+ * @param {string} doc
+ * @returns {Set<string>}
+ */
+function headingAnchors(doc) {
+  const seen = new Map();
+  const anchors = new Set();
+  for (const { text, kind } of markdownUnits(doc)) {
+    if (kind !== 'heading') continue;
+    const plain = text.replace(/^#+\s+/, '').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1').replace(/`/g, '');
+    const base = plain.trim().toLowerCase().replace(/[^\p{L}\p{N}\s_-]/gu, '').replace(/\s/g, '-');
+    const n = seen.get(base) || 0;
+    seen.set(base, n + 1);
+    anchors.add(n ? `${base}-${n}` : base);
+  }
+  return anchors;
+}
+
+/**
+ * A Markdown file cut into the units HARD RULE 4 counts as paragraphs: a
+ * heading, a table row, a list item with its continuation lines, or a
+ * paragraph. Fenced code blocks are left out, since they cannot hold a link.
+ * @param {string} doc
+ * @returns {{ text: string, kind: 'heading' | 'row' | 'item' | 'para', headings: string[] }[]}
+ */
+function markdownUnits(doc) {
+  const units = [];
+  const headings = [];
+  let fence = false;
+  let current = null;
+  for (const line of doc.split('\n')) {
+    if (/^\s*(```|~~~)/.test(line)) { fence = !fence; current = null; continue; }
+    if (fence || !line.trim()) { current = null; continue; }
+    const heading = line.match(/^(#{1,6}) /);
+    if (heading) {
+      headings.splice(heading[1].length - 1);
+      headings[heading[1].length - 1] = line;
+      units.push({ text: line, kind: 'heading', headings: [...headings] });
+      current = null;
+      continue;
+    }
+    const kind = /^\s*\|/.test(line) ? 'row' : /^\s*([-*+]|\d+[.)]) /.test(line) ? 'item' : 'para';
+    if (current && kind === 'para' && current.kind !== 'row') { current.text += `\n${line}`; continue; }
+    current = { text: line, kind, headings: [...headings.filter(Boolean)] };
+    units.push(current);
+  }
+  return units;
+}
+
+/** Whether a string names a commit in this repository. */
+function isCommit(hash) {
+  try {
+    execFileSync('git', ['cat-file', '-e', `${hash}^{commit}`], { cwd: ROOT, stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * HARD RULE 4 in CLAUDE.md: in every Markdown file but CLAUDE.md, a mention
+ * of something with a home of its own is a link to that home, at its first
+ * mention in each paragraph, and every link lands. Checked here: that every
+ * link resolves (a file or directory in the repository, a heading's anchor,
+ * a commit by its full hash); that no link destination holds whitespace; and,
+ * for the kinds of mention a script can recognise, that the first mention in
+ * each paragraph is linked to the right place - a file or directory in the
+ * repository, another Markdown file, a commit hash, `npm test`, a database
+ * table outside its own README section, and an API route outside README's
+ * endpoint list. Whether a prose mention of a commit is linked, or a link's
+ * words describe its target, stays a reading job.
+ */
+function checkReferencesAreLinks() {
+  console.log('\n=== Every Markdown file but CLAUDE.md: references are links (HARD RULE 4) ===');
+  const docs = (REPO_FILES || []).filter((f) => /\.md$/i.test(f) && f !== 'CLAUDE.md');
+  check('the rule covers README.md and SPEC.md', docs.includes('README.md') && docs.includes('SPEC.md'), docs.join(', '));
+  const tracked = new Set(REPO_FILES || []);
+  const trackedDirs = new Set((REPO_FILES || []).flatMap((f) => f.split('/').slice(0, -1).map((_, i, parts) => parts.slice(0, i + 1).join('/'))));
+  const byBasename = new Map();
+  for (const f of tracked) byBasename.set(path.posix.basename(f), [...(byBasename.get(path.posix.basename(f)) || []), f]);
+  const COMMIT_URL = /^https:\/\/github\.com\/guycn1\/tribunal\/commit\/([0-9a-f]+)$/;
+  const COMPARE_URL = /^https:\/\/github\.com\/guycn1\/tribunal\/compare\/([0-9a-f]+)\.\.\.([0-9a-f]+)$/;
+  const anchorCache = new Map();
+  const anchorsOf = (file) => {
+    if (!anchorCache.has(file)) anchorCache.set(file, headingAnchors(read(...file.split('/'))));
+    return anchorCache.get(file);
+  };
+
+  for (const doc of docs) {
+    const text = read(...doc.split('/'));
+    const dir = path.posix.dirname(doc);
+    const units = markdownUnits(text);
+    /**
+     * Where a link destination lands, as a repository path with an optional
+     * anchor ('README.md#database', '#call-log' for this file), or null when
+     * it is an outside URL.
+     */
+    const landing = (dest) => {
+      if (/^[a-z]+:/i.test(dest)) return null;
+      const [p, anchor] = dest.split('#');
+      const file = p ? path.posix.normalize(path.posix.join(dir, p)).replace(/\/$/, '') : doc;
+      return { file, anchor: anchor === undefined ? null : anchor };
+    };
+
+    const broken = [];
+    const spaced = [];
+    for (const { text: unit } of units) {
+      for (const m of unit.matchAll(/\]\(([^)]*)\)/g)) {
+        const dest = m[1];
+        if (/\s/.test(dest)) { spaced.push(dest); continue; }
+        const commit = dest.match(COMMIT_URL);
+        const compare = dest.match(COMPARE_URL);
+        if (commit) {
+          if (commit[1].length !== 40 || !isCommit(commit[1])) broken.push(dest);
+        } else if (compare) {
+          const [, base, head] = compare;
+          let ancestor = false;
+          try { execFileSync('git', ['merge-base', '--is-ancestor', base, head], { cwd: ROOT, stdio: 'ignore' }); ancestor = true; } catch { /* not an ancestor */ }
+          if (base.length !== 40 || head.length !== 40 || !isCommit(base) || !isCommit(head) || !ancestor) broken.push(dest);
+        } else if (/^https:\/\/github\.com\/guycn1\/tribunal\//.test(dest)) {
+          broken.push(`${dest} (a link into this repository is relative, or a commit or compare page by full hash)`);
+        } else {
+          const to = landing(dest);
+          if (!to) continue;
+          if (!tracked.has(to.file) && !trackedDirs.has(to.file)) broken.push(dest);
+          else if (to.anchor !== null && (!/\.md$/i.test(to.file) || !anchorsOf(to.file).has(to.anchor))) broken.push(dest);
+        }
+      }
+    }
+    check(`${doc}: every link lands - a tracked file or directory, a heading's anchor, or a commit by its full hash`, broken.length === 0, broken.join(' | '));
+    check(`${doc}: no link destination holds whitespace`, spaced.length === 0, spaced.join(' | '));
+
+    /**
+     * The mentions in one unit, in order: each backticked span and each bare
+     * Markdown file name, with the destination of the link it sits in, if any.
+     */
+    const mentions = (unit) => {
+      const links = [...unit.matchAll(/\[((?:[^\]`]|`[^`]*`)*)\]\(([^)\s]*)\)/g)].map((m) => ({ start: m.index, end: m.index + m[1].length + 1, dest: m[2] }));
+      const linkOf = (i) => (links.find((l) => i > l.start && i < l.end) || {}).dest;
+      const inDest = (i) => [...unit.matchAll(/\]\([^)]*\)/g)].some((m) => i > m.index && i < m.index + m[0].length);
+      const found = [];
+      for (const m of unit.matchAll(/`([^`]+)`|\b([\w-]+\.md)\b/g)) {
+        if (inDest(m.index)) continue;
+        if (m[2] && unit.slice(0, m.index).split('`').length % 2 === 0) continue;
+        found.push({ token: m[1] || m[2], dest: linkOf(m.index) });
+      }
+      return found;
+    };
+    const unlinked = { files: [], hashes: [], npmTest: [], tables: [], routes: [] };
+    for (const { text: unit, kind, headings } of units) {
+      if (kind === 'heading') continue;
+      const done = new Set();
+      const section = headings[headings.length - 1] || '';
+      /** Requires the first mention of `target` in this unit to link where `ok` says. */
+      const firstMustLink = (bucket, target, dest, ok, label) => {
+        if (done.has(target)) return;
+        done.add(target);
+        if (!dest || !ok(dest)) bucket.push(`${label}${dest ? ` -> ${dest}` : ''}`);
+      };
+      for (const { token, dest } of mentions(unit)) {
+        const bare = token.replace(/\/$/, '');
+        const file = tracked.has(bare) || trackedDirs.has(bare) ? bare
+          : (byBasename.get(bare) || []).length === 1 ? byBasename.get(bare)[0] : null;
+        if (file && file !== doc && !/\s/.test(token)) {
+          firstMustLink(unlinked.files, `file:${file}`, dest, (d) => { const to = landing(d); return to && to.file === file; }, token);
+        }
+        const hash = token.match(/^[0-9a-f]{7,40}$/) && /[a-f]/.test(token) && /\d/.test(token) && isCommit(token) ? token : null;
+        if (hash) {
+          firstMustLink(unlinked.hashes, `hash:${hash}`, dest, (d) => { const c = d.match(COMMIT_URL); return c && c[1].startsWith(hash); }, hash);
+          done.delete(`hash:${hash}`); // a hash is linked at every mention, not only the first
+        }
+        if (token === 'npm test') {
+          firstMustLink(unlinked.npmTest, 'npm test', dest, (d) => { const to = landing(d); return to && to.file === 'tests'; }, token);
+        }
+        if (TABLES[token] && section !== `#### ${token}`) {
+          const home = doc === 'README.md' ? '' : 'README.md';
+          firstMustLink(unlinked.tables, `table:${token}`, dest, (d) => { const to = landing(d); return to && to.file === (home || doc) && to.anchor === token; }, token);
+        }
+        const route = token.match(/^(?:(?:GET|POST|PUT|PATCH|DELETE) )?(\/api\/\S*)$/);
+        if (route && !(doc === 'README.md' && headings.includes('### API endpoints'))) {
+          firstMustLink(unlinked.routes, `route:${route[1]}`, dest, (d) => { const to = landing(d); return to && to.file === 'README.md' && to.anchor === 'api-endpoints'; }, token);
+        }
+      }
+    }
+    check(`${doc}: the first mention of a file, a directory or another Markdown file in each paragraph links to it`, unlinked.files.length === 0, unlinked.files.join(' | '));
+    check(`${doc}: every commit hash links to its commit page by the full hash`, unlinked.hashes.length === 0, unlinked.hashes.join(' | '));
+    check(`${doc}: the first \`npm test\` in each paragraph links to tests/`, unlinked.npmTest.length === 0, unlinked.npmTest.join(' | '));
+    check(`${doc}: a database table named outside its own README section links there`, unlinked.tables.length === 0, unlinked.tables.join(' | '));
+    check(`${doc}: an API route named outside README's endpoint list links to it`, unlinked.routes.length === 0, unlinked.routes.join(' | '));
+  }
 }
 
 main().then(
