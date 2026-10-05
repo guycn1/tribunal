@@ -3865,6 +3865,14 @@ files it covers, `README.md` and `SPEC.md`:
   destination; an absolute link into the repository; and a new Markdown file
   with an unlinked file name. Two more confirmed what stays plain passes: a
   table named in its own section, and a second mention in one paragraph.
+- Then mapped the other way round, from each check to a break: the 15 new
+  checks, and the 37 endpoint-list checks that read the function names now taken
+  from their links, each fail under at least one of 41 targeted breaks (30 in a
+  first pass, then 11 written for the 11 checks none had failed yet: four
+  functions' methods, two handlers' success, and the site-gate statement on five
+  routes), every file restored byte for byte. Three changes that should pass
+  did: a valid compare page, and a table and a route linked from SPEC.md to
+  their README sections.
 
 ## Operational notes
 
