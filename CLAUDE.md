@@ -3970,6 +3970,15 @@ seen to do.
   prints with their brackets, are now note names in code spans. SPEC.md's three
   lists gained a blank line before them, rendering identically, so the offline
   check can tell a list from a wrapped line.
+- Proving the checks the commit touched, from each check to a break, found one
+  gap: the docs test read an `npm run` line only when the script's name held no
+  hyphen, so README's `npm run check-render` line was never checked. Every such
+  line is now read, a new check fails if one slips past, and another fails if
+  the setup block leaves out a script `package.json` has. Each of the docs
+  checks the commit added or changed - those two, the count of suites, the file
+  names README gives, and the three script descriptions - fails under a targeted
+  break, and every kind of defect the render check reports was proven again on
+  the committed script.
 
 ## Operational notes
 

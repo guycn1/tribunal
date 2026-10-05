@@ -953,9 +953,18 @@ async function main() {
   check(`"${suiteWord} regression suites" is the right count`, wordToNumber(suiteWord) === suites.length, String(suites.length));
   const describedSuites = [...local.matchAll(/`(tests\/[\w.-]+\.test\.js)`/g)].map((m) => m[1]);
   check('the suite descriptions cover exactly the suites npm test runs', minus(suites, describedSuites).length === 0 && minus(describedSuites, suites).length === 0, `described: ${describedSuites}`);
-  for (const m of local.matchAll(/^npm run (\w+)\s+# (.+)$/gm)) {
+  // Script names may hold hyphens (check-render), so match up to the spaces,
+  // and require every npm run line in the block to be read: one that slips
+  // past this pattern would go unchecked without a word.
+  const runLines = local.split('\n').filter((line) => /^npm run /.test(line));
+  const runClaims = [...local.matchAll(/^npm run ([\w:-]+)\s+# (.+)$/gm)];
+  check('every npm run line in the setup block is read', runLines.length > 0 && runClaims.length === runLines.length, runLines.filter((line) => !runClaims.some((m) => line.startsWith(`npm run ${m[1]} `))).join(' | '));
+  for (const m of runClaims) {
     check(`npm run ${m[1]} is "${(PKG.scripts[m[1]] || '').trim()}"`, PKG.scripts[m[1]] && m[2].startsWith(PKG.scripts[m[1]]), PKG.scripts[m[1]]);
   }
+  const listedScripts = runClaims.map((m) => m[1]);
+  const unlisted = Object.keys(PKG.scripts).filter((s) => s !== 'test' && !listedScripts.includes(s));
+  check('the setup block lists every npm script', unlisted.length === 0, unlisted.join(', '));
   const envVars = [...ENV_EXAMPLE.matchAll(/^#? ?([A-Z][A-Z0-9_]+)=/gm)].map((m) => m[1]);
   const readVars = [...new Set(FUNCTION_SOURCES.flatMap(([, src]) => [...src.matchAll(/process\.env\.([A-Z0-9_]+)/g)].map((m) => m[1])))].filter((v) => v !== 'NETLIFY_DEV');
   const roleVars = [...read('netlify', 'functions', 'lib', 'models.ts').matchAll(/'(MODEL_[A-Z_]+)'/g)].map((m) => m[1]);
