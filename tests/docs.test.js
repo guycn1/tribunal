@@ -223,14 +223,25 @@ async function main() {
   check('every directory in the tree exists', missingDirs.length === 0, missingDirs.map((t) => t.path).join(', '));
 
   // ======================================================== README: endpoints
-  console.log('\n=== README: the endpoint table matches netlify.toml and the handlers ===');
+  console.log('\n=== README: the endpoint list matches netlify.toml and the handlers ===');
   const api = section(README, '### API endpoints');
-  // Each row names its function at the start of its description
-  // ("`abort.ts`: Takes ..."), not in a column of its own.
-  const rows = [...api.matchAll(/^\| `(GET|POST|PUT|PATCH|DELETE)` \| `([^`]+)` \| `([\w-]+)\.ts`: (.*) \|$/gm)]
-    .map((m) => ({ method: m[1], path: m[2], fn: m[3], text: m[4] }));
+  // Each endpoint is a list item of two lines: its route, as one code
+  // element with the method in bold and padded so that every path starts in
+  // the same column ("<code><b>GET</b>  /api/case</code>\"), then its
+  // function and what it does ("  `case.ts`: The fixed case record ...").
+  // Every list item in the section is read, so one in any other shape fails
+  // here rather than dropping out of the checks below unseen.
+  const entries = [...api.matchAll(/^- .*(?:\n(?!- ).+)*/gm)].map((m) => m[0]);
+  const ENTRY = /^- <code><b>(GET|POST|PUT|PATCH|DELETE)<\/b>( +)(\/api\/[^\s<]*)<\/code>\\\n {2}`([\w-]+)\.ts`: (.+)$/;
+  const parsed = entries.map((entry) => ({ entry, m: entry.match(ENTRY) }));
+  const rows = parsed.filter((p) => p.m).map(({ m }) => ({ method: m[1], gap: m[2].length, path: m[3], fn: m[4], text: m[5] }));
   const redirects = [...TOML.matchAll(/from = "([^"]+)"\s*\n\s*to = "\/\.netlify\/functions\/([\w-]+)[^"]*"/g)].map((m) => ({ path: m[1], fn: m[2] }));
-  check('the endpoint table has rows', rows.length > 0);
+  check('the endpoint list has entries', rows.length > 0);
+  check('every endpoint entry is a route line and a description line', parsed.every((p) => p.m), parsed.filter((p) => !p.m).map((p) => JSON.stringify(p.entry.split('\n')[0])).join(' | '));
+  // The column every path starts in: past the longest method, and one space.
+  const pathColumn = Math.max(0, ...rows.map((r) => r.method.length)) + 1;
+  const misaligned = rows.filter((r) => r.method.length + r.gap !== pathColumn);
+  check('every endpoint\'s path starts in the same column', misaligned.length === 0, misaligned.map((r) => `${r.method} + ${r.gap} space(s)`).join(', '));
   check('netlify.toml has routes', redirects.length > 0);
   for (const r of redirects) {
     const hits = rows.filter((row) => row.path === r.path);
@@ -244,7 +255,7 @@ async function main() {
   // exist: a README row naming a missing file must fail here, not crash the
   // suite on the read or require of a file that is not there.
   const missingFns = documentedFns.filter((fn) => !fs.existsSync(path.join(ROOT, 'netlify', 'functions', `${fn}.ts`)));
-  check('every function the table names exists', missingFns.length === 0, missingFns.join(', '));
+  check('every function the list names exists', missingFns.length === 0, missingFns.join(', '));
   for (const fn of documentedFns.filter((f) => !missingFns.includes(f))) {
     const handled = [...functionSource(fn).matchAll(/httpMethod (?:===|!==) '([A-Z]+)'/g)].map((m) => m[1]);
     const listed = rows.filter((r) => r.fn === fn).map((r) => r.method);
@@ -922,12 +933,17 @@ async function main() {
   const CLAUDE_REQUIREMENTS = `${section(CLAUDE, '## Part 1 — The canonical charge sheet (fixed content, not user input)')}\n${section(CLAUDE, '## Part 5 — Core technical requirements')}`;
   check('CLAUDE.md Parts 1 and 5 were found', /^## Part 1 /m.test(CLAUDE_REQUIREMENTS) && /^## Part 5 /m.test(CLAUDE_REQUIREMENTS));
   const docsNamingThings = [['README.md', README], ['SPEC.md', SPEC], ['CLAUDE.md Parts 1 and 5', CLAUDE_REQUIREMENTS]];
-  // A route is named with or without its method ("`GET /api/trials/:id`").
-  // It must be one netlify.toml serves, with a method README's endpoint
-  // table lists for it; a concrete segment such as jon_snow fills a
-  // placeholder such as :role.
+  // A route is named with or without its method ("`GET /api/trials/:id`"),
+  // in backticks or, as README's endpoint list names them, in a <code>
+  // element with the method in bold ("<code><b>GET</b>  /api/case</code>").
+  // It must be one netlify.toml serves, with a method README's endpoint list
+  // gives it; a concrete segment such as jon_snow fills a placeholder such
+  // as :role.
   for (const [doc, text] of docsNamingThings) {
-    const routesNamed = new Map([...text.matchAll(/`(?:(GET|POST|PUT|PATCH|DELETE) )?(\/api\/[^`\s]*)`/g)].map((m) => [m[0], m]));
+    const routesNamed = new Map([
+      ...text.matchAll(/`(?:(GET|POST|PUT|PATCH|DELETE) )?(\/api\/[^`\s]*)`/g),
+      ...text.matchAll(/<code>(?:<b>(GET|POST|PUT|PATCH|DELETE)<\/b> +)?(\/api\/[^\s<]*)<\/code>/g),
+    ].map((m) => [`${m[1] || ''} ${m[2]}`, m]));
     for (const [, [, method, named]] of routesNamed) {
       const served = redirects.filter((r) => new RegExp(`^${r.path.replace(/:\w+/g, '[^/]+')}$`).test(named));
       const methods = rows.filter((row) => served.some((r) => r.path === row.path)).map((row) => row.method);
