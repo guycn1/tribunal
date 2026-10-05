@@ -922,10 +922,11 @@ export async function callOpenRouter(
   // covers that now, and the two exist separately for exactly this reason.
   //
   // Optional and fire-and-forget-tolerant (awaited if it returns a
-  // promise, but a rejection here should never break the actual retry
-  // logic) - a caller that doesn't care about live progress can simply
-  // omit it and rely on the returned discardedAttempts array instead.
-  onDiscardedAttempt?: (attempt: DiscardedAttempt) => Promise<void> | void,
+  // promise, whose value is ignored, but a rejection here should never
+  // break the actual retry logic) - a caller that doesn't care about live
+  // progress can simply omit it and rely on the returned discardedAttempts
+  // array instead.
+  onDiscardedAttempt?: (attempt: DiscardedAttempt) => Promise<unknown> | void,
   // Fired right before each attempt's fetch(), with the model/tier info for
   // the attempt about to run - the moment-it-starts counterpart to
   // onDiscardedAttempt (which only fires once an attempt is over and being

@@ -31,6 +31,10 @@ import { logApiCall, ABORTED_BY_USER_MESSAGE, NO_MODEL_USED } from './lib/db';
  * shows them as `abort requested`, and they do not count against the
  * site-wide call cap (isGlobalCallCapExceeded in db.ts).
  *
+ * Replies with the roles whose rows were written. A role it does not
+ * recognise is skipped, and one whose row the database rejects (an id with
+ * no trial behind it, say) is left out of the reply.
+ *
  * So this call does stop server-side work, just indirectly - by leaving a
  * record the running calls notice, not by cancelling anything. It cannot
  * interrupt an HTTP request already in flight; it stops the next attempt,
@@ -62,7 +66,7 @@ const rawHandler: Handler = async (event) => {
     const callType = role in REPRESENTATIVES ? 'representative' : role in JUDGES ? 'judge' : null;
     if (!callType) continue; // unknown role - nothing sensible to log
 
-    await logApiCall({
+    const written = await logApiCall({
       trialId: id,
       agentRole: role,
       callType,
@@ -74,7 +78,9 @@ const rawHandler: Handler = async (event) => {
       status: 'failed',
       errorMessage: ABORTED_BY_USER_MESSAGE,
     });
-    logged.push(role);
+    // Only a row actually written is reported: a role whose write the
+    // database rejected (an unknown trial id, say) is left out.
+    if (written) logged.push(role);
   }
 
   return json(200, { ok: true, logged });

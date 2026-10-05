@@ -479,9 +479,11 @@ export async function isTrialAborted(trialId: string): Promise<boolean> {
 }
 
 /**
- * Writes one call-log row. A write the database rejects is reported on the
- * function's console rather than thrown, so it never masks the outcome of
- * the call it records.
+ * Writes one call-log row, and returns whether it was written. A write the
+ * database rejects is reported on the function's console rather than
+ * thrown, so it never masks the outcome of the call it records. abort.ts
+ * reads the result to report only the abort rows it recorded; every other
+ * caller leaves it unread.
  */
 export async function logApiCall(params: {
   trialId: string;
@@ -502,7 +504,7 @@ export async function logApiCall(params: {
   // including every discarded one. Kept for audit and diagnosis, never
   // sent to the page (see CALL_LOG_PAGE_COLUMNS).
   responseText?: string | null;
-}): Promise<void> {
+}): Promise<boolean> {
   const supabase = getSupabaseClient();
   const row = {
     trial_id: params.trialId,
@@ -533,7 +535,9 @@ export async function logApiCall(params: {
     // the outcome of the underlying model call, so this only logs to the
     // function's own console rather than throwing.
     console.error('Failed to write api_call_logs row:', error.message);
+    return false;
   }
+  return true;
 }
 
 /**

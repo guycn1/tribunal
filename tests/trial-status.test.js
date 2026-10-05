@@ -32,6 +32,9 @@
  *      cap, while real calls still reach it.
  *   6. The run history's hadFailures counts what README says it counts:
  *      any call-log row stored as failed, an abort's included.
+ *   7. The abort endpoint replies with the roles whose rows it wrote, and
+ *      only those: a role it does not recognise, or whose row the
+ *      database rejects, is left out.
  */
 
 const { compileBackend } = require('./support/compile-backend');
@@ -55,7 +58,7 @@ function check(name, condition, detail) {
   }
 }
 
-const backend = compileBackend(['lib/db.ts', 'lib/openrouter.ts', 'judge-background.ts', 'representative-background.ts', 'trial.ts']);
+const backend = compileBackend(['lib/db.ts', 'lib/openrouter.ts', 'judge-background.ts', 'representative-background.ts', 'trial.ts', 'abort.ts']);
 useFakeSupabase(backend.outDir);
 const { markTrialCompletedIfJudgingDone, ABORTED_BY_USER_MESSAGE, isGlobalCallCapExceeded, GLOBAL_CALL_CAP, NO_MODEL_USED, listTrials } = backend.load('lib/db.js');
 const markers = backend.load('lib/openrouter.js');
@@ -182,6 +185,7 @@ process.env.NETLIFY_DEV = 'true';
 const { handler: judgeHandler } = backend.load('judge-background.js');
 const { handler: trialHandler } = backend.load('trial.js');
 const { handler: representativeHandler } = backend.load('representative-background.js');
+const { handler: abortHandler } = backend.load('abort.js');
 // A judge reply the repetition check discards: one sentence twice in a row.
 const LOOPED_RULING = 'VERDICT: justified\n\nThe bells had rung before the fire. He had no lawful authority to strike her down. He had no lawful authority to strike her down.';
 
@@ -392,6 +396,30 @@ async function main() {
   check("both of barak's rows are still written", unmigrated.length === 2 && unmigrated.some((row) => row.status === 'failed') && unmigrated.some((row) => row.status === 'success'), JSON.stringify(unmigrated.map((row) => row.status)));
   check('without the text', unmigrated.every((row) => !('response_text' in row)));
   check('and the ruling is still saved', j.tables.judge_rulings.length === 1);
+
+  say('\n=== The abort endpoint reports the rows it wrote, and only those ===');
+  /**
+   * Calls the real abort handler against an in-memory database holding
+   * one trial, where an api_call_logs row for any other trial id breaks
+   * the foreign key, as in the real schema.
+   * @param {string} trialId
+   * @param {string[]} roles
+   * @returns {Promise<{status: number, logged: string[], rows: object[]}>}
+   */
+  const abortWith = async (trialId, roles) => {
+    const fake = fakeSupabase({ trials: [{ id: TRIAL_ID, case_code: 'T-001', status: 'created' }], api_call_logs: [] }, {
+      rejectInsert: (table, row) => (table === 'api_call_logs' && row.trial_id !== TRIAL_ID ? 'insert or update on table "api_call_logs" violates foreign key constraint "api_call_logs_trial_id_fkey"' : undefined),
+    });
+    global.fakeSupabase = fake.client;
+    const response = await quietly(() => abortHandler({
+      httpMethod: 'POST', path: `/api/trials/${trialId}/abort`, headers: {}, queryStringParameters: {}, body: JSON.stringify({ roles }),
+    }, {}));
+    return { status: response.statusCode, logged: JSON.parse(response.body).logged, rows: fake.tables.api_call_logs };
+  };
+  const known = await abortWith(TRIAL_ID, ['barak', 'jon_snow', 'nobody']);
+  check('every row written is reported', known.status === 200 && JSON.stringify(known.logged) === JSON.stringify(['barak', 'jon_snow']) && known.rows.length === 2, JSON.stringify(known));
+  const unknown = await abortWith('9e8d7c6b-5a4f-4e3d-8c2b-1a0f9e8d7c6b', ['barak', 'jon_snow']);
+  check('a row the database rejects is not reported', unknown.status === 200 && unknown.logged.length === 0 && unknown.rows.length === 0, JSON.stringify(unknown));
 }
 
 main().then(
