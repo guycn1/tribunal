@@ -143,10 +143,10 @@ One badge per trial, summarising the whole run.
 | Badge | Colour | What triggered it |
 | --- | --- | --- |
 | `completed` | green | Finished, with all 7 of 7 results saved. |
-| `completed — missing N of 7` | amber | Finished, but fewer than 7 results were saved: some agent's call failed for good (every tier or the time budget used up, a failure no retry can fix, or a judge reply with no `VERDICT` line and reasoning after it), or a representative's call never ran (its trigger request rejected or never sent, or the call turned away by the site gate or the call cap). |
+| <code>completed&nbsp;— missing&nbsp;N&nbsp;of&nbsp;7</code> | amber | Finished, but fewer than 7 results were saved: some agent's call failed for good (every tier or the time budget used up, a failure no retry can fix, or a judge reply with no `VERDICT` line and reasoning after it), or a representative's call never ran (its trigger request rejected or never sent, or the call turned away by the site gate or the call cap). |
 | `aborted` | grey | Stopped by the user before the trial reached completion. |
-| `aborted (N of 7 completed)` | grey | Stopped by the user, but the trial had already been marked complete — the count says how much survived. |
-| `in progress…` | slate | Not finished, not aborted, and under 40 minutes old — presumably still running. |
+| <code>aborted (N&nbsp;of&nbsp;7&nbsp;completed)</code> | grey | Stopped by the user, but the trial had already been marked complete — the count says how much survived. |
+| <code>in&nbsp;progress…</code> | slate | Not finished, not aborted, and under 40 minutes old — presumably still running. |
 | `interrupted` | red | Not finished, not aborted, and over 40 minutes old, so it is treated as never going to finish — a dev-server restart mid-run, say, the page closed before the judges were started (the browser starts each phase), or a judge whose call never ran (its trigger request rejected, or the call turned away by the site gate or the call cap), since a trial is finished once every judge has an outcome logged. The threshold is sized well above the genuine worst case: the page waiting on the representatives for as long as it polls, then every judge running out its full time budget. |
 
 "Missing N" counts results that were actually saved, **not** whether any individual attempt failed along the way. A failed attempt that a retry or escalation recovered from (a timeout, a rate limit, a truncated or degenerate reply) is logged, but it is not a flaw in the outcome; most complete trials have at least one, so labelling on that basis would falsely mark most runs as damaged. The call log still lists every attempt.

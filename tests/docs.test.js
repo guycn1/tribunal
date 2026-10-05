@@ -892,8 +892,26 @@ async function main() {
       }
     }
   }
-  const documentedSidebar = new Set([...sidebarSection.matchAll(/^\| `([^`]+)` \| (\w+) \|/gm)].map((m) => `${m[1]}|${m[2]}`));
+  // A label is a plain code span or, where it needs control over where it
+  // wraps, a <code> element using &nbsp;, as in the call log table.
+  const sidebarLabels = [...sidebarSection.matchAll(/^\| (?:`([^`]+)`|<code>([^<]+)<\/code>) \| (\w+) \|/gm)].map((m) => ({ label: m[1] || m[2].replace(/&nbsp;/g, ' '), raw: m[1] || m[2], colour: m[3] }));
+  const documentedSidebar = new Set(sidebarLabels.map((l) => `${l.label}|${l.colour}`));
   check('the sidebar table is there', documentedSidebar.size > 0);
+  // A label that qualifies another label in the table ("completed" ->
+  // "completed — missing N of 7") wraps in one place only, right after that
+  // base label and any dash, so the qualifier moves to the next line whole;
+  // every other label never wraps. Labels in long form would otherwise wrap
+  // at every space, and joined whole they would make the column too wide.
+  const sidebarBases = sidebarLabels.map((l) => l.label).filter((l) => !l.includes(' '));
+  const wrapsWrongly = sidebarLabels.filter((l) => {
+    const base = sidebarBases.find((b) => l.label.startsWith(`${b} `));
+    const nb = (s) => s.replace(/ /g, '&nbsp;');
+    if (!base) return l.raw !== nb(l.label);
+    const rest = l.label.slice(base.length + 1);
+    const expected = rest.startsWith('— ') ? `${base}&nbsp;— ${nb(rest.slice(2))}` : `${base} ${nb(rest)}`;
+    return l.raw !== expected;
+  });
+  check('every sidebar label wraps only right after the label it qualifies, if at all', wrapsWrongly.length === 0, wrapsWrongly.map((l) => l.raw).join(', '));
   check('every sidebar badge app.js can render is in the table', minus(sidebar, documentedSidebar).length === 0, minus(sidebar, documentedSidebar).join(', '));
   check('every badge in the sidebar table is one app.js renders', minus(documentedSidebar, sidebar).length === 0, minus(documentedSidebar, sidebar).join(', '));
   if (Number.isFinite(threshold)) {
