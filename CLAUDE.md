@@ -821,6 +821,8 @@ time, for the same reason. The 9 commits:
 
 ### 2026-08-28: anti-abuse layers, the paid model, and concurrency
 
+#### Two merges, and the anti-abuse layers going live
+
 **The next batch (5 commits on 3 topics: the retry-ceiling raise to 150s with
 the last-ditch call's own 26s timeout, the history-view "still Deliberating"
 fix, and the three anti-abuse layers ahead of switching to a paid OpenRouter
@@ -903,7 +905,7 @@ assumed. Fixed by restarting `netlify dev`; 6 of 7 calls then succeeded. Not a
 code bug, nothing changed in the repo for this - logged here as a real recurring
 local-dev trap, alongside the project's other documented `netlify dev` quirks.
 
-#### Per-attempt logging, timeouts and truncation
+#### Per-attempt logging, timeouts, truncation, and the merge
 
 **The 7th call (Daenerys Targaryen) still failed on that same run**, with
 `OpenRouter did not respond within 17000ms (gave up after 5 attempt(s), 25000ms budget)` -
@@ -2643,7 +2645,7 @@ no model calls): `app.js` and `styles.css` matched `main` byte for byte, and
 
 ### 2026-09-27: HARD RULE 3, detection, audit text, badges and aborts
 
-#### HARD RULE 3, and a widened repeated-sentence detector
+#### HARD RULE 3
 
 **HARD RULE 3 added (2026-09-27, by the user): edit history belongs in the
 commit message, not in the file** - see the HARD RULES block at the top. Applied
@@ -2656,6 +2658,8 @@ SPEC.md had nothing it covers):
   tested", "confirm deploy status before considering this closed") were put in
   the past tense, the merge-state ones naming the merge their work reached;
 - and the italic notes that only patched those up went with them.
+
+#### A widened repeated-sentence detector
 
 **A degenerate argument got through the repeated-sentence detector, and the
 detector was widened (2026-09-27).** In trial `e4a20a68` (run 2026-09-26 22:25
@@ -2811,7 +2815,7 @@ deployed site's public files over plain HTTPS: `app.js` and `styles.css` (both
 changed in this merge) matched `main` byte for byte, and `index.html` differed
 only by the script tag Netlify injects at serve time (`/.netlify/scripts/hud`).
 
-#### Badges, and the "Powered by Netlify" card
+#### Badges, an abort row's model, and the "Powered by Netlify" card
 
 **Badge text centred the same way on every device, and the call-log and sidebar
 labels made lowercase (2026-09-27, on the user's report from Chrome on
@@ -3638,6 +3642,8 @@ where two disagreed, the record settled which was right and the other was
 corrected. The judges' names in `judges.ts` now match their card headings, and
 `tests/shared-constants.test.js` checks that the two stay in step. The details
 are in the commit message.
+
+#### The abort endpoint's reply
 
 **The abort endpoint replies with the roles it wrote rows for (2026-10-05, on
 the user's go-ahead).** Its reply lists the roles it recorded an abort for. Run
@@ -4985,7 +4991,7 @@ inside.
     one.
   - Regression tests for all of this live in `tests/render-cards.test.js`.
 
-### Two CSS traps worth not re-discovering (2026-09-20/21)
+### Two CSS traps worth not re-discovering, and checks that measured nothing (2026-09-20/21)
 
 Both came out of the sidebar/badge polish arc and cost real time. Neither is
 guessable from reading the CSS.
