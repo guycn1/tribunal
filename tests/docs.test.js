@@ -854,8 +854,14 @@ async function main() {
     { status: 'failed', errorMessage: `${app.ABORTED_MID_CALL_MARKER} Stopped before attempt 2.` },
   ].flatMap(badgesFor));
   const callLogSection = section(README, '### Call log');
-  const documentedCallLog = new Set([...callLogSection.matchAll(/^\| `([^`]+)` \| (\w+) \|/gm)].map((m) => `${m[1]}|${m[2]}`));
+  // A label of more than one word is written <code>no&nbsp;response</code>,
+  // so it never wraps inside its badge and the Badge column is as wide as
+  // the longest label; a one-word label is a plain code span.
+  const callLogLabels = [...callLogSection.matchAll(/^\| (?:`([^`]+)`|<code>([^<]+)<\/code>) \| (\w+) \|/gm)].map((m) => ({ label: m[1] || m[2].replace(/&nbsp;/g, ' '), raw: m[1] || m[2], colour: m[3] }));
+  const documentedCallLog = new Set(callLogLabels.map((l) => `${l.label}|${l.colour}`));
   check('the call log table is there', documentedCallLog.size > 0);
+  const breakable = callLogLabels.filter((l) => l.label.includes(' ') && l.raw !== l.label.replace(/ /g, '&nbsp;'));
+  check('every label of more than one word in the call log table is joined with &nbsp;', breakable.length === 0, breakable.map((l) => l.raw).join(', '));
   check('every call-log badge app.js can render is in the table', minus(rendered, documentedCallLog).length === 0, minus(rendered, documentedCallLog).join(', '));
   check('every badge in the call log table is one app.js renders', minus(documentedCallLog, rendered).length === 0, minus(documentedCallLog, rendered).join(', '));
   // The legacy badge, dated where README describes it, against the date the
