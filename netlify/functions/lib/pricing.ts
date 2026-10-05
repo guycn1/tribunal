@@ -13,7 +13,8 @@
 const PRICING_PER_MILLION_TOKENS: Record<string, { prompt: number; completion: number }> = {
   // Checked 2026-08-28.
   'mistralai/mistral-small-24b-instruct-2501': { prompt: 0.05, completion: 0.08 },
-  // No longer used (see getTruncationFallbackModel in models.ts) -
+  // No longer used (see the comment above TRUNCATION_FALLBACK_MODEL in
+  // models.ts) -
   // mistralai/mistral-large-2512 was deprecated/removed from OpenRouter's
   // catalogue (confirmed 2026-09-20, when its model page returned 404).
   // Entry kept, not deleted, as the record of the price that real historical

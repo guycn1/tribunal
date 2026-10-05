@@ -216,7 +216,7 @@ interface RetryTier {
  *
  * Tier 1's maxAttempts raised 1 -> 2 (2026-09-20), when tier 2's model
  * was replaced (mistralai/mistral-large-2512, deprecated/removed from
- * OpenRouter - see getTruncationFallbackModel's comment in models.ts - by
+ * OpenRouter - see the comment above TRUNCATION_FALLBACK_MODEL in models.ts - by
  * anthropic/claude-haiku-4.5). A second attempt at the default model
  * catches more recoverable truncations/degeneracies before reaching for a
  * costlier tier. Note that

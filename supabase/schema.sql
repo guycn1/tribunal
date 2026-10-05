@@ -176,9 +176,10 @@ alter table agent_progress enable row level security;
 -- these with "permission denied for table X" even when the secret key is
 -- correct — a Postgres GRANT error, and a different layer from RLS, which
 -- fails by silently returning zero rows instead. This was hit for real on
--- this project's own Supabase project. These lived as a separate manual step for a while, which
--- meant anyone following README's "schema in supabase/schema.sql" got a
--- correctly-created database that refused every query. They belong here.
+-- this project's own Supabase project. These lived as a separate manual
+-- step for a while, which meant anyone setting up from README's instructions
+-- of the time got a correctly-created database that refused every query.
+-- They belong here.
 -- RLS is unaffected by any of this: it stays deny-all for anon/authenticated
 -- with no policies defined, and GRANT is a separate mechanism from it.
 grant usage on schema public to service_role;
