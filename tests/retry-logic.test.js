@@ -205,7 +205,7 @@ async function main() {
     const LONG = 'He had seen the city burn after the bells rang and he knew that she would not stop.';
     const LONG_LESS_ONE = 'He had seen the city burn after the bells rang and he knew she would not stop.';
 
-    // The 2026-09-26 miss, word for word: three copies back to back, a
+    // The miss of 2026-09-26 22:25 UTC (trial e4a20a68), word for word: three copies back to back, a
     // fourth differing by one word ("Jon Snow's" for "his").
     const closing = 'I ask the Tribunal to consider these words, and to consider the facts of the case. I ask the Tribunal to consider whether Jon Snow\'s actions were justified, and I ask the Tribunal to consider whether his actions were necessary. ' + 'I ask the Tribunal to consider whether his actions were justified, and I ask the Tribunal to consider whether his actions were necessary. '.repeat(3);
     const missed = await verdict(closing);
@@ -402,8 +402,9 @@ async function main() {
     }
     const [rep, judge, odd] = timeouts;
     check('a judge prompt gets a larger ceiling than a representative', judge > rep + 5000, `${rep} vs ${judge}`);
-    // The slowest judge reply logged as a success took 46.6s (2026-09-20).
-    check('the judge ceiling clears the slowest judge reply logged, with room to spare', judge > 53000, String(judge));
+    // As of 2026-10-03, the slowest judge reply logged as a success had
+    // taken 46.6s (on 2026-09-20).
+    check('the judge ceiling clears the slowest judge reply logged as of 2026-10-03, with room to spare', judge > 53000, String(judge));
     check('an odd token estimate still yields an integer', Number.isInteger(odd), String(odd));
   });
 

@@ -395,8 +395,9 @@ const GLOBAL_CALL_WINDOW_MS = 24 * 60 * 60 * 1000;
  * which already needs its own explicit go-ahead before any OpenRouter
  * quota is spent (a separate, stricter gate than this one). NETLIFY_DEV
  * is injected as 'true' by the Netlify CLI itself for every invocation
- * under `netlify dev` (confirmed directly in its own source,
- * commands/dev/dev.js). No client request can set it, and a deployed
+ * under `netlify dev` (confirmed on 2026-08-29 in the source of the
+ * netlify-cli installed then, commands/dev/dev.js; package.json allows
+ * later 17.x releases, which could change it). No client request can set it, and a deployed
  * invocation has it only if someone adds it to Netlify's environment
  * variables, which the next paragraph rules out; a genuine hang chasing this
  * exact cap during local testing is what prompted checking for a way to

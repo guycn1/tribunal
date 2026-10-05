@@ -65,8 +65,8 @@ export function getModelForRole(role: string): string {
 // the default model, for style/formatting consistency with prompts tuned
 // without a cross-vendor model in mind) until that model id was
 // deprecated/removed from OpenRouter's catalogue sometime after this chain
-// was built - confirmed directly (2026-09-20): its own OpenRouter model
-// page now 404s, and every real call that needed to escalate past tier 1
+// was built - confirmed directly on 2026-09-20, when its own OpenRouter
+// model page returned 404, and every real call that needed to escalate past tier 1
 // failed outright rather than reaching the still-live tiers 3/4 (see
 // HTTP_ERROR_ESCALATED_MARKER in openrouter.ts for the escalation-chain
 // bug that used to let one dead tier kill the whole call, fixed separately from
@@ -123,16 +123,16 @@ export function getTruncationFallbackModel(): string {
 // plain HTTP error there escalates at once and forfeits the rest (see the
 // tiered retry loop in openrouter.ts). They exist because real measured
 // data on tier 2's original model (mistralai/mistral-large-2512) found it
-// not reliable enough on its own (a real, if rare, case truncated on both
-// of its own attempts too). These two are
+// not reliable enough on its own (in targeted tests on 2026-08-29, 2 of its
+// 5 fallback attempts truncated too). These two are
 // deliberately two models from two different companies, neither an
 // incremental step within the same family: escalating vendor as well as
 // capability removes any shared-family quirk as an explanation, not just a
 // shared-size one.
 //
-// What has been measured, from api_call_logs up to 2026-09-27: every
-// openai/gpt-5.6-sol call was kept, none discarded; google/gemini-2.5-pro's
-// only failures were the HTTP 400 "Reasoning is mandatory" rejection from
+// What api_call_logs showed as of 2026-09-27: every openai/gpt-5.6-sol
+// call had been kept, none discarded; google/gemini-2.5-pro's only
+// failures had been the HTTP 400 "Reasoning is mandatory" rejection from
 // before modelRequiresReasoning() existed below, i.e. a configuration fault
 // rather than anything about the output. Neither had produced a truncated
 // or degenerate result. Reached rarely enough (only after every earlier tier has already

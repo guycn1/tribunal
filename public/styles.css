@@ -717,11 +717,12 @@ body {
    down), snapping instantly rather than fading - direct feedback to a
    physical mouse press, deliberately not softened the way the ambient
    hover cue is. In practice, browser support for it was measured to be
-   limited: Firefox does not apply styling from a ::-webkit-scrollbar-*
-   rule at all, and current Chrome, Edge and WebKit (Safari's engine)
-   ignore every such rule on an element that also sets the standard
-   scrollbar-width, as both elements here do - see the fallback block
-   below. So Chrome, Edge and Firefox show two tiers, rest and hover.
+   limited: as measured in September and October 2026 (see the fallback
+   block below for versions and dates), Firefox did not apply styling from
+   a ::-webkit-scrollbar-* rule at all, and Chrome, Edge and WebKit
+   (Safari's engine) ignored every such rule on an element that also sets
+   the standard scrollbar-width, as both elements here do. So Chrome, Edge
+   and Firefox showed two tiers, rest and hover.
 
    The custom-property fade mechanism above (--scrollbar-thumb-opacity)
    is unrelated to any of this and unaffected by it - Firefox
@@ -749,8 +750,8 @@ body {
    element that sets scrollbar-width, Chromium ignores every
    ::-webkit-scrollbar rule for it (a 30px webkit width measured 10px, the
    same as scrollbar-width: thin on its own). Both elements here set it, so
-   in current Chrome and Edge nothing in this block applies - not the 8px
-   width, not the thumb colour, not the :active tier. Measured 2026-10-02
+   in those versions of Chrome and Edge nothing in this block applied - not
+   the 8px width, not the thumb colour, not the :active tier. Measured 2026-10-02
    in WebKit 26.6 (Safari's engine, run through Playwright's Windows
    build), the same holds: with scrollbar-width set, an 8px or a 30px
    webkit width laid out at 0px, against 8px and 30px on an element
@@ -759,13 +760,16 @@ body {
    In Firefox (as of 2026-09-04): versions 153 and 154 treated a non-zero
    width here as a request for classic, always-visible scrollbars (their
    release notes: "rules with non-zero width/height disable overlay
-   scrollbars for the affected container"). Firefox 155 limits that to an
-   internal allowlist of sites, which this one is not on; a test page in
-   Firefox 155 confirmed it, and showed the same with or without an
-   @supports gate on this block, so it has none. Firefox on Windows draws
+   scrollbars for the affected container"). Firefox 155 limited that to a
+   small list of sites, kept in its layout.css.fake-webkit-scrollbar.
+   enabled-domains preference (MDN's Firefox 155 notes, read 2026-10-05:
+   https://developer.mozilla.org/en-US/docs/Mozilla/Firefox/Releases/155),
+   which this site was not on; a test page in Firefox 155 confirmed it on
+   2026-09-04, and showed the same with or without an @supports gate on
+   this block, so it has none. Firefox on Windows drew
    its own overlay scrollbar - hidden at rest, a thin indicator on hover,
    wider with the pointer on it - in the colour scrollbar-color sets, and
-   no CSS property turns that off (a Mozilla engineer on
+   no CSS property turned that off (a Mozilla engineer on
    bugzilla.mozilla.org: "no built-in CSS property to globally disable
    overlay scrollbars; this is controlled by the operating system"). A
    visitor can bring classic scrollbars back with Windows 11's "Always
@@ -796,8 +800,8 @@ body {
 .badge {
   display: inline-block;
   border-radius: 999px;
-  /* Fallback only - see the @supports block below, which every current
-     browser takes. Symmetric padding centres the line box, not the text,
+  /* Fallback only - see the @supports block below, which the current
+     release of every common browser took as of 2026-09-27. Symmetric padding centres the line box, not the text,
      and where the text lands in that box depends on the font: the page
      uses the system font stack, so Windows draws badges in Segoe UI (tall
      ascent, text sits 1-2px low) and Android in Roboto (balanced, text
@@ -825,7 +829,7 @@ body {
    baseline and the top of a capital letter, so the padding is measured
    from the letters themselves rather than from the font's own (and
    font-specific) ascent and descent. Rendered in Edge, Firefox and WebKit
-   (Safari's engine), every call-log and sidebar label sits within 0.25px
+   (Safari's engine) on 2026-09-27, every call-log and sidebar label sat within 0.25px
    of the same place in Segoe UI (Windows) as in Roboto (Android).
    The bottom padding is 0.1em - 0.4px larger than the top: 0.1em sets the
    pill's centre halfway between the middle of a capital letter and the

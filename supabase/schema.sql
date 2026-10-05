@@ -169,8 +169,9 @@ alter table agent_progress enable row level security;
 -- ---------------------------------------------------------------------------
 -- Needed on a Supabase project created with "Automatically expose new
 -- tables" unchecked (Supabase's own tighter-security suggestion), as this
--- project's was. That setting turns out to gate the grants the newer
--- publishable/secret key system needs, not just anon and authenticated as
+-- project's was. That setting turned out, when this project was set up on
+-- 2026-08-27, to gate the grants the publishable/secret key system needs
+-- (the newer of Supabase's two key systems at the time), not just anon and authenticated as
 -- one would expect, so on such a project every backend call fails without
 -- these with "permission denied for table X" even when the secret key is
 -- correct — a Postgres GRANT error, and a different layer from RLS, which

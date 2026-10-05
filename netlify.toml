@@ -9,11 +9,13 @@
 # Stops `netlify dev` from launching a browser tab at localhost:8888 on every
 # start; opening the app is left to whoever is running it. Set here rather
 # than as a --no-open flag on the npm script so it applies however the server
-# is started, including a direct `netlify dev` invocation. Verified against
-# the installed CLI's own source rather than assumed: dev.js builds its
-# devConfig as {autoLaunch: <default>, ...config.dev, ...options} and then
-# guards the launch with `if (devConfig.autoLaunch !== false)`, so this key
-# genuinely takes precedence over the default.
+# is started, including a direct `netlify dev` invocation. Verified on
+# 2026-09-20 against the source of the netlify-cli installed then, rather
+# than assumed: dev.js built its devConfig as
+# {autoLaunch: <default>, ...config.dev, ...options} and then guarded the
+# launch with `if (devConfig.autoLaunch !== false)`, so this key took
+# precedence over the default. package.json allows later 17.x releases of
+# the CLI, which could change that.
 [dev]
   autoLaunch = false
 
@@ -38,9 +40,12 @@
 # The two routes that spend OpenRouter quota carry Netlify's per-IP rate
 # limit. It lives here because a function written with a named `handler`
 # export, as every function in this project is, has its `config` export
-# ignored by Netlify's bundler, rate limit included. Netlify allows at most
-# 180 seconds per window, and two rules on this plan - these two. The two
-# rules count one IP's requests together, not separately: measured on the
+# ignored by Netlify's bundler, rate limit included (as read in the
+# bundler's source on 2026-10-02 - see the end of
+# representative-background.ts). As documented when checked that day,
+# Netlify allows at most 180 seconds per window, and two rules on this
+# plan - these two. The two rules count one IP's requests together, not
+# separately: measured on the
 # live site on 2026-10-02, at the 30-request limit of the time, 20
 # requests to the first route left 11 for the second before the 429s
 # began. A full trial sends 7, so 60 per 3 minutes (about 8 full trials)

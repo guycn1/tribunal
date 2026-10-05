@@ -489,7 +489,7 @@ const ORDINAL_WORDS = ['zeroth', 'first', 'second', 'third', 'fourth', 'fifth'];
  * Used for the "(first attempt)"/"(second attempt)" suffix on a
  * still-loading card's model line (see buildAgentStatusBody) - only ever
  * needs to cover however many attempts buildRetryTiers() in openrouter.ts
- * gives any one tier (currently max 2), but written to degrade to a plain
+ * gives any one tier (2 at most, as of 2026-10-05), but written to degrade to a plain
  * ordinal number rather than throw if that ever changes.
  *
  * @param {number} n A one-based attempt number.
@@ -531,8 +531,8 @@ function formatCallTypeHtml(callType) {
  * as a success and became a failure (298d2fa, 2026-08-29 13:19:36 UTC). A
  * success row logged after this can never be a truncated one: from then on
  * the server fails such a call outright, so it reaches the card as a real
- * failure. Every success row at a multiple of the cap in the call log was
- * logged before it, the last at 13:04 UTC that day.
+ * failure. As of 2026-10-03, every success row at a multiple of the cap in
+ * the call log had been logged before it, the last at 13:04 UTC that day.
  */
 const TRUNCATION_BECAME_FAILURE_AT = Date.parse('2026-08-29T13:19:36Z');
 
@@ -923,13 +923,13 @@ function sleep(ms, signal) {
  *
  * The agent endpoints now run as Netlify Background Functions (declared
  * by their -background filenames) - the fix for a verified, load-bearing
- * problem: Netlify's real free-tier synchronous function limit is 10
- * seconds, while real calls on the default model at the time routinely
- * took longer than that per attempt, before any retry. A standard
- * invocation could not reliably survive that gap no matter how the
- * internal retry/timeout budget was tuned. Background Functions get up to
- * 15 minutes instead - but the platform responds 202 immediately and runs the handler
- * asynchronously, so its real return value never reaches this fetch()
+ * problem: real calls on the default model at the time routinely took
+ * longer per attempt, before any retry, than the synchronous function limit
+ * on Netlify's free plan (as documented when checked on 2026-08-28). A
+ * standard invocation could not reliably survive that gap no matter how the
+ * internal retry/timeout budget was tuned. Background Functions get far
+ * longer instead - but the platform responds 202 immediately and runs the
+ * handler asynchronously, so its real return value never reaches this fetch()
  * call the way a normal synchronous function's did. Calling a role now
  * has two separate steps: triggerAgent() fires the request and reports
  * only what's knowable synchronously (a network failure, or a
@@ -1402,8 +1402,9 @@ const HISTORY_RETRY_BACKOFF_MS = 700;
 async function refreshHistory() {
   // Only show the big "fetching" placeholder when there's genuinely
   // nothing to look at yet - this is what used to look frozen on a slow
-  // fetch (observed up to ~10s, likely Supabase round-trip time, see the
-  // query-shape note on listTrials in db.ts). A refresh of an
+  // fetch (observed taking up to ~10s on 2026-08-27, while listTrials in
+  // db.ts still made its queries one after another - see the note there).
+  // A refresh of an
   // already-populated list leaves the existing items on screen rather than
   // flickering them out while fresh data loads.
   if (state.history.length === 0) {
@@ -1785,8 +1786,9 @@ const SCROLLBAR_FADE_MS = 220;
  * identically there. The dragging tier is separate and untouched by any of
  * this - a ::-webkit-scrollbar-thumb:active rule, snapping instantly, since
  * direct-manipulation feedback to a physical mouse press arguably should
- * stay instant, not fade in. It does not render in current Chrome, Edge or
- * Firefox, though - see the scrollbar comments in styles.css.
+ * stay instant, not fade in. It did not render in Chrome, Edge or Firefox
+ * as measured in September 2026 (Chrome 154, Edge 153, Firefox 155),
+ * though - see the scrollbar comments in styles.css.
  *
  * @param {HTMLElement} el The element to watch for the pointer. The opacity
  *   is written to its --scrollbar-thumb-opacity custom property, which a

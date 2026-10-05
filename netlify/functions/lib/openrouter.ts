@@ -18,12 +18,12 @@ const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 // standard synchronous invocations. Before that move this file budgeted against a
 // tight ~26s ceiling, calibrated against a *standard* Netlify Function
 // invocation limit that turned out to be wrong for what this project
-// actually runs on: the real free-tier synchronous limit is 10
-// seconds (verified directly against Netlify's own docs and support
-// forum, not assumed), which real calls on the default model routinely
-// ran past, however carefully the old budget was tuned - no amount of
+// actually runs on: the real synchronous limit on Netlify's free plan was
+// far shorter (checked against Netlify's own docs and support forum on
+// 2026-08-28), and real calls on the default model routinely ran past it,
+// however carefully the old budget was tuned - no amount of
 // constant-tuning fixes an architecture mismatch.
-// Background Functions get up to 15 minutes instead, which is what makes
+// Background Functions get far longer instead, which is what makes
 // the current value possible at all: this was first set to 120000ms (2
 // minutes) on that move, then raised again to fit the full escalation
 // chain (see buildRetryTiers below).
@@ -31,8 +31,10 @@ const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 // see its own comment for the arithmetic: ~649s of attempt ceilings for a
 // judge across all four tiers, ~587s for a representative, both before
 // backoff delays. 650000ms (650s, ~10.8 minutes) is deliberately sized
-// against that, and stays comfortably under the real 900s (15 minute)
-// background-function ceiling rather than razor-close to it. A chain that
+// against that, and stays comfortably under the background-function
+// ceiling - 900s (15 minutes) in Netlify's docs as checked on 2026-08-28,
+// https://docs.netlify.com/build/functions/background-functions/ - rather
+// than razor-close to it. A chain that
 // still overruns degrades gracefully rather than silently: remainingMs()
 // clamps the final attempt, and the loop says plainly that the budget ran
 // out before a further tier could be tried.
@@ -63,8 +65,8 @@ const MIN_REMAINING_TO_ATTEMPT_MS = 10000;
 // A genuine hang is the opposite case and is what the escalation budget
 // exists for: it consumes the whole per-attempt ceiling before failing.
 // The line was set from those two: the 429 bounces observed when it was
-// set landed at 1.7-4.3s (every 429 logged by 2026-10-04 came back in
-// 0.4-3.6s), while a timeout runs the full per-attempt ceiling, which was
+// set landed at 1.7-4.3s (and as of 2026-10-04, every 429 in the call log
+// had come back in 0.4-3.6s), while a timeout runs the full per-attempt ceiling, which was
 // 43s flat then and is longer now that attemptTimeoutFor() scales with
 // prompt size (~50s for a representative, ~58s for a judge, more at later
 // tiers). The same 10s line applies to every other transient failure - a
@@ -93,9 +95,9 @@ const MAX_FAST_TRANSIENT_RETRIES_PER_TIER = 4;
  * real incident where judge calls timed out repeatedly against a ceiling
  * that only ever considered max_tokens. A judge's prompt carries the full
  * case record plus all four representative arguments. Counted across every
- * successful call in api_call_logs as of 2026-09-21: a judge prompt runs a
+ * successful call in api_call_logs as of 2026-09-21: a judge prompt ran a
  * median of 3896 tokens (mean 3943, p90 4483), a representative's 1028
- * (mean 1166, p90 2068) - so a judge carries something like 3.8x a
+ * (mean 1166, p90 2068) - so a judge carried something like 3.8x a
  * representative's prompt. The old formula gave both the identical 43000ms.
  * Real measured judge completions on the default model in that incident:
  * 26.9s, 33.9s, and 43.2s - the last of those at that very ceiling (a
@@ -112,9 +114,9 @@ const MAX_FAST_TRANSIENT_RETRIES_PER_TIER = 4;
  * are what the budget was sized against.
  *
  * It is NOT inside the budget by construction. The ceiling scales with
- * prompt size and real prompts have a long tail - the largest judge prompt
- * in the log (as of 2026-09-21) is 11318 tokens, which sums to 767s, over
- * budget by nearly two minutes. p90 (4483) only just fits, so a judge prompt
+ * prompt size and real prompts have a long tail - as of 2026-09-21, the
+ * largest judge prompt in the log was more than twice p90, and its ceilings
+ * summed to nearly two minutes over budget. p90 (4483) only just fits, so a judge prompt
  * a little above it already sums past the budget. That matters only when
  * every attempt in the chain runs to its ceiling, and it bites safely
  * when it does: remainingMs() clamps the last attempt and the loop reports
@@ -160,10 +162,10 @@ export interface OpenRouterMessage {
 // max_tokens before reaching a natural conclusion, which is where the
 // wording comes from. A truncated response was previously
 // accepted as a plain success with no corrective action - real testing
-// found this happens to a real, non-trivial share of calls (roughly 1 in
-// 4 in one batch) even with frequency_penalty/presence_penalty already
-// in place, so silently accepting it was leaving a known, common failure
-// mode unaddressed. Framed as a fresh attempt, not "finish what you
+// found this happening to a real, non-trivial share of calls (5 of 21, about
+// 1 in 4, in a batch on 2026-08-28, at that day's frequency_penalty/
+// presence_penalty of 0.4/0.2), so silently accepting it was leaving a
+// known, common failure mode unaddressed. Framed as a fresh attempt, not "finish what you
 // started," since the model never sees its own truncated fragment here.
 // A single same-model retry was not enough on its own: in a test on
 // 2026-08-29, once daenerys_targaryen's or grey_worm's first attempt
@@ -175,10 +177,10 @@ export interface OpenRouterMessage {
 // having as tier 1's own second attempt (see maxAttempts below) precisely
 // because it's the cheapest possible recovery to try first, before paying
 // for a pricier tier - it just isn't relied on alone. A single
-// different-model fallback helped a lot but still wasn't reliable enough
-// on its own either: of 8 real escalations measured (then against Mistral
-// Large, tier 2's original model), 7 succeeded and 1 truncated on both of
-// its own attempts too. Rather than one fallback, this is a genuine
+// different-model fallback helped but still wasn't reliable enough on its
+// own either: in targeted tests on 2026-08-29 against Mistral Large, tier
+// 2's original model, 2 of its 5 fallback attempts truncated too. Rather
+// than one fallback, this is a genuine
 // escalation chain - each tier a different model, reached once the tier
 // before it is done - which usually means it spent every attempt allowed
 // it, on truncation, degeneration or a transient failure that counted (a
@@ -292,12 +294,12 @@ function detectDegenerateRun(content: string): { degenerate: boolean; runLength:
 // "...nonetheless nonetheless nonetheless..." collapse it was built for in
 // 2026-09-01). It cannot spot a short, well-punctuated clause
 // repeated dozens of times, because every individual chunk between the
-// periods is short. That second signature is not hypothetical and not
-// rare: re-scanning the entire real corpus this project has generated (689
-// stored texts - 500 representative arguments, 189 judge rulings) found 30
-// texts (4.4%) with a whole sentence repeated 4+ times, topping out at one
-// argument that repeated "I had no other way" 195 times - and the existing
-// run detector scored every single one of them clean (their longest
+// periods is short. That second signature was neither hypothetical nor
+// rare: re-scanning every text the project had stored by 2026-09-20 (689 -
+// 500 representative arguments, 189 judge rulings) found 30 (4.4%) with a
+// whole sentence repeated 4+ times, topping out at one argument that
+// repeated "I had no other way" 195 times - and the existing run detector
+// had scored every single one of them clean (their longest
 // punctuation-free runs were only 10-24 words, nowhere near the 40-word
 // threshold). This is the failure mode behind the original
 // frequency_penalty/presence_penalty work.
@@ -476,7 +478,7 @@ const CLAUSE_CLUSTER_SPAN = 6;
 //      consider the legacy of a woman who was a threat, who was a
 //      liberator..." then "...the legacy of a realm that was torn apart by
 //      the actions of a woman who was a threat, who was a liberator...").
-// Calibrated on 2026-09-27 against the 959 replies ever kept as a success
+// Calibrated on 2026-09-28 against the 959 replies kept as a success by then
 // (851 in the database, 108 from deleted targeted trials), of which the
 // rules above flag 133 and pass 826. Every reply these two rules flag
 // among the 826 was read, 109 in all: 27 clear near-verbatim loops (of 28
@@ -1184,9 +1186,11 @@ export async function callOpenRouter(
     // the call log's total then counted twice.
     //
     // An abort never cancels a request already in flight, deliberately. This
-    // app does not stream, and OpenRouter documents that cancelling a
-    // non-streaming request does not stop the model or its billing - "you
-    // will be billed for the complete response" - so an abort cannot save
+    // app does not stream, and OpenRouter's docs (Stream Cancellation, at
+    // https://openrouter.ai/docs/api/reference/streaming, as read on
+    // 2026-10-05) say that cancelling a non-streaming request does not stop
+    // the model or its billing - "you will be billed for the complete
+    // response" - so an abort cannot save
     // that money, only lose track of it. The attempt is left to finish and
     // is logged truthfully, and nothing further is requested.
     if (await checkAborted()) {
@@ -1443,8 +1447,9 @@ export async function callOpenRouter(
         // max_tokens on its reasoning and returned no visible text, as
         // google/gemini-2.5-pro (tier 4, see modelRequiresReasoning in
         // models.ts) did on 2026-09-20 at a 20-token cap. Tier 4's 4000
-        // leaves that model room: its six calls on this project used
-        // 2,053-2,564 tokens, reasoning included; (4) text that an upstream
+        // leaves that model room: as of 2026-10-03, every reply it had
+        // returned on this project, reasoning included, had come in well
+        // under that cap; (4) text that an upstream
         // error cut short, which is only part of a reply, so it is never
         // kept. All four are logged as `no response` and retried or
         // escalated like any transient failure, and a call that ends on one

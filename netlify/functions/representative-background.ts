@@ -206,17 +206,19 @@ export const handler = safeHandler(rawHandler);
 // This runs as a Netlify Background Function because of its filename: the
 // "-background" suffix is how Netlify declares one for a function written,
 // like every function in this project, with a named `handler` export.
-// Locally, netlify dev reads the same suffix and gives it the 900-second
-// background timeout rather than the 30-second synchronous one. The same
-// goes for judge-background.ts.
+// Locally, netlify dev reads the same suffix and gives it the much longer
+// background timeout rather than the synchronous one - as read in the
+// netlify-cli source installed on 2026-08-29; package.json allows later
+// 17.x releases, which could change it. The same goes for
+// judge-background.ts.
 //
-// Why a Background Function at all: Netlify's free-tier synchronous limit
-// is 10 seconds (the budget here was first built around a mistaken ~30s),
-// while real calls on the default model at the time routinely took longer
-// than that per attempt. No retry or timeout tuning inside
-// callOpenRouter() could close that gap; Background Functions get up to 15
-// minutes. The trade-off: the client never receives this handler's return
-// value, since Netlify answers 202 at once, so the frontend learns the
+// Why a Background Function at all: the synchronous limit on Netlify's
+// free plan, as documented when checked on 2026-08-28, was far shorter
+// (the budget here was first built around a mistaken, longer one) than
+// real calls on the default model at the time routinely took per attempt.
+// No retry or timeout tuning inside callOpenRouter() could close that gap;
+// Background Functions get far longer. The trade-off: the client never
+// receives this handler's return value, since Netlify answers 202 at once, so the frontend learns the
 // outcome by polling GET /api/trials/:id - see the comment above the
 // site-gate and call-cap checks for what that means for their rejections.
 // Confirmed in production on 2026-09-21: all 28 trigger POSTs across four
@@ -226,7 +228,8 @@ export const handler = safeHandler(rawHandler);
 // No `config` export, on purpose. Netlify's bundler reads one only from a
 // function written with a default export; for a named `handler` export
 // like this one it ignores everything in it (parseSource in
-// @netlify/zip-it-and-ship-it, read on 2026-10-02). An exported config here
+// @netlify/zip-it-and-ship-it 9.42.1, the version inside the installed
+// netlify-cli, read on 2026-10-02; a later version could differ). An exported config here
 // once declared background: true, a custom path and a per-IP rate limit,
 // and none of the three ever took effect: the 202s come from the filename,
 // routing comes from netlify.toml, and the rate limit was never applied -

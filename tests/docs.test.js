@@ -3,7 +3,7 @@
  * SPEC.md, and the requirement sections of CLAUDE.md.
  *
  * Run with `npm test`. No network. Each file, route, table, column,
- * threshold, price and badge the docs describe is compared against its
+ * threshold and badge the docs describe is compared against its
  * source here, as are the agent endpoints' order of checks and which of
  * their rejections are logged, so changing one without the other fails
  * this suite instead of leaving the docs quietly wrong. Where the fact is about
@@ -306,10 +306,11 @@ async function main() {
   const backgroundFns = topLevel.map(([f]) => path.basename(f, '.ts')).filter((fn) => fn.endsWith('-background'));
   const documentedBackground = documentedFns.filter((fn) => fn.endsWith('-background'));
   check('the Background Functions are the ones documented as such', backgroundFns.length > 0 && minus(backgroundFns, documentedBackground).length === 0 && minus(documentedBackground, backgroundFns).length === 0, `filename: ${backgroundFns}, README: ${documentedBackground}`);
-  // Netlify's bundler reads a function's `config` export only when the
-  // function has a default export, so next to a named `handler` export it
-  // is ignored whole - a rate limit, a path or background: true declared
-  // there would read as in force and do nothing.
+  // Netlify's bundler read a function's `config` export only when the
+  // function had a default export (@netlify/zip-it-and-ship-it 9.42.1, read
+  // on 2026-10-02), so next to a named `handler` export it was ignored
+  // whole - a rate limit, a path or background: true declared there would
+  // read as in force and do nothing.
   const ignoredConfig = topLevel.filter(([, src]) => /^export const handler\b/m.test(src) && /^export const config\b/m.test(src)).map(([f]) => path.basename(f, '.ts'));
   check('no function exports a config its bundler ignores', ignoredConfig.length === 0, ignoredConfig.join(', '));
   check(`"the ${(agentPara.match(/^\*\*The (\w+)/) || [])[1]} agent endpoints" is the right count`, wordToNumber((agentPara.match(/^\*\*The (\w+)/) || [])[1]) === backgroundFns.length, String(backgroundFns.length));
@@ -336,8 +337,9 @@ async function main() {
   check('the per-IP rate limit is stated', Boolean(rate));
   for (const { fn, limit } of rate ? redirectBlocks.filter((b) => b.limit) : []) {
     check(`${fn}'s route: the rate limit is ${rate[1]} requests per ${rate[2]} minutes, per IP`, limit.windowLimit === Number(rate[1]) && limit.windowSize === Number(rate[2]) * 60 && limit.perIp, `${limit.windowLimit} per ${limit.windowSize}s, per IP: ${limit.perIp}`);
-    // Netlify's documented maximum; a longer window fails validation at
-    // deploy time, which does not fail the deploy, so nothing else notices.
+    // Netlify's documented maximum as of 2026-10-02; a longer window failed
+    // validation at deploy time then, which did not fail the deploy, so
+    // nothing else would notice.
     check(`${fn}'s route: the window is within Netlify's 180-second maximum`, limit.windowSize > 0 && limit.windowSize <= 180, `${limit.windowSize}s`);
   }
 
