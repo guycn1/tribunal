@@ -53,7 +53,7 @@ Each route below is a rewrite in `netlify.toml` to one function in `netlify/func
 
 Six tables in Supabase/Postgres. `supabase/schema.sql` is the authority on every column, type and constraint; what follows is a map of what each table holds and the rules worth knowing, not a copy of that file.
 
-| Table | One row per |
+| Table | One row per… |
 | --- | --- |
 | [`case_definitions`](#case_definitions) | case |
 | [`trials`](#trials) | run |
