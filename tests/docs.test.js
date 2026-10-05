@@ -1005,14 +1005,17 @@ async function main() {
     ...SEED.background.map((p, i) => [`background paragraph ${i + 1}`, p]), ...SEED.agreedFacts.map((f, i) => [`stipulated fact ${i + 1}`, f])];
   check('the seed parsed', seedParts.every(([, v]) => typeof v === 'string' && v.length > 0) && SEED.agreedFacts.length > 0, seedParts.filter(([, v]) => !v).map(([k]) => k).join(', '));
   for (const [doc, text] of [['SPEC.md section 1', section(SPEC, '## 1. The charge sheet')], ['CLAUDE.md Part 1', section(CLAUDE, '## Part 1 — The canonical charge sheet (fixed content, not user input)')]]) {
-    const body = norm(text);
+    // A quoted passage wrapped over several lines carries a "> " on each one;
+    // the marker is markup, not part of the quotation.
+    const body = norm(text.replace(/^> ?/gm, ''));
     const differ = seedParts.filter(([, v]) => !body.includes(norm(v))).map(([k]) => k);
     check(`${doc} matches the seeded case word for word`, text.length > 0 && differ.length === 0, differ.join(', ') || (text ? '' : 'section missing'));
   }
 
   console.log('\n=== SPEC.md, CLAUDE.md and README agree with the schema on what is logged ===');
   const specFields = ((SPEC.match(/Every model call is logged with: ([^.]+)\./) || [])[1] || '').split(/, (?:and )?| and /).map((f) => f.trim().replace(/ /g, '_'));
-  const claudeFields = ((CLAUDE.match(/every call must log `([^`]+)`/) || [])[1] || '').split(/,\s*/);
+  // CLAUDE.md is wrapped at 80 columns, so the line may break before the list.
+  const claudeFields = ((CLAUDE.match(/every\s+call\s+must\s+log\s+`([^`]+)`/) || [])[1] || '').split(/,\s*/);
   // Parentheticals dropped first: they would hold a field's allowed values,
   // such as (`success` or `failed`), not further fields.
   const readmeFields = [...((sections.api_call_logs || '').match(/^- The fields the spec requires for every call: (.*)$/m) || ['', ''])[1].replace(/\([^)]*\)/g, '').matchAll(/`([a-z_]+)`/g)].map((m) => m[1]);
