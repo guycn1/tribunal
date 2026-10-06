@@ -264,9 +264,8 @@ targets.
   and a word used generically ("the backend", "the browser", "the page").
 - What has no home a reader can open: `.env` and other git-ignored paths, a
   model id, a column name or a status value, a command-line tool.
-- A setting or a threshold (the token cap, the 10-second line), which is a
-  value like a column name; and a person or a product (the three jurists,
-  Netlify, Supabase), unless a claim rests on a page about it.
+- A person or a product (the three jurists, Netlify, Supabase), unless a claim
+  rests on a page about it.
 - A mention quoted as an example of an unlinked reference.
 
 #### Why this file is exempt
@@ -4780,12 +4779,15 @@ direction).** Its "What counts as a reference" opens by saying that its kinds
 are not a closed list, and adds sections, tables and routes named in other
 words, code named without its path, the agents and the case, the live site and
 dated measurements; "What stays plain" adds indefinite nouns and generic words,
-settings and thresholds, and people and products.
+and people and products.
 
 - Verbs are listed in neither. A verb can still be a reference: one that says
   what a commit did is a mention of that commit, and one describing today's
   behaviour can link the commit that established it, where that commit is the
   relevant destination.
+- Nor are settings and thresholds: a setting's description or a threshold's
+  figure can link what established it, the commit or commits or the entry in
+  this log that records it.
 - One such mention in README was linked the same day: "before that column
   existed", in the `api_call_logs` section, to `8b4f395`, the commit that added
   `duration_ms`.
