@@ -439,7 +439,7 @@ Every file tracked in the repository. Not tracked, and git-ignored:
 │       ├── db.ts                     every other Supabase query, the call cap, the abort check
 │       ├── supabase.ts               the Supabase client (service-role key)
 │       ├── siteGate.ts               the X-Site-Gate header check
-│       ├── extractParams.ts          reads :id and :role from the request
+│       ├── extractParams.ts          reads :id and :role; checks the route and the main address
 │       ├── safeHandler.ts            turns an uncaught error into a JSON 500
 │       ├── response.ts               JSON response helper
 │       └── types.ts                  types shared across the backend
