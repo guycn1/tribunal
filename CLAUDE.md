@@ -5052,8 +5052,28 @@ deploy: 28 commits, everything since `4098e3b`.** They are:
   entries' mentions of the merge still to come at it.
 
 No database change is needed: nothing since `4098e3b` adds or alters a
-column. This entry was committed to `draft` ahead of the merge, so that right
-after it `main` and `draft` held identical trees.
+column. Merge commit `71d8975`. This entry was committed to `draft` ahead of
+the merge, so that right after it `main` and `draft` held identical trees.
+
+**Confirmed live the same day**, from 19:30 UTC, two minutes after the push:
+
+- the deployed `app.js`, `styles.css` and `index.html` matched `main` byte for
+  byte;
+- a full 7-agent trial (`114c780c`) completed in 116 seconds, 7 of 7:
+  `tyrion_lannister` recovered on the default model after a repeated sentence,
+  `daenerys_targaryen` after the token cap, and `grey_worm` escalated to
+  `anthropic/claude-haiku-4.5` after two capped attempts and finished cleanly;
+  the three judges ruled independently. 11 calls, $0.0059. Every discarded
+  attempt was read in full, and each was a loop; every kept reply was read, and
+  each is coherent;
+- an abort (`6f1e63df`), clicked about 12 seconds into a trial, wrote one
+  `abort requested` row per representative, which the abort endpoint writes
+  only for a request carrying the site-gate header. No attempt started after
+  it; the four first attempts already running were each logged as `aborted`,
+  with their real tokens and cost, one of them a complete reply not saved;
+  nothing was saved, no judge was started, the run history showed the trial as
+  `aborted`, and no row was added in the 2 minutes 20 seconds after the last.
+  8 rows, $0.0005.
 
 ## Operational notes
 
