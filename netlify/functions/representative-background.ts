@@ -264,8 +264,9 @@ export const handler = safeHandler(rawHandler);
 // No `config` export, on purpose. Netlify's bundler reads one only from a
 // function written with a default export; for a named `handler` export like
 // this one it ignores everything in it (parseSource in
-// @netlify/zip-it-and-ship-it 9.42.1, the version inside the installed
-// netlify-cli, read on 2026-10-02; a later version could differ). An exported
+// @netlify/zip-it-and-ship-it: 9.42.1, the version inside the installed
+// netlify-cli, read on 2026-10-02, and every release from 15.3.3 to 16.3.0,
+// published 2026-08-12 to 2026-10-05, read on 2026-10-06). An exported
 // config here once declared background: true, a custom path and a per-IP rate
 // limit, and none of the three ever took effect: the 202s come from the
 // filename, routing comes from netlify.toml, and the rate limit was never

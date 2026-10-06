@@ -4970,6 +4970,33 @@ the other statements that touch the same fact.
 
 The details are in the commit message.
 
+### 2026-10-06: the ignored `config` export checked in every bundler release
+
+**The 2026-10-02 finding that Netlify never read the agent functions' `config`
+export, `background: true` included, checked again (2026-10-06, on the user's
+request).** It rested on the bundler inside the installed `netlify-cli`,
+`@netlify/zip-it-and-ship-it` 9.42.1, while a deploy is built by Netlify's own
+release of it.
+
+- **Read in every release from 15.3.3 to 16.3.0** (published 2026-08-12 to
+  2026-10-05; the exports were deployed from 2026-08-28 until `3c30abc`):
+  `parseSource` reads a `config` export only for a function with a default
+  export and no named handler. From a named `handler`'s source it reads only a
+  `schedule` or `stream` helper. Background mode comes from the `-background`
+  filename, or from `background: true` in a config the bundler does read -
+  `netlify.toml`'s, or a default-export function's own. 9.42.1 does the same,
+  and does not know `background` as a config key at all.
+- **Bundled locally** with 9.42.1 and with 16.2.0, the latest release on the
+  day of the 2026-09-27 deploys: `representative-background.ts` as of
+  `67f00f1`, saved under a name without the suffix, came out with no
+  background mode, no route and no rate-limit rule. With the suffix it came out
+  as a Background Function, and a default-export function with the same
+  `config` came out with its route and its rate limit, and from 16.2.0 as a
+  Background Function too.
+- So the 202s came from the filename alone, as the 2026-10-02 entry says.
+  `representative-background.ts` and `tests/docs.test.js` now cite the releases
+  read.
+
 ## Operational notes
 
 ### Image and screenshot volume in long sessions

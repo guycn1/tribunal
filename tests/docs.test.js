@@ -423,9 +423,10 @@ async function main() {
   check('the Background Functions are the ones documented as such', backgroundFns.length > 0 && minus(backgroundFns, documentedBackground).length === 0 && minus(documentedBackground, backgroundFns).length === 0, `filename: ${backgroundFns}, README: ${documentedBackground}`);
   // Netlify's bundler read a function's `config` export only when the
   // function had a default export (@netlify/zip-it-and-ship-it 9.42.1, read
-  // on 2026-10-02), so next to a named `handler` export it was ignored
-  // whole - a rate limit, a path or background: true declared there would
-  // read as in force and do nothing.
+  // on 2026-10-02, and every release from 15.3.3 to 16.3.0, read on
+  // 2026-10-06), so next to a named `handler` export it was ignored whole - a
+  // rate limit, a path or background: true declared there would read as in
+  // force and do nothing.
   const ignoredConfig = topLevel.filter(([, src]) => /^export const handler\b/m.test(src) && /^export const config\b/m.test(src)).map(([f]) => path.basename(f, '.ts'));
   check('no function exports a config its bundler ignores', ignoredConfig.length === 0, ignoredConfig.join(', '));
   check(`"the ${(agentPara.match(/^#### The (\w+)/) || [])[1]} agent endpoints" is the right count`, wordToNumber((agentPara.match(/^#### The (\w+)/) || [])[1]) === backgroundFns.length, String(backgroundFns.length));
