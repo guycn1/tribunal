@@ -58,8 +58,8 @@ const read = (...parts) => fs.readFileSync(path.join(ROOT, ...parts), 'utf8').re
  * back into one line, the inverse of wrapping it at 80 columns: headings,
  * table rows, list-item starts, fenced code and blank lines stay as they are,
  * and a line after a hard break (one ending in a backslash) is not joined to
- * it. README is wrapped for its Code view; the checks below read the
- * sentences it states whole, wherever the wrapping broke them.
+ * it. README and SPEC.md are wrapped for their Code view; the checks below
+ * read the sentences they state whole, wherever the wrapping broke them.
  * @param {string} doc
  * @returns {string}
  */
@@ -78,7 +78,7 @@ function unwrap(doc) {
 }
 
 const README = unwrap(read('README.md'));
-const SPEC = read('SPEC.md');
+const SPEC = unwrap(read('SPEC.md'));
 const CLAUDE = read('CLAUDE.md');
 const SCHEMA = read('supabase', 'schema.sql');
 const TOML = read('netlify.toml');

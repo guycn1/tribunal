@@ -4436,6 +4436,48 @@ the second silently.
   lowercase, which the server accepts, passed. The abort-header cases of the
   commit before were run again on the changed check and caught as before.
 
+### 2026-10-06: SPEC.md's layout
+
+**SPEC.md spaced out and wrapped at 80 characters (2026-10-06, on the user's
+request, as README and this file were), with HARD RULES 4 and 5 applied to it
+in full.** It had 66 lines, 35 of them over 80 characters, and 4 headings; it
+now has 204 lines and 14 headings.
+
+- The new headings: the charge sheet's "Background", "Stipulated facts",
+  "Question for judgment" and "Scope"; "Representatives" and "Judges"; the
+  requirements under "The case and the order of calls", "Arguments and
+  rulings" and "Failures, logging and architecture"; and "How this repository
+  implements it", over the closing pointer to README and this file, which sat
+  after a `---`.
+- The charge sheet's three lead items, the non-negotiable rule, each judge's
+  method, the never-combined requirement, the pointer to the other two
+  documents and the closing pointer are now bullets.
+- Prose is wrapped at 80 characters. The one longer line is a single link,
+  to `representatives.ts`, which cannot break.
+- Links added under HARD RULE 4: the README sections meant (its
+  architecture, setup, database and call-log sections, and the escalation
+  chain), the live site, this file's status log, `pricing.ts` for per-token
+  pricing, and SPEC.md's own sections where its text names them (the seven
+  agents, the charge sheet, the stipulated facts, the representatives, the
+  judges). The case text itself, which must match the seed word for word,
+  carries no links.
+- Rendered through GitHub's markdown API before and after, the text is the
+  same apart from the headings added, the bold leads they replace
+  ("Background.", "Stipulated facts (both sides accept these):", "Question
+  for judgment:", "Scope:", "Representatives:"), and sentences split or
+  joined for the bullets; `npm run check-render` and
+  `tests/markdown.test.js` pass on it.
+- `tests/docs.test.js` reads SPEC.md through `unwrap()`, as it does README,
+  so the logged fields and the verdict vocabulary are read wherever the wrap
+  broke their sentence.
+- Proven both ways, every file restored byte for byte, in 13 cases: SPEC.md
+  read without `unwrap()` fails the two logged-field checks; a field dropped
+  or renamed on a wrapped line, the vocabulary changed, a word of a
+  stipulated fact, the background or the scope changed, a misspelt anchor to
+  SPEC.md or to README, `README.md` unlinked and the escalation chain
+  unlinked were each caught by the check meant for it; and the vocabulary's
+  bold wrapped across two lines, and a paragraph rewrapped, both passed.
+
 ## Operational notes
 
 ### Image and screenshot volume in long sessions
