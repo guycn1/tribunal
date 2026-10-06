@@ -144,6 +144,17 @@ flowchart TB
 - A failed model call is logged as a visible failure and never produces a
   fabricated argument or ruling.
 
+![The three judges' cards for one trial side by side: the Barak method not
+justified, the Elon method justified, the Shamgar method not
+justified](screenshots/readme-2-judges.png)
+
+*Each judge reasons by its own method, visible in its opening lines: the Barak
+judge announces "a structured, rights-centered analysis" and defines
+"justified" and "necessary" before applying them; the Elon judge turns to a
+principle of Jewish legal tradition, the rodef or pursuer; the Shamgar judge
+sets out the governing standard and the institutional framework, then the
+chronology. Three rulings, side by side, never combined.*
+
 ### Background Functions and polling
 
 Representative and judge calls run as Netlify Background Functions rather than
@@ -549,7 +560,8 @@ Every file tracked in the repository. Not tracked, and git-ignored:
 ├── supabase/schema.sql               all six tables, the seeded case, RLS, grants
 ├── scripts/check-render.js           npm run check-render — renders each Markdown file through GitHub and compares the page with its source
 ├── screenshots/                      the images in this README, captured from the running app
-│   └── readme-1-hero-split-rulings.png
+│   ├── readme-1-hero-split-rulings.png
+│   └── readme-2-judges.png
 ├── tests/                            npm test — no network, spends no quota
 │   ├── retry-logic.test.js           the escalation chain, from the real TypeScript
 │   ├── trial-status.test.js          when a trial is completed; aborts; calls the page never sends; the call cap and the failure flag; replies kept for audit, off the page

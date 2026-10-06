@@ -4654,6 +4654,16 @@ letter tops under the fade, plain in a close-up at reading size.
   number of `lh`. Caught: the cap back in pixels, 17.5lh, 0lh, and the
   fallback set after the `lh` value; 17lh passed.
 
+**README's second screenshot: the three judges up close (same day).**
+`screenshots/readme-2-judges.png`, taken by the user from local `netlify dev`
+after the `lh` fix, shows the Judges section of trial `0a5de440` at the
+cards' real height, under "How a trial runs". Its caption quotes each
+judge's opening lines - Barak's "structured, rights-centered analysis" and
+his definitions of "justified" and "necessary", Elon's turn to the rodef of
+Jewish legal tradition, Shamgar's governing standard, institutional
+framework and chronology - each checked against the stored rulings and
+against that judge's method in the dossier (Part 3 above).
+
 ## Operational notes
 
 ### Image and screenshot volume in long sessions
