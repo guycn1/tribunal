@@ -191,8 +191,9 @@ nothing the handler returns ever reaches the browser, which learns the outcome
 by polling `GET /api/trials/:id`.
 
 The handler checks, in order, that the request came through its rate-limited
-route rather than the function's own address, that it is a POST naming a trial
-and a role, that the role is one it knows (`jon_snow`, `tyrion_lannister`,
+route on the site's main address, rather than at the function's own address or
+another of the site's addresses, that it is a POST naming a trial and a role,
+that the role is one it knows (`jon_snow`, `tyrion_lannister`,
 `daenerys_targaryen` or `grey_worm`; `barak`, `elon` or `shamgar`), the
 site-gate header, the site-wide call cap, and that the trial exists.
 
@@ -208,9 +209,12 @@ handler, so a rejection there reaches the browser directly, as a `429`. It is a
 backstop far above normal use, since a full trial sends 7 requests.
 
 Netlify also serves each function at its own address, under
-`/.netlify/functions/`, where no redirect applies. The handler's first check
-refuses every request that arrives that way, so each request an agent function
-acts on has come through its route and passed the limit.
+`/.netlify/functions/`, where no redirect applies, and the whole site at
+`main--tribunal-t001.netlify.app` and at an address for each deploy, where it
+counts the limit separately. The handler's first check refuses a request that
+arrives any of those ways, comparing its address with the main one, which
+Netlify gives functions as `URL`. So each request an agent function acts on has
+come through its route on the main address and passed the one count.
 
 Both were verified on the live site on 2026-10-06. Bursts from one IP were cut
 off with `429`s after 62 requests to one route, and after 63 split between the

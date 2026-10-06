@@ -4275,6 +4275,48 @@ measurements. They reached `main` in a second merge the same day that changes
 only documentation and comments, whose message carries Netlify's
 `[skip netlify]` marker.
 
+**The agent handlers also accept a request only on the site's main address
+(2026-10-06).** Netlify serves the whole site at more than one address -
+`main--tribunal-t001.netlify.app` as well as `tribunal-t001.netlify.app`, and
+an address per deploy - and counts the per-IP limit separately on each, per
+domain and IP (the only aggregation open to this plan, as Netlify's rate
+limiting docs said when read that day). Measured on the live site at 03:24
+UTC: after 66 requests from one IP through the representatives route at the
+main address (62 accepted, then `429`s), 30 more through the same route at
+`main--tribunal-t001.netlify.app` were all accepted.
+
+- `sentToMainAddress()` in `extractParams.ts` compares the request's `Host`
+  with the main address in Netlify's `URL` variable, one of the three it gives
+  functions at runtime (its functions docs, read that day), and is part of
+  each agent handler's first check: a request through the route to any other
+  address of the site is answered `403`, unlogged, like one sent to the
+  function's own address. With `URL` unset it passes, as nothing then names a
+  main address.
+- Under `netlify dev`, `URL` is `http://localhost:<port>` and the `Host` the
+  same, seen with a probe line that was not kept; so local use needs nothing
+  special, and `127.0.0.1:<port>` serves as the other address there.
+- README's order of the checks and its rate-limit paragraph say so.
+  `tests/docs.test.js` runs both handlers with `URL` set and a request through
+  the route to another address (`403`, unlogged), checks README names the
+  main address, counts per-IP rate limiting as applied only when every agent
+  handler refuses such a request, and leaves `URL`, like `NETLIFY_DEV`, out
+  of the variables `.env.example` must list, Netlify setting both itself.
+- Proven both ways, every file restored byte for byte: the route-check proof
+  rewritten for the combined check and extended, 23 cases, every one as it
+  should be - among them the address check missing from either handler or
+  accepting any address, every address refused with `URL` unset, README
+  dropping the main address, and each new part of the tests removed in turn;
+  and the 66-case proof of the count, layer and route checks run again, every
+  case as it should be. Locally, gated requests through both agent routes at
+  `127.0.0.1` left nothing behind after 60 seconds, while the same request at
+  `localhost` started its attempt within 5 seconds.
+
+**Merged to `main` (2026-10-06, on the user's explicit request), triggering a
+deploy: 2 commits, everything since `5d10bad`** - the main-address check
+(`b6a58b3`) and the commit that adds this entry. No database change. This entry
+was committed to `draft` ahead of the merge, so that right after it `main` and
+`draft` held identical trees.
+
 ## Operational notes
 
 ### Image and screenshot volume in long sessions
@@ -5657,9 +5699,10 @@ exactly the 2 functions that call OpenRouter), declared via the function's own
   since TS types are erased at build time and have zero effect on what the
   platform reads.
 - *(Since 2026-10-06 each agent handler's first check refuses a request sent
-  to the function's own address, `/.netlify/functions/<name>`, so every
-  request an agent function acts on has come through its route and passed the
-  limit - see that day's entry.)*
+  to the function's own address, `/.netlify/functions/<name>`, or to any
+  address of the site but its main one, so every request an agent function
+  acts on has come through its route on the main address and passed the one
+  count - see that day's entries.)*
 
 ### Site-gate header
 

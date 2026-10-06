@@ -435,7 +435,11 @@ async function main() {
   // real handlers with requests that fail one check, or two at once - two
   // at once answer with the status of whichever check runs first.
   const { GLOBAL_CALL_CAP } = backend.load('lib/db.js');
-  const STEP_CODE = { route: 403, post: 405, role: 400, gate: 401, cap: 429, trial: 404 };
+  const STEP_CODE = { route: 403, post: 405, role: 400, gate: 401, cap: 429, trial: 404, address: 403 };
+  // A test value for Netlify's URL variable, the site's main address; a
+  // request failing 'address' comes through its route to another address
+  // of the same site. 'address' is part of the route step in README.
+  const MAIN_HOST = 'tribunal.example';
   const orderClause = (agentPara.match(/The handler checks, in order, (.*?)\. Because/) || [])[1] || '';
   const stepAt = { route: orderClause.indexOf('came through its rate-limited route'), post: orderClause.indexOf('a POST naming a trial and a role'), role: orderClause.indexOf('role is one it knows'), gate: orderClause.indexOf('site-gate header'), cap: orderClause.indexOf('call cap'), trial: orderClause.indexOf('trial exists') };
   check('the order of the agent handlers\' checks is stated, naming each one', Object.values(stepAt).every((i) => i >= 0), JSON.stringify(stepAt));
@@ -460,6 +464,7 @@ async function main() {
     }).client;
     global.fetch = async () => { throw new Error('no model call expected'); };
     process.env.SITE_GATE_TOKEN = GATE;
+    process.env.URL = `https://${MAIN_HOST}`;
     delete process.env.NETLIFY_DEV;
     let logged = false;
     const saved = [console.log, console.warn, console.error];
@@ -468,13 +473,14 @@ async function main() {
       const response = await backend.load(`${fn}.js`).handler({
         httpMethod: fails.has('post') ? 'GET' : 'POST',
         path: fails.has('route') ? `/.netlify/functions/${fn}/${id}/${role}` : `/api/trials/${id}/${fn === 'judge-background' ? 'judges' : 'representatives'}/${role}`,
-        headers: fails.has('gate') ? {} : { 'x-site-gate': GATE },
+        headers: { host: fails.has('address') ? `main--${MAIN_HOST}` : MAIN_HOST, ...(fails.has('gate') ? {} : { 'x-site-gate': GATE }) },
         queryStringParameters: {},
       }, {});
       return { status: response.statusCode, logged };
     } finally {
       [console.log, console.warn, console.error] = saved;
       delete process.env.SITE_GATE_TOKEN;
+      delete process.env.URL;
     }
   };
   const loggedClaim = (agentPara.match(/the ([\w-]+) and ([\w-]+) rejections are written to Netlify's function logs, the others are not logged at all/) || []).slice(1);
@@ -491,7 +497,13 @@ async function main() {
       const { status } = await callAgent(fn, [first, second]);
       check(`${fn}.ts: the ${first} check runs before the ${second} check`, status === STEP_CODE[first], `answered ${status}`);
     }
+    // The route step also covers the site's address: a request through the
+    // route, but sent to another address of the same site, is refused the
+    // same way.
+    const other = await callAgent(fn, ['address']);
+    check(`${fn}.ts: a request through its route to another address of the site answers ${STEP_CODE.address}, unlogged`, other.status === STEP_CODE.address && !other.logged, `${other.status}, logged: ${other.logged}`);
   }
+  check('README says the route must be reached on the site\'s main address', orderClause.includes("came through its rate-limited route on the site's main address"), orderClause.slice(0, 120));
 
   const listLimit = Number((read('netlify', 'functions', 'lib', 'db.ts').match(/function listTrials\(limit = (\d+)\)/) || [])[1]);
   check(`GET /api/trials returns the ${listLimit} most recent trials`, api.includes(`The ${listLimit} most recent trials`), String(listLimit));
@@ -1038,7 +1050,10 @@ async function main() {
   const unlisted = Object.keys(PKG.scripts).filter((s) => s !== 'test' && !listedScripts.includes(s));
   check('the setup block lists every npm script', unlisted.length === 0, unlisted.join(', '));
   const envVars = [...ENV_EXAMPLE.matchAll(/^#? ?([A-Z][A-Z0-9_]+)=/gm)].map((m) => m[1]);
-  const readVars = [...new Set(FUNCTION_SOURCES.flatMap(([, src]) => [...src.matchAll(/process\.env\.([A-Z0-9_]+)/g)].map((m) => m[1])))].filter((v) => v !== 'NETLIFY_DEV');
+  // NETLIFY_DEV and URL are set by Netlify itself (netlify dev, and every
+  // function at runtime), never by whoever runs the project.
+  const NETLIFY_SET = ['NETLIFY_DEV', 'URL'];
+  const readVars = [...new Set(FUNCTION_SOURCES.flatMap(([, src]) => [...src.matchAll(/process\.env\.([A-Z0-9_]+)/g)].map((m) => m[1])))].filter((v) => !NETLIFY_SET.includes(v));
   const roleVars = [...read('netlify', 'functions', 'lib', 'models.ts').matchAll(/'(MODEL_[A-Z_]+)'/g)].map((m) => m[1]);
   check('.env.example lists every variable the backend reads', minus([...readVars, ...roleVars], envVars).length === 0, minus([...readVars, ...roleVars], envVars).join(', '));
   check('.env.example lists nothing the backend does not read', minus(envVars, [...readVars, ...roleVars]).length === 0, minus(envVars, [...readVars, ...roleVars]).join(', '));
@@ -1057,8 +1072,9 @@ async function main() {
   // check that is called but whose answer is ignored does not count. The rate
   // limit must be set per IP, with a request limit and a window, on every
   // route to an agent function, and every agent handler must refuse a
-  // request sent to its own address, which no route covers. None holds if
-  // there is no agent at all.
+  // request sent to its own address, which no route covers, and one sent
+  // through its route to another address of the site, which Netlify counts
+  // separately. None holds if there is no agent at all.
   /** Whether every agent handler turns away a request failing only `step`. */
   const everyAgentRejects = async (step) => {
     for (const fn of backgroundFns) if ((await callAgent(fn, [step])).status !== STEP_CODE[step]) return false;
@@ -1070,7 +1086,7 @@ async function main() {
   const anyAgent = backgroundFns.length > 0;
   const layers = [
     { name: 'the site-wide call cap', words: /call cap/i, inCode: anyAgent && await everyAgentRejects('cap') },
-    { name: 'per-IP rate limiting', words: /rate limit/i, inCode: anyAgent && everyAgentRouteLimited && await everyAgentRejects('route') },
+    { name: 'per-IP rate limiting', words: /rate limit/i, inCode: anyAgent && everyAgentRouteLimited && await everyAgentRejects('route') && await everyAgentRejects('address') },
     { name: 'the site-gate header', words: /site-gate/i, inCode: anyAgent && await everyAgentRejects('gate') },
   ];
   const layersInCode = layers.filter((l) => l.inCode);

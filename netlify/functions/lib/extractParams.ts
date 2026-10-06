@@ -36,6 +36,22 @@ export function cameThroughApiRoute(event: HandlerEvent): boolean {
   return event.path.startsWith('/api/');
 }
 
+/**
+ * Whether a request was sent to the site's main address, the one Netlify
+ * gives functions as the URL variable (https://tribunal-t001.netlify.app on
+ * the live site, http://localhost:<port> under netlify dev), rather than to
+ * another address of the same deploy. Netlify also serves a deploy at
+ * main--<site>.netlify.app and at <deploy-id>--<site>.netlify.app, and
+ * counts the per-IP rate limit separately on each address, so requiring the
+ * main one keeps a single count. True when URL is unset, as nothing then
+ * names a main address.
+ */
+export function sentToMainAddress(event: HandlerEvent): boolean {
+  const main = process.env.URL;
+  if (!main) return true;
+  return event.headers.host === new URL(main).host;
+}
+
 export function extractParams(event: HandlerEvent, paramCount: 1 | 2): { id?: string; role?: string } {
   const qs = event.queryStringParameters || {};
   if (qs.id) {
