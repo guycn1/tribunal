@@ -320,10 +320,11 @@ tag it does not know.
   Markdown file for the defects already known: an HTML tag GitHub would drop, a
   code span left open or holding an escape it would print, a line of `-` or `=`
   that turns the text above into a heading, a list, heading or quote starting
-  mid-paragraph, a separator right before a heading, a table missing its `|---|`
-  row, with a row of the wrong width or with a pipe inside a code span, an
-  unmatched `**`, an asterisk between two letters or digits, a broken link, two
-  trailing spaces, a paragraph indented into a code block, a
+  mid-paragraph, a line starting with `+ ` or `* `, which opens a list even
+  inside a list item, a separator right before a heading, a table missing its
+  `|---|` row, with a row of the wrong width or with a pipe inside a code span,
+  an unmatched `**`, an asterisk between two letters or digits, a broken link,
+  two trailing spaces, a paragraph indented into a code block, a
   `[[wiki-style]]` link, an image at a `data:` or `javascript:` address,
   which GitHub strips, a centred block left open or with a tag that shares its
   line or has no blank line after it, and a `<br>` alone on its line with no
@@ -374,8 +375,9 @@ tag it does not know.
   above. GitHub keeps `align` and strips `style` and `class`, so a div can
   centre a block but not set its spacing: blank lines collapse, and a `<br>`
   alone on its line adds one line of space.
-- A list follows a blank line, and a wrapped line never starts with `- `, `+ `,
-  `* `, `1. `, `1) `, `#` or `>`.
+- A list follows a blank line, and is written with `- ` or a number, never `+ `
+  or `* `. A wrapped line never starts with `- `, `+ `, `* `, `1. `, `1) `, `#`
+  or `>`, inside a list item as anywhere else.
 - Nothing but a blank line sits directly above a `---`, and no `---` sits right
   before a heading.
 - No pipe inside a code span in a table, no `[[wiki-style]]` link, and no line
@@ -4996,6 +4998,27 @@ release of it.
 - So the 202s came from the filename alone, as the 2026-10-02 entry says.
   `representative-background.ts` and `tests/docs.test.js` now cite the releases
   read.
+
+### 2026-10-06: no line starts with `+ ` or `* `
+
+**Every line of every Markdown file is checked for a leading `+ ` or `* `
+(2026-10-06, on the user's question, after a footnote in CineRank, another of
+the user's own projects, was wrapped before "+ 93" and rendered as a bullet).**
+No line in the repository starts with either, in Markdown or in a code comment.
+
+- Rendered through GitHub's API that day, a list item wrapped before
+  "+ 93 = 517" made "93 = 517" a nested list item, and a paragraph wrapped the
+  same way started a list; `* ` did the same.
+- The rule on a list starting mid-paragraph reads unindented lines, and
+  `npm run check-render` counts such a line as the list item GitHub makes of
+  it, so `tests/markdown.test.js` gained a rule that reads every line: none may
+  start with `+ ` or `* `, since every list here is written with `- ` or a
+  number.
+- Proven both ways, every file restored byte for byte: `+ ` and `* ` wrapped
+  inside a bulleted item, `+ ` inside a numbered item and `+ ` under a paragraph
+  each failed it; a `+` mid-line, bold and italics opening a line, and a `- `
+  sub-item passed. Without the rule, the first of those passed both checks.
+- HARD RULE 5 and README's description of the suite list the rule.
 
 ## Operational notes
 

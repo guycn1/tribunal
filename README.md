@@ -797,9 +797,9 @@ DOM](tests/support/load-app.js) — except
   [`CLAUDE.md`](CLAUDE.md) included, holds source GitHub is known to render
   wrongly: an HTML tag it would drop, a code span left open or holding an escape
   it would print, a line of `-` or `=` that turns the text above into a heading,
-  a list, heading or quote starting mid-paragraph, a table missing its `|---|`
-  row or with a row of the wrong width, an unmatched `**`, a broken link, and
-  the like.
+  a list, heading or quote starting mid-paragraph, a line starting with `+ ` or
+  `* `, a table missing its `|---|` row or with a row of the wrong width, an
+  unmatched `**`, a broken link, and the like.
   - Each rule was established by rendering the defect through GitHub first.
     Under [HARD RULE
     5](CLAUDE.md#5-every-markdown-file-renders-exactly-as-written).

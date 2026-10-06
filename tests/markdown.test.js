@@ -150,7 +150,7 @@ for (const file of markdownFiles()) {
   const found = {
     tags: [], unclosed: [], escapes: [], setext: [], interrupts: [], ruleBeforeHeading: [], tableSeparator: [],
     tableCells: [], pipeInCode: [], bold: [], intraword: [], links: [], trailing: [], indented: [], wiki: [], imageSrc: [],
-    centred: [], spacer: [],
+    centred: [], spacer: [], plusStar: [],
   };
   /** Every centred block's tag, in order, to find one left open. */
   const centredTags = [];
@@ -261,6 +261,13 @@ for (const file of markdownFiles()) {
     if (BLOCK_START.test(lineText) && prevIsParagraph && !/^\s/.test(prev) && !LIST_ITEM.test(prev) && !/^>/.test(prev)) {
       found.interrupts.push(at(n, lineText));
     }
+    // A line starting with "+ " or "* ", indented or not, is a list item:
+    // under a paragraph it starts a list, and inside a list item a nested one
+    // (rendered through GitHub's API on 2026-10-06: an item wrapped before
+    // "+ 93 = 517" put "93 = 517" in a list of its own). Every list in this
+    // repository is written with "- " or a number, so such a line is wrapped
+    // text. The rule above reads only unindented lines.
+    if (/^\s*[+*]\s/.test(lineText)) found.plusStar.push(at(n, lineText));
     // A thematic break right before a heading draws a second rule: GitHub
     // already rules every h1 and h2.
     if (THEMATIC_BREAK.test(lineText) && !prevIsParagraph) {
@@ -293,6 +300,7 @@ for (const file of markdownFiles()) {
   check(`${file}: no backslash escape inside a code span, where it is printed`, !found.escapes.length, found.escapes.join(' | '));
   check(`${file}: no line of - or = directly under text, which turns it into a heading`, !found.setext.length, found.setext.join(' | '));
   check(`${file}: no list item, heading or quote starts in the middle of a paragraph`, !found.interrupts.length, found.interrupts.join(' | '));
+  check(`${file}: no line starts with "+ " or "* ", which GitHub makes a list item`, !found.plusStar.length, found.plusStar.join(' | '));
   check(`${file}: no thematic break right before a heading`, !found.ruleBeforeHeading.length, found.ruleBeforeHeading.join(' | '));
   check(`${file}: every table has its |---| row`, !found.tableSeparator.length, found.tableSeparator.join(' | '));
   check(`${file}: every table row has as many cells as its header`, !found.tableCells.length, found.tableCells.join(' | '));
