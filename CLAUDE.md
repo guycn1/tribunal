@@ -3625,6 +3625,9 @@ full trial sends 7 requests".
   restored byte for byte: each of the four figures changed, the cap sentence
   reworded, `AGENT_MAX_TOKENS` changed, and a fourth judge added to the code.
 - Every other number in README is either already checked or a dated measurement.
+  *(Not so: two counts in README's "Status" were checked by nothing - how many
+  offline regression suites `npm test` runs, and how many anti-abuse layers are
+  in place. Found, and checks added, on 2026-10-06; see that day's entry.)*
 
 **Conditional claims ("X only happens when Y") checked across every tracked file
 (2026-10-03, on the user's request), and the ones whose conditions are wider
@@ -4007,8 +4010,8 @@ characters and the longest 1,688, with 17 headings.
 - `tests/docs.test.js` reads README through `unwrap()`, which joins wrapped
   lines back into one, so a stated sentence is checked wherever the wrap broke
   it, and reads the agent-endpoint text as one block from its bold lead to the
-  end of its section. Two new checks run `unwrap()` on a sample with each kind of line
-  it must keep apart.
+  end of its section. Two new checks run `unwrap()` on a sample with each kind
+  of line it must keep apart.
 - Proven both ways, every file restored byte for byte: 15 targeted README
   breaks - among them each of the seven checked phrases the wrap split across
   two lines, the agent text's later paragraphs, and a route line's hard break -
@@ -4060,6 +4063,28 @@ description and in the retry-logic suite's, had none.
   passed. Each part of the check was then removed or loosened in turn, and the
   break it exists for either failed the check or, with that part gone, went
   uncaught, 8 in all.
+
+**Two counts in README's "Status" put under test (2026-10-06, on the user's
+go-ahead).** Proving the link work above meant breaking every paragraph it
+touched before and after, to make sure no check had stopped reading one; no
+check had, but none read those paragraphs at all, so "Six offline regression
+suites" and "All three anti-abuse layers" were checked by nothing, contrary to
+the 2026-10-03 entry.
+
+- The suite count, already checked in the setup block, is now checked wherever
+  README states it, against the suites `npm test` runs.
+- The layers are now derived from the code: the call cap and the site gate
+  count when a handler calls their checks, the rate limit when `netlify.toml`
+  sets one. The "Anti-abuse and cost controls" list must name exactly those
+  layers, one bullet each, and every "N anti-abuse layers" must give their
+  number.
+- A count may be written in digits or as a word, and only a number is read as
+  one.
+- Proven both ways, every file restored byte for byte: 11 breaks to README,
+  `package.json` and `netlify.toml` were each caught by the check meant for
+  them, and 3 controls passed. Then each part of the two checks was removed or
+  loosened in turn, 10 cases: each either failed, or let through the defect it
+  exists to catch, or raised a false alarm on correct text.
 
 ## Operational notes
 
