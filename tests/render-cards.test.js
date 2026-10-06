@@ -1,7 +1,8 @@
 /**
- * @file Regression tests for public/app.js: its agent-card and call-log
- * render paths, how it shortens model ids, how it reports a request that
- * fails outright, and the site-gate header on the requests the gate checks.
+ * @file Regression tests for public/app.js: its agent-card, judges'-banner
+ * and call-log render paths, how it shortens model ids, how it reports a
+ * request that fails outright, the site-gate header on the requests the
+ * gate checks, and where a card's bottom fade stops.
  *
  * Run with `npm test`. No framework and no browser: app.js's real source is
  * executed against a minimal DOM stub, and the functions under test are

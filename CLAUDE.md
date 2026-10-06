@@ -329,7 +329,9 @@ tag it does not know.
   line or has no blank line after it, and a `<br>` alone on its line with no
   blank line after it or with text directly above. Each rule was established by
   rendering the defect through GitHub's own Markdown API and watching it break;
-  the comment on each says what GitHub does.
+  the comment on each says what GitHub does. It also checks how
+  `npm run check-render` cuts a file too large for GitHub's API: the pieces
+  must join back into the file, each after the first starting at a heading.
 - **`npm run check-render`** (`tests/check-render.js`) renders every Markdown
   file through GitHub's Markdown API and compares the page with the source:
   every word of the source must reach the page, no Markdown may be printed as
@@ -4921,6 +4923,17 @@ the few that did not land where they said were corrected. Every anchor that a
 README link names on an outside page was found on that page. The details are in
 the commit message.
 
+### 2026-10-06: lists and enumerations checked again
+
+**Lists and enumerations checked again across every tracked file (2026-10-06,
+on the user's request), for the work since the last such check, `15c2d61`.**
+Every list in the docs, the code comments and the tests - of checks and
+refusals, badges and their causes, what a suite or a file covers, and the like,
+whether set out as bullets or run into a sentence - was read against what it
+lists, and the ones that the new handler checks, the abort endpoint's site gate
+and refusal, the new suites and checks and README's new layout had left behind
+were completed. The details are in the commit message.
+
 ## Operational notes
 
 ### Image and screenshot volume in long sessions
@@ -6329,12 +6342,12 @@ looks defeats it trivially.
 ### How the rejections reach the UI
 
 **Every rejection from all three layers surfaces a clear, specific reason in the
-UI**, not a raw status code *(no longer true for the agent endpoints - see the
-"Superseded" note at the end of this section: a site-gate or call-cap rejection
-of an agent call now reaches only Netlify's function logs. The per-IP limiter's
-rejection, which the platform returns before the handler runs, and a site-gate
-rejection of trial creation still reach the UI)* - this took a real fix, not
-just returning better text server-side:
+UI**, not a raw status code *(it holds for the per-IP limiter's rejection,
+which the platform returns before the handler runs, and for a site-gate
+rejection of trial creation; a site-gate or call-cap rejection of an agent call
+reaches only Netlify's function logs, and the page does not read the abort
+endpoint's reply - see the "Superseded" note at the end of this section)* -
+this took a real fix, not just returning better text server-side:
 
 - `callAgentWithRetry()` in `app.js` previously called `res.json()`
   unconditionally, so a response that DOESN'T come back as this app's own JSON

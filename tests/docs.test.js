@@ -7,19 +7,29 @@
  * docs describe is compared against its source here, as are the endpoints'
  * status codes and site-gate requirement, the agent endpoints' order of
  * checks, which of their rejections are logged and their rate limit, the
- * anti-abuse layers the code applies, the case text, the fields every call
- * logs and the verdict vocabulary, so changing one without the other fails
- * this suite instead of leaving the docs quietly wrong. Where the fact is about
- * behaviour, it is checked by running the real code (the backend compiled
- * from its TypeScript, app.js against a stub DOM), not by reading its text.
+ * anti-abuse layers the code applies, the counts README states (of tables,
+ * tiers, suites, anti-abuse layers, routes and agent endpoints among them),
+ * the case text, the fields every call logs and the verdict vocabulary, so
+ * changing one without the other fails this suite instead of leaving the
+ * docs quietly wrong. Where the fact is about behaviour, it is checked by
+ * running the real code (the backend compiled from its TypeScript, app.js
+ * against a stub DOM), not by reading its text.
+ *
+ * README's own layout is held in place too: each endpoint entry a route
+ * line and a description line, every path starting in the same column; the
+ * database section a map of the tables in schema.sql's order, then a section
+ * per table whose Columns line names exactly its columns; and each badge
+ * label of more than one word joined, or wrapped only where its table allows.
  *
  * README's architecture diagram is read as nodes and arrows and held to
- * the code: every function drawn, every arrow between two modules a real
- * import, every import from a function into a module drawn an arrow, the
- * per-IP limit on the arrows to the rate-limited functions, the database's
- * tables, and the claims beneath it - that the page requests only /api/
- * routes, and that one module each reaches OpenRouter and the database and
- * reads the secrets they need.
+ * the code: every file and directory it names exists, every function is
+ * drawn once, every arrow between two modules is a real import, every import
+ * from a function into a module drawn has its arrow, every library module is
+ * drawn or listed as not drawn, the per-IP limit sits on the arrows to the
+ * rate-limited functions, the database's tables are listed, and the claims
+ * beneath it hold - that the page requests only /api/ routes and loads
+ * nothing from another host, and that one module each reaches OpenRouter
+ * and the database and reads the secrets they need.
  *
  * It also holds every Markdown file but CLAUDE.md to HARD RULE 4: references
  * are links, and every link lands (see checkReferencesAreLinks()).

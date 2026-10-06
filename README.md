@@ -89,10 +89,10 @@ flowchart TB
 
 - **The browser has one way in.** Every request [`app.js`](public/app.js) makes
   goes to [a route under /api/](#api-endpoints) on the site itself, served
-  through the redirects in [`netlify.toml`](netlify.toml), and
-  [`index.html`](public/index.html) loads nothing from another host. There is no
-  line from the browser to OpenRouter or to [the database](#database) because
-  there is no such call.
+  through the redirects in [`netlify.toml`](netlify.toml), and neither
+  [`index.html`](public/index.html) nor [`styles.css`](public/styles.css) loads
+  anything from another host. There is no line from the browser to OpenRouter or
+  to [the database](#database) because there is no such call.
 - **Each secret is read in one module:** the OpenRouter key only in
   [`openrouter.ts`](netlify/functions/lib/openrouter.ts), and the Supabase URL
   and key only in [`supabase.ts`](netlify/functions/lib/supabase.ts). Both come
@@ -314,8 +314,8 @@ description. Everything this app's own code returns is JSON.
   first, for [the run-history sidebar](#run-history-sidebar) — each with its
   status, how many of its 7 results were saved, whether it was aborted, and
   whether any of [its call-log rows](#api_call_logs) is stored as `failed` (a
-  failed attempt, recovered or not, or a row [an abort](#aborting-a-trial)
-  wrote).
+  failed attempt, recovered or not, the row a call ends on when the server has
+  no OpenRouter key, or a row [an abort](#aborting-a-trial) wrote).
 - <code><b>POST</b> /api/trials</code>\
   [`trials.ts`](netlify/functions/trials.ts): Creates a trial and returns it
   with [the case record](#case_definitions) (`201`). Needs the [site-gate
@@ -534,11 +534,13 @@ Every model call is shown, whether it was kept or thrown away, and every failed
 attempt carries a badge for the kind of failure it was; a call's final failure
 is spelled out in full on its agent's card.
 
-A request [an agent endpoint](#the-two-agent-endpoints) turns away before any
-model call (for an unknown role or trial, or by [the site
-gate](#anti-abuse-and-cost-controls) or the call cap) makes no call, so it has
-no row here. These two tables are the full set of badges either view can
-produce.
+A request [an agent endpoint](#the-two-agent-endpoints) turns away at one of its
+checks makes no model call, so it has no row here: one that did not come through
+its route on [the site's main address](https://tribunal-t001.netlify.app), is
+not a POST naming a trial and a role, or names an unknown role or trial; one
+[the site gate](#anti-abuse-and-cost-controls) or the call cap stops; and one
+for a role that already has an outcome, or for a trial that was aborted. These
+two tables are the full set of badges either view can produce.
 
 ### Call log
 
@@ -611,9 +613,9 @@ One badge per trial, summarising the whole run.
 | `completed` | green | Finished, with all 7 of 7 results saved. |
 | <code>completed&nbsp;— missing&nbsp;N&nbsp;of&nbsp;7</code> | amber | Finished, but fewer than 7 results were saved: some agent's call failed for good ([every tier](#the-escalation-chain) or the time budget used up, a failure no retry can fix, or a judge reply with no `VERDICT` line and reasoning after it), or a representative's call never ran (its trigger request rejected or never sent, or the call turned away by [the site gate](#anti-abuse-and-cost-controls) or the call cap). |
 | `aborted` | grey | Stopped by the user before the trial reached completion. |
-| <code>aborted (N&nbsp;of&nbsp;7&nbsp;completed)</code> | grey | Stopped by the user, but the trial had already been marked complete — the count says how much survived. |
+| <code>aborted (N&nbsp;of&nbsp;7&nbsp;completed)</code> | grey | Stopped by the user, but the trial was marked complete too: [the abort](#aborting-a-trial) was recorded just as the last judge finished, or, in a trial run before [the abort endpoint](#api-endpoints) [began refusing a completed trial](https://github.com/guycn1/tribunal/commit/f160c5489c83ea1341a873f4c157a3cfb4baca39), once it had. The count says how much survived. |
 | <code>in&nbsp;progress…</code> | slate | Not finished, not aborted, and [under 40 minutes old](CLAUDE.md#frontend-polish-backlog-flagged-2026-09-02-all-7-items-done-as-of-2026-09-03) — presumably still running. |
-| `interrupted` | red | Not finished, not aborted, and [over 40 minutes old](CLAUDE.md#frontend-polish-backlog-flagged-2026-09-02-all-7-items-done-as-of-2026-09-03), so it is treated as never going to finish — a dev-server restart mid-run, say, the page closed before [the judges](SPEC.md#judges) were started (the browser starts each phase), or a judge whose call never ran (its trigger request rejected, or the call turned away by [the site gate](#anti-abuse-and-cost-controls) or the call cap), since a trial is finished once every judge has an outcome logged. The threshold is sized well above the genuine worst case: the page waiting on the representatives for as long as it polls, then every judge running out its full time budget. |
+| `interrupted` | red | Not finished, not aborted, and [over 40 minutes old](CLAUDE.md#frontend-polish-backlog-flagged-2026-09-02-all-7-items-done-as-of-2026-09-03), so it is treated as never going to finish — a dev-server restart mid-run, say, the page closed before [the judges](SPEC.md#judges) were started (the browser starts each phase), or a judge whose call never ran (its trigger request rejected, or the call turned away by [the site gate](#anti-abuse-and-cost-controls), the call cap or, on a page opened at another of the site's addresses than [the main one](https://tribunal-t001.netlify.app), [the handler's first check](#the-two-agent-endpoints)), since a trial is finished once every judge has an outcome logged. The threshold is sized well above the genuine worst case: the page waiting on the representatives for as long as it polls, then every judge running out its full time budget. |
 
 "Missing N" counts results that were actually saved, **not** whether any
 individual attempt failed along the way.
@@ -655,7 +657,7 @@ Every file tracked in the repository. Not tracked, and git-ignored:
 │       ├── representatives.ts        the four representatives, in character
 │       ├── judges.ts                 the three judges' reasoning methods
 │       ├── chargeSheet.ts            reads the case record from the database; formats it for prompts
-│       ├── db.ts                     every other Supabase query, the call cap, the abort check
+│       ├── db.ts                     every other Supabase query, the call cap, the abort check, the refusal of calls the page never sends
 │       ├── supabase.ts               the Supabase client (service-role key)
 │       ├── siteGate.ts               the X-Site-Gate header check
 │       ├── extractParams.ts          reads :id and :role; checks the route and the main address
@@ -672,10 +674,10 @@ Every file tracked in the repository. Not tracked, and git-ignored:
 ├── tests/                            npm test (no network, no quota) and npm run check-render (GitHub's API)
 │   ├── retry-logic.test.js           the escalation chain, from the real TypeScript
 │   ├── trial-status.test.js          when a trial is completed; aborts; calls the page never sends; the call cap and the failure flag; replies kept for audit, off the page
-│   ├── render-cards.test.js          app.js: cards, the judges' banner, the call log, model ids, failed requests, the site-gate header
-│   ├── shared-constants.test.js      values duplicated across files still agree; the page's timeouts outlast the server's
-│   ├── docs.test.js                  README, SPEC.md and CLAUDE.md agree with the code
-│   ├── markdown.test.js              no Markdown file holds source GitHub is known to render wrongly
+│   ├── render-cards.test.js          app.js: cards, the judges' banner, the call log, model ids, failed requests, the site-gate header, the card fade
+│   ├── shared-constants.test.js      values duplicated across files still agree; the page's timeouts outlast the server's; a card's text area is whole lines tall
+│   ├── docs.test.js                  README, SPEC.md and CLAUDE.md agree with the code; README and SPEC.md link what they name
+│   ├── markdown.test.js              no Markdown file holds source GitHub is known to render wrongly; check-render's pieces of a large file join back into it
 │   ├── check-render.js               npm run check-render — renders each Markdown file through GitHub and compares the page with its source
 │   └── support/                      setup shared by the suites above
 │       ├── compile-backend.js        compiles the real backend TypeScript
@@ -736,12 +738,14 @@ DOM](tests/support/load-app.js) — except
     completed and never gains a result;
   - that [abort rows](#api_call_logs) do not count against [the call
     cap](#anti-abuse-and-cost-controls), and [the abort
-    endpoint](#api-endpoints) writes at most one per role, refuses a completed
-    trial and replies with only the rows it wrote;
+    endpoint](#api-endpoints) needs the site-gate header, writes at most one per
+    role, refuses a completed trial, still records the abort when a lookup
+    fails, and replies with only the rows it wrote;
   - that [the agent endpoints](#the-two-agent-endpoints) turn away a call the
     page never sends: a role that already has an outcome, a trial that was
     aborted, or a role that is not one of [the
-    seven](SPEC.md#2-the-seven-agents);
+    seven](SPEC.md#2-the-seven-agents) — while a role with only discarded
+    attempts, or a failed lookup, still lets the call run;
   - what [the run history's failure flag](#api-endpoints) counts;
   - and that every model reply is kept in [the call log](#api_call_logs) but
     never sent to the page.
@@ -767,20 +771,27 @@ DOM](tests/support/load-app.js) — except
   - Every file, route, role, table, column, threshold, environment variable and
     badge they describe is checked against its source, as are [the agent
     endpoints](#the-two-agent-endpoints)' order of checks, the rate limit, [the
-    anti-abuse layers](#anti-abuse-and-cost-controls), [the case
+    anti-abuse layers](#anti-abuse-and-cost-controls), the counts this README
+    gives (of tables, tiers, suites, layers and routes among them), [the case
     text](SPEC.md#1-the-charge-sheet), [the logged fields](#api_call_logs) and
     [the verdict vocabulary](SPEC.md#arguments-and-rulings), so changing one
     without the other fails the suite.
+  - It holds this README's own layout in place too: each
+    [endpoint](#api-endpoints) a route line and a description line, every path
+    starting in the same column; [the database map](#database) in
+    [`schema.sql`](supabase/schema.sql)'s order, with a section per table whose
+    Columns line names exactly its columns; and each badge label of more than
+    one word joined, or wrapped only where its table allows.
   - [The architecture diagram](#what-talks-to-what) is read as nodes and arrows
     and held to the code: every function drawn, every arrow between two modules
     a real import and every import from a function into a module drawn an arrow,
     [the database](#database)'s tables, and each claim listed beneath it.
   - It also holds every Markdown file but [`CLAUDE.md`](CLAUDE.md) to [HARD RULE
     4](CLAUDE.md#4-in-every-markdown-file-but-claudemd-a-reference-is-a-link):
-    every link lands, and the first mention in each paragraph of a file, a
-    commit, [`npm test`](tests), a table, a route, or the thing a section's
-    heading names ("[The escalation chain](#the-escalation-chain)") is linked
-    to it.
+    every link lands and holds no whitespace, every commit hash is linked at
+    each mention, and the first mention in each paragraph of a file,
+    [`npm test`](tests), a table, a route, or the thing a section's heading
+    names ("[The escalation chain](#the-escalation-chain)") is linked to it.
 - [`tests/markdown.test.js`](tests/markdown.test.js) — no Markdown file,
   [`CLAUDE.md`](CLAUDE.md) included, holds source GitHub is known to render
   wrongly: an HTML tag it would drop, a code span left open or holding an escape
@@ -791,6 +802,9 @@ DOM](tests/support/load-app.js) — except
   - Each rule was established by rendering the defect through GitHub first.
     Under [HARD RULE
     5](CLAUDE.md#5-every-markdown-file-renders-exactly-as-written).
+  - It also checks how [the render check](#checking-the-rendered-page) cuts a
+    file too large for GitHub's API into pieces: they join back into the file,
+    and each after the first starts at a heading outside a code block.
 
 ### Checking the rendered page
 
@@ -857,10 +871,10 @@ for the same paths.
 All three [anti-abuse layers](#anti-abuse-and-cost-controls) are in place:
 
 - the [site-gate header](#anti-abuse-and-cost-controls) is checked on every
-  request that creates a trial or starts an agent call, and the site-wide call
-  cap on every agent call — both are live, and both are exercised by [the
-  offline suites](#the-test-suites), which run [the real agent
-  handlers](#the-two-agent-endpoints) against each;
+  request that creates or aborts a trial or starts an agent call, and the
+  site-wide call cap on every agent call — both are live, and both are
+  exercised by [the offline suites](#the-test-suites), which run [the real
+  agent handlers](#the-two-agent-endpoints) against each;
 - the third, [per-IP rate limiting](#anti-abuse-and-cost-controls), is set on
   [the two agent routes](#the-two-agent-endpoints) in
   [`netlify.toml`](netlify.toml) and [enforced by Netlify's own

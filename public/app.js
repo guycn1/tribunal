@@ -1154,8 +1154,11 @@ function deriveRoleStates(data) {
  * TOTAL_BUDGET_MS. A role that still hasn't resolved by this
  * timeout was either turned away by the site gate or the call cap, whose
  * rejections show only in Netlify's function logs (see
- * representative-background.ts), or ran into something unexpected; either
- * way its card says the page stopped waiting, rather than spinning on.
+ * representative-background.ts), or by the handler's first check, which
+ * logs nothing and refuses every agent call from a page opened at another
+ * of the site's addresses than its main one, or ran into something
+ * unexpected; either way its card says the page stopped waiting, rather
+ * than spinning on.
  */
 const POLL_TIMEOUT_MS = 700000;
 /** Time between polls of GET /api/trials/:id, in ms. */
@@ -1679,8 +1682,8 @@ function buildAgentStatusBody(entry, role, verb) {
   // being recorded for this role. Polling waits POLL_TIMEOUT_MS, longer
   // than a call's whole time budget, so by then a call that ran has ended,
   // and one with nothing recorded most likely never started - turned away
-  // by the site gate or the call cap (see POLL_TIMEOUT_MS). See
-  // pollForRoles() for what produces this status.
+  // by the site gate, the call cap or the handler's first check (see
+  // POLL_TIMEOUT_MS). See pollForRoles() for what produces this status.
   if (entry.status === 'timeout') {
     const wrap = document.createElement('div');
     const badge = document.createElement('span');

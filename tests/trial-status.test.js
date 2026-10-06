@@ -1,8 +1,10 @@
 /**
- * @file Regression tests for when a trial is marked completed -
- * markTrialCompletedIfJudgingDone() in netlify/functions/lib/db.ts, and the
- * judge endpoint that calls it - and for how the agent endpoints and the
- * site-wide call cap treat an aborted trial.
+ * @file Regression tests for when a trial is marked completed
+ * (markTrialCompletedIfJudgingDone() in netlify/functions/lib/db.ts, and the
+ * judge endpoint that calls it), for how the agent endpoints, the abort
+ * endpoint and the site-wide call cap treat an aborted trial, for the agent
+ * calls the page never sends, for the replies kept for audit, and for what
+ * the run history's failure flag counts.
  *
  * Run with `npm test`. No network: the backend is compiled from the real
  * source with the project's own tsc, the Supabase client it imports is
@@ -235,7 +237,8 @@ async function main() {
   check('a judge still retrying keeps the trial open', !r.completed, JSON.stringify(r.updates));
 
   // A judge whose call never ran - its trigger rejected, or turned away by
-  // the site gate or the call cap - logs nothing, so the trial stays open.
+  // the route and address check, the site gate or the call cap - logs
+  // nothing, so the trial stays open.
   r = await quietly(() => runCompletion([judgeRow('barak', null), judgeRow('elon', null)]));
   check('a judge with no row at all keeps the trial open', !r.completed, JSON.stringify(r.updates));
 

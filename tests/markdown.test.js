@@ -13,6 +13,10 @@
  * GitHub itself and compares the page with the source, which is what catches
  * a defect nobody has thought of yet. It needs the network, so it is not part
  * of `npm test`.
+ *
+ * It also checks how the render check cuts a file too large for GitHub's API
+ * into pieces: the pieces must join back into the file, and each after the
+ * first must start at a heading outside a code block.
  */
 
 const fs = require('node:fs');
