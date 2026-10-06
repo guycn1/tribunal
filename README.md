@@ -471,6 +471,16 @@ Discarded rows are dimmed, since the call usually went on to succeed further
 down the table, and so are the abort endpoint's rows, which record the request
 to stop rather than an outcome.
 
+![The call log of one trial: ten model attempts with their tokens, cost,
+duration, status badge and time, three discarded attempts dimmed, and a totals
+row](screenshots/readme-3-call-log.png)
+
+*The same trial's ten attempts. Jon Snow's first reply repeated a 26-word
+sentence and was retried on the same model; Grey Worm's hit the 1,400-token
+cap, then closed on a near-copy of an earlier sentence, and was escalated to
+`claude-haiku-4.5`, whose one call cost 0.41¢ of the trial's 0.56¢. The totals
+count every attempt, discarded ones included.*
+
 | Badge | Colour | What triggered it |
 | --- | --- | --- |
 | `success` | green | The attempt returned usable content and was kept — for a judge, that includes a `VERDICT` line. This is the text shown on that agent's card. |
@@ -561,7 +571,8 @@ Every file tracked in the repository. Not tracked, and git-ignored:
 ├── scripts/check-render.js           npm run check-render — renders each Markdown file through GitHub and compares the page with its source
 ├── screenshots/                      the images in this README, captured from the running app
 │   ├── readme-1-hero-split-rulings.png
-│   └── readme-2-judges.png
+│   ├── readme-2-judges.png
+│   └── readme-3-call-log.png
 ├── tests/                            npm test — no network, spends no quota
 │   ├── retry-logic.test.js           the escalation chain, from the real TypeScript
 │   ├── trial-status.test.js          when a trial is completed; aborts; calls the page never sends; the call cap and the failure flag; replies kept for audit, off the page

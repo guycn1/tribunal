@@ -4664,6 +4664,16 @@ Jewish legal tradition, Shamgar's governing standard, institutional
 framework and chronology - each checked against the stored rulings and
 against that judge's method in the dossier (Part 3 above).
 
+**README's third screenshot: the same trial's call log (same day).**
+`screenshots/readme-3-call-log.png`, taken by the user at the main column's
+full width, shows all ten attempts of trial `0a5de440` and the totals row, in
+the "Call log" part of README's badge section, between the paragraph on
+dimmed rows and the badge table. Every row's tokens, duration and cost (to
+two decimals of a cent) and the totals (27,210 tokens, 0.56¢ of a stored
+0.5586¢, 144,178 ms) were checked against the stored rows, and the caption's
+reasons against their stored error messages. The status captions wrap with
+"model)" on a line of its own; that is the app at its widest layout.
+
 ## Operational notes
 
 ### Image and screenshot volume in long sessions
