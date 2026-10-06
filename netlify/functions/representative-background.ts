@@ -1,7 +1,7 @@
 import type { Handler } from '@netlify/functions';
 import { safeHandler } from './lib/safeHandler';
 import { json } from './lib/response';
-import { extractParams, cameThroughApiRoute } from './lib/extractParams';
+import { extractParams, cameThroughApiRoute, sentToMainAddress } from './lib/extractParams';
 import { getChargeSheet } from './lib/chargeSheet';
 import { REPRESENTATIVES } from './lib/representatives';
 import { buildRepresentativeMessages } from './lib/prompts';
@@ -31,15 +31,18 @@ const rawHandler: Handler = async (event) => {
   // Netlify serves this function at its own address,
   // /.netlify/functions/representative-background/..., as well as through
   // its route in netlify.toml, and the per-IP rate limit is set on the
-  // route. So the first check refuses any request that did not come through
-  // the route, before anything else is read or written: every request this
-  // handler acts on has passed the limit. Not logged, like the method and
+  // route. It also serves the whole site at more than one address
+  // (main--<site>.netlify.app, and one per deploy), counting the limit
+  // separately on each. So the first check refuses any request that did not
+  // come through the route on the site's main address, before anything else
+  // is read or written: every request this handler acts on has passed the
+  // one count. Not logged, like the method and
   // role checks below - refusing costs nothing. On the live site on
   // 2026-10-06, gated requests for a real trial sent to this address and to
   // judge-background's left nothing behind, while the same request through
   // the route started its attempt within 5 seconds.
-  if (!cameThroughApiRoute(event)) {
-    return json(403, { error: 'Only accepted through /api/trials/:id/representatives/:role' });
+  if (!cameThroughApiRoute(event) || !sentToMainAddress(event)) {
+    return json(403, { error: "Only accepted through /api/trials/:id/representatives/:role on the site's main address" });
   }
 
   if (event.httpMethod !== 'POST') {

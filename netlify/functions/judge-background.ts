@@ -1,7 +1,7 @@
 import type { Handler } from '@netlify/functions';
 import { safeHandler } from './lib/safeHandler';
 import { json } from './lib/response';
-import { extractParams, cameThroughApiRoute } from './lib/extractParams';
+import { extractParams, cameThroughApiRoute, sentToMainAddress } from './lib/extractParams';
 import { getChargeSheet } from './lib/chargeSheet';
 import { JUDGES } from './lib/judges';
 import { buildJudgeMessages, parseJudgeOutput } from './lib/prompts';
@@ -48,11 +48,12 @@ const MAX_TOKENS = AGENT_MAX_TOKENS;
  * completed once every judge has a final outcome.
  */
 const rawHandler: Handler = async (event) => {
-  // Only requests that came through this function's rate-limited route
-  // are accepted, never one sent to its own address - see the matching
-  // check in representative-background.ts.
-  if (!cameThroughApiRoute(event)) {
-    return json(403, { error: 'Only accepted through /api/trials/:id/judges/:role' });
+  // Only requests that came through this function's rate-limited route, on
+  // the site's main address, are accepted - never one sent to the function's
+  // own address or to another address of the site. See the matching check
+  // in representative-background.ts.
+  if (!cameThroughApiRoute(event) || !sentToMainAddress(event)) {
+    return json(403, { error: "Only accepted through /api/trials/:id/judges/:role on the site's main address" });
   }
 
   if (event.httpMethod !== 'POST') {

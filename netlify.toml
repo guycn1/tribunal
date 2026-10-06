@@ -51,10 +51,12 @@
 # a single source hammering them, not a limit normal use comes near; the
 # site-wide call cap in db.ts is what bounds spend.
 # Netlify also serves each function at its own address,
-# /.netlify/functions/<name>, which no rule here covers; each agent
-# handler's first check refuses a request that arrives there (see
-# representative-background.ts), so every request they act on has passed
-# this limit.
+# /.netlify/functions/<name>, which no rule here covers, and the whole site
+# at main--<site>.netlify.app and at an address per deploy, counting the
+# limit separately on each. Each agent handler's first check refuses a
+# request that arrives at the function's own address or at any address but
+# the main one (see representative-background.ts), so every request they
+# act on has passed this one count.
 # Keep the two limits equal, so the shared count means one thing.
 [[redirects]]
   from = "/api/trials/:id/representatives/:role"
