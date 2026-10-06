@@ -4210,6 +4210,46 @@ The change:
   route checks, run again on the changed test, had every case behave as it
   should.
 
+**Merged to `main` (2026-10-06, on the user's explicit request), triggering a
+deploy: 54 commits, everything since the 2026-10-02 merge (`6af2e72`).** They
+are:
+
+- the record of the `6af2e72` deploy and its rate-limit test, and of the
+  decision then to keep the limit at 30 (`ecb4a6f`, `9fb6586`, `501125c`,
+  `a858fdd`);
+- the wording passes of 2026-10-02 (`f94b956`, `bfae012`, `65f4d4b`,
+  `a65e326`, `51e16e5`, `06a3576`, `644daf8`, `e9152eb`);
+- the claim checks of 2026-10-03 to 2026-10-05 - absolute, conditional,
+  inclusive, comparative, temporal and numeric claims, cross-references, lists
+  and contradictions - with the code changes they brought: a reply cut short by
+  an upstream error retried rather than kept, an HTTP 408 retried like a
+  timeout, the `no result` card, the legacy `truncated` badge dated, and the
+  abort endpoint replying with the roles it wrote rows for (`7990556`,
+  `885e98a`, `4bc70ad`, `f0bce6a`, `39285a0`, `d004e46`, `5b767c4`,
+  `1524ecf`, `c5adf9b`, `b3e6d75`, `15c2d61`, `7e5626f`, `67b016b`,
+  `c7349cb`);
+- the per-IP rate limit raised from 30 to 60 requests per 3 minutes
+  (`dad9375`);
+- README's endpoint list, database map and badge tables (`7fa8c91`,
+  `6e67452`, `82dbd7b`, `0305038`, `0437482`, `696281f`, `7482a42`,
+  `639a6b4`);
+- this file laid out for reading in Code view as well as Preview (`27103e4`,
+  `c47de5f`, `3706eba`, `61a5580`, `e82b320`, `f0d58d9`);
+- HARD RULES 4 and 5 and their checks (`9e5d696`, `3c238f8`, `5a95f47`,
+  `b15b863`);
+- README spaced out, wrapped at 80 characters and linked to its own sections
+  (`ae9ae05`, `cca853f`, `cb251be`);
+- the suite, layer and route counts checked against the code, and the
+  anti-abuse layers settled by running the handlers (`fac50e9`, `a0ff272`,
+  `ca51fc8`, `9fd77a0`);
+- the agent handlers accepting requests only through their routes
+  (`62c9053`);
+- the commit that adds this entry.
+
+No database change is needed: nothing since `6af2e72` adds or alters a
+column. This entry was committed to `draft` ahead of the merge, so that right
+after it `main` and `draft` held identical trees.
+
 ## Operational notes
 
 ### Image and screenshot volume in long sessions
