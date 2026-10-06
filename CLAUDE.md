@@ -328,7 +328,7 @@ tag it does not know.
   which GitHub strips. Each rule was established by rendering the defect
   through GitHub's own Markdown API and watching it break; the comment on each
   says what GitHub does.
-- **`npm run check-render`** (`scripts/check-render.js`) renders every Markdown
+- **`npm run check-render`** (`tests/check-render.js`) renders every Markdown
   file through GitHub's Markdown API and compares the page with the source:
   every word of the source must reach the page, no Markdown may be printed as
   text, and the page must have as many headings, tables, table cells, rules,
@@ -4007,7 +4007,8 @@ what GitHub was seen to do.
   fires on a file built to cause it, a controls file renders as written, and it
   exits 1 on a defect and 2 when GitHub cannot be reached. A probe for a
   backslash printed in prose was dropped on the way: a backslash the source
-  writes outside a code span is what it shows.
+  writes outside a code span is what it shows. *(The script moved to
+  `tests/check-render.js` later the same day.)*
 - On today's files both pass. The audit that started this found one thing to
   fix: the three `[[memory-note]]` pointers in HARD RULES 1 and 2, which GitHub
   prints with their brackets, are now note names in code spans. SPEC.md's three
@@ -4598,9 +4599,10 @@ card's last line, on the live site as in the capture.
 ### 2026-10-06: README's hero, and images in the render check
 
 **README opens with a hero (2026-10-06, on the user's request, after the one
-in CineRank's README): the live link, then a screenshot of a whole trial with
-a caption.** The screenshot, `screenshots/readme-1-hero-split-rulings.png`,
-was taken by the user from local `netlify dev` and shows trial `0a5de440`
+in the README of CineRank, another of the user's own projects): the live link,
+then a screenshot of a whole trial with a caption.** The screenshot,
+`screenshots/readme-1-hero-split-rulings.png`, was taken by the user from local
+`netlify dev` and shows trial `0a5de440`
 (2026-10-05): the case card, the four arguments, the three rulings and the run
 history.
 
@@ -4628,7 +4630,8 @@ history.
 **The render check reads images (same day).** Rendered through GitHub's API,
 the hero image came out as an `<img>` keeping its full alt text, but
 `scripts/check-render.js` reported its alt text as missing words and counted
-the image as a link the page lacked.
+the image as a link the page lacked. *(The script moved to
+`tests/check-render.js` later the same day.)*
 
 - Alt text now counts among the page's words, and images have a count of
   their own, so an image is no longer counted as a link.
@@ -4657,6 +4660,7 @@ exit code.
   and compares each piece with its own source; a defect names its piece
   ("part 3 of 3: ..."). It also sends a file with LF line endings, as GitHub
   stores it, whatever the working copy has. CLAUDE.md goes in three pieces.
+  *(The script moved to `tests/check-render.js` later the same day.)*
 - `tests/markdown.test.js` cuts every Markdown file as small as it can be cut
   and checks that the pieces join back into the file, that each piece after
   the first starts at such a heading, and that a heading-shaped line inside a
@@ -4800,6 +4804,32 @@ and people and products.
     logging, timeouts, truncation, and the merge", the rate limit of 60 to
     the 2026-10-04 entry, and the 40-minute "interrupted" line to the
     frontend polish backlog of 2026-09-02.
+
+### 2026-10-06: the render check moved into `tests/`
+
+**`scripts/check-render.js` is now `tests/check-render.js` (2026-10-06, on the
+user's request).** It was the only file in `scripts/`, and it is a check rather
+than tooling: HARD RULE 5 counts it as one of its two checks, and the other,
+`tests/markdown.test.js`, already imported from it the code that cuts a large
+file into pieces.
+
+- It had gone into `scripts/` with HARD RULE 5, whose idea came from the
+  Markdown checker in CineRank, another of the user's own projects, and that
+  checker lives in CineRank's `scripts/`. Its need for the network, which
+  keeps it out of `npm test`, holds in either folder.
+- Its name has no `.test.js`, so `tests/docs.test.js` does not take it for a
+  suite `npm test` must run, and README's tree now gives `tests/` as the home
+  of both `npm test` and `npm run check-render`.
+- `package.json`, `tests/markdown.test.js`, README and HARD RULE 5 give the new
+  path, and the three dated entries above that give the old one carry a note.
+  Nothing in the script changed: it finds the repository root as the folder
+  above its own, which `tests/` is, as `scripts/` was.
+- `npm test`, the typecheck and `npm run check-render` from the new path pass.
+  Three breaks each failed `npm test`, every file restored byte for byte:
+  README's tree still naming the old path failed the docs test's two tree
+  checks; `package.json` still running the script from there failed the check
+  of the setup block's `npm run check-render` line; and `tests/markdown.test.js`
+  still requiring it from there stopped that suite on a missing module.
 
 ## Operational notes
 

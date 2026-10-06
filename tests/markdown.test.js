@@ -9,7 +9,7 @@
  * included, so a failure names both.
  *
  * This half only knows the defects someone has already found. The other half,
- * `npm run check-render` (scripts/check-render.js), renders each file through
+ * `npm run check-render` (tests/check-render.js), renders each file through
  * GitHub itself and compares the page with the source, which is what catches
  * a defect nobody has thought of yet. It needs the network, so it is not part
  * of `npm test`.
@@ -245,7 +245,7 @@ for (const file of markdownFiles()) {
 // back into the file, and each piece after the first must start with such a
 // heading, or a piece would render differently from the same text inside the
 // whole file.
-const { pieces } = require('../scripts/check-render');
+const { pieces } = require('./check-render');
 console.log("\n=== The render check's pieces of a large file ===");
 // A heading-shaped line inside a code block is code, not a place to cut.
 const fencedSample = ['# Title', 'intro', '', '```text', '## not a heading', '```', 'after', '', '## Real', 'body'].join('\n');

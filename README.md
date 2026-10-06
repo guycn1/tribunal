@@ -657,20 +657,20 @@ Every file tracked in the repository. Not tracked, and git-ignored:
 │       ├── response.ts               JSON response helper
 │       └── types.ts                  types shared across the backend
 ├── supabase/schema.sql               all six tables, the seeded case, RLS, grants
-├── scripts/check-render.js           npm run check-render — renders each Markdown file through GitHub and compares the page with its source
 ├── screenshots/                      the images in this README, captured from the running app
 │   ├── readme-1-hero-split-rulings.png
 │   ├── readme-2-judges.png
 │   ├── readme-3-call-log.png
 │   ├── readme-4-aborted-trial.png
 │   └── readme-5-in-progress.png
-├── tests/                            npm test — no network, spends no quota
+├── tests/                            npm test (no network, no quota) and npm run check-render (GitHub's API)
 │   ├── retry-logic.test.js           the escalation chain, from the real TypeScript
 │   ├── trial-status.test.js          when a trial is completed; aborts; calls the page never sends; the call cap and the failure flag; replies kept for audit, off the page
 │   ├── render-cards.test.js          app.js: cards, the judges' banner, the call log, model ids, failed requests, the site-gate header
 │   ├── shared-constants.test.js      values duplicated across files still agree; the page's timeouts outlast the server's
 │   ├── docs.test.js                  README, SPEC.md and CLAUDE.md agree with the code
 │   ├── markdown.test.js              no Markdown file holds source GitHub is known to render wrongly
+│   ├── check-render.js               npm run check-render — renders each Markdown file through GitHub and compares the page with its source
 │   └── support/                      setup shared by the suites above
 │       ├── compile-backend.js        compiles the real backend TypeScript
 │       ├── fake-supabase.js          an in-memory Supabase, for running the backend
@@ -707,7 +707,7 @@ npm install
 cp .env.example .env   # fill in OPENROUTER_API_KEY, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
 npm run dev             # netlify dev — serves the static frontend and functions locally
 npm run typecheck       # tsc --noEmit
-npm run check-render    # node scripts/check-render.js — needs the network (see below)
+npm run check-render    # node tests/check-render.js — needs the network (see below)
 npm test                # six regression suites (see below)
 ```
 
@@ -792,7 +792,7 @@ The other half of [that
 rule](CLAUDE.md#5-every-markdown-file-renders-exactly-as-written) needs the
 network, so it runs outside [`npm test`](tests):
 [`npm run check-render`](package.json)
-([`scripts/check-render.js`](scripts/check-render.js)) renders every Markdown
+([`tests/check-render.js`](tests/check-render.js)) renders every Markdown
 file through [GitHub's own Markdown
 API](https://docs.github.com/en/rest/markdown/markdown#render-a-markdown-document)
 and compares the page with its source:
