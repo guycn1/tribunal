@@ -59,6 +59,13 @@ const KEPT_TAGS = new Set(['code', 'b']);
 const CENTRED_BLOCK = ['<div align="center">', '</div>'];
 
 /**
+ * A line break GitHub keeps (rendered through its API on 2026-10-06). Alone
+ * on its line it adds a line of space, as below README's live link, where a
+ * blank line adds none; within a line of text it breaks the line.
+ */
+const SPACER = '<br>';
+
+/**
  * Blanks every code span in a paragraph, delimiters included, keeping its
  * length and newlines, so what is left is the paragraph's prose. A span is
  * closed by the next run of exactly as many backticks as opened it.
@@ -136,7 +143,7 @@ for (const file of markdownFiles()) {
   const found = {
     tags: [], unclosed: [], escapes: [], setext: [], interrupts: [], ruleBeforeHeading: [], tableSeparator: [],
     tableCells: [], pipeInCode: [], bold: [], intraword: [], links: [], trailing: [], indented: [], wiki: [], imageSrc: [],
-    centred: [],
+    centred: [], spacer: [],
   };
   /** Every centred block's tag, in order, to find one left open. */
   const centredTags = [];
@@ -151,7 +158,7 @@ for (const file of markdownFiles()) {
     // a literal angle bracket is written &lt; / &gt;. A backslash-escaped <
     // and an autolink such as <https://...> are not tag-shaped.
     for (const m of prose.matchAll(/(?<!\\)<\/?([A-Za-z][A-Za-z0-9-]*)(?:\s[^<>]*)?\/?>/g)) {
-      if (CENTRED_BLOCK.includes(m[0])) continue;
+      if (CENTRED_BLOCK.includes(m[0]) || m[0] === SPACER) continue;
       if (!KEPT_TAGS.has(m[1].toLowerCase()) || /\s/.test(m[0])) found.tags.push(at(lineOf(m.index), m[0]));
     }
     // A centred block's tags must each be alone on their line, with a blank
@@ -163,9 +170,26 @@ for (const file of markdownFiles()) {
     prose.split('\n').forEach((proseLine, k, own) => {
       for (const m of proseLine.matchAll(/<div align="center">|<\/div>/g)) {
         const n = line + k;
+        // A <br> line directly under </div> is HTML too, and renders as one.
+        const brNext = m[0] === '</div>' && k + 1 < own.length && own[k + 1].trim() === SPACER;
         if (proseLine.trim() !== m[0]) found.centred.push(at(n, `${m[0]} shares its line`));
-        else if (k !== own.length - 1) found.centred.push(at(n, `${m[0]} has no blank line after it`));
+        else if (k !== own.length - 1 && !brNext) found.centred.push(at(n, `${m[0]} has no blank line after it`));
         centredTags.push({ n, open: m[0] !== '</div>' });
+      }
+      // A <br> alone on its line adds a line of space (rendered through
+      // GitHub's API on 2026-10-06), but with no blank line after it the
+      // next line is printed as typed, "**...**" included, and directly
+      // under a line of text it joins that paragraph as a last line break,
+      // which adds no space. Under a heading, a </div> or a list item it
+      // stands on its own, as it does with text on its line, where it is an
+      // ordinary line break.
+      if (proseLine.trim() === SPACER) {
+        const n = line + k;
+        const above = k > 0 ? own[k - 1] : '';
+        if (k !== own.length - 1) found.spacer.push(at(n, '<br> has no blank line after it'));
+        if (above.trim() && !/^#{1,6}\s/.test(above) && above.trim() !== '</div>' && !LIST_ITEM.test(above)) {
+          found.spacer.push(at(n, '<br> sits directly under text, which it joins'));
+        }
       }
     });
     // A backtick run with no closing run of the same length in its paragraph
@@ -254,8 +278,9 @@ for (const file of markdownFiles()) {
   }
   if (depth) found.centred.push(at(lastOpen, '<div align="center"> never closed'));
 
-  check(`${file}: no HTML tag GitHub would drop (anything but <code>, <b> and a centred block) outside a code span`, !found.tags.length, found.tags.join(' | '));
+  check(`${file}: no HTML tag GitHub would drop (anything but <code>, <b>, <br> and a centred block) outside a code span`, !found.tags.length, found.tags.join(' | '));
   check(`${file}: every centred block is closed, and each of its tags is alone on its line with a blank line after it`, !found.centred.length, found.centred.join(' | '));
+  check(`${file}: every <br> alone on its line has a blank line after it and no text directly above`, !found.spacer.length, found.spacer.join(' | '));
   check(`${file}: every code span is closed in its paragraph`, !found.unclosed.length, found.unclosed.join(' | '));
   check(`${file}: no backslash escape inside a code span, where it is printed`, !found.escapes.length, found.escapes.join(' | '));
   check(`${file}: no line of - or = directly under text, which turns it into a heading`, !found.setext.length, found.setext.join(' | '));

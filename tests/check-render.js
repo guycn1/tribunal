@@ -33,9 +33,9 @@ const { execFileSync } = require('node:child_process');
 
 const ROOT = path.join(__dirname, '..');
 // The tags written on purpose, which GitHub keeps and which hold no words of
-// their own: <code> and <b> in README's endpoint list and badge tables, and
-// the div that centres its live link.
-const KEPT_TAGS = /<\/?(code|b)>|<div align="center">|<\/div>/g;
+// their own: <code> and <b> in README's endpoint list and badge tables, the
+// div that centres its live link, and the <br> below it.
+const KEPT_TAGS = /<\/?(code|b)>|<div align="center">|<\/div>|<br>/g;
 const THEMATIC_BREAK = /^\s*(-{3,}|\*{3,}|_{3,})\s*$/;
 const SEPARATOR_ROW = /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)*\|?\s*$/;
 const LIST_ITEM = /^\s*(?:[-*+]|\d+[.)])\s+\S/;
@@ -136,6 +136,9 @@ function expectFromSource(source) {
     // A bare URL is a link too - GitHub autolinks it, in parentheses or not.
     expected.link += (prose.replace(/\]\([^)\s]*\)/g, ']').match(/\bhttps?:\/\/[^\s)<>]+/g) || []).length;
     expected.strong += Math.floor((prose.match(/\*\*/g) || []).length / 2);
+    // A <br> written in the source is a line break on the page, alone on its
+    // line or within one.
+    expected.br += (prose.match(/<br>/g) || []).length;
     const visible = decode(prose.replace(/\]\([^)\s]*\)/g, ']').replace(/<(https?:\/\/[^>]+)>/g, '$1').replace(KEPT_TAGS, ' '));
     expected.words.push(...words(visible));
   }

@@ -325,8 +325,9 @@ tag it does not know.
   unmatched `**`, an asterisk between two letters or digits, a broken link, two
   trailing spaces, a paragraph indented into a code block, a
   `[[wiki-style]]` link, an image at a `data:` or `javascript:` address,
-  which GitHub strips, and a centred block left open, or with a tag that shares
-  its line or has no blank line after it. Each rule was established by
+  which GitHub strips, a centred block left open or with a tag that shares its
+  line or has no blank line after it, and a `<br>` alone on its line with no
+  blank line after it or with text directly above. Each rule was established by
   rendering the defect through GitHub's own Markdown API and watching it break;
   the comment on each says what GitHub does.
 - **`npm run check-render`** (`tests/check-render.js`) renders every Markdown
@@ -365,10 +366,12 @@ tag it does not know.
 
 - A literal angle bracket outside a code span is `&lt;` or `&gt;`. The only raw
   tags are `<code>` and `<b>`, which GitHub keeps, in README's endpoint list and
-  badge tables, and the `<div align="center">` and `</div>` that centre its
-  live link, each alone on its line with a blank line after it. GitHub keeps
-  `align` and strips `style` and `class`, so a div can centre a block but not
-  set its spacing; an empty paragraph, `&nbsp;` alone, adds a line of space.
+  badge tables, the `<div align="center">` and `</div>` that centre its live
+  link, each alone on its line with a blank line after it, and the `<br>` below
+  them, alone on its line with a blank line after it and no text directly
+  above. GitHub keeps `align` and strips `style` and `class`, so a div can
+  centre a block but not set its spacing: blank lines collapse, and a `<br>`
+  alone on its line adds one line of space.
 - A list follows a blank line, and a wrapped line never starts with `- `, `+ `,
   `* `, `1. `, `#` or `>`.
 - Nothing but a blank line sits directly above a `---`, and no `---` sits right
@@ -4736,7 +4739,8 @@ text areas show eight lines, as in the hero.
 report and choice).** On GitHub the "Live app" line sat 16px above the
 screenshot, close enough to be skimmed past as part of it. It is now centred in
 a `<div align="center">`, with an empty paragraph, `&nbsp;` alone, between it
-and the screenshot.
+and the screenshot. *(A `<br>` took the empty paragraph's place later the same
+day, for a 40px gap; see the next entry.)*
 
 - Four layouts were rendered through GitHub's markdown API with its dark CSS
   in headless Edge: as it was, with the empty paragraph, centred, and both.
@@ -4764,6 +4768,41 @@ and the screenshot.
     `check-render` reports the printed Markdown but not the unclosed block,
     which only the offline rule catches, and without the two tags in its list
     it reports their words as missing.
+
+**A `<br>` in place of the empty paragraph (same day, on the user's
+request).** The empty paragraph left a 56px gap below the live link. A `<br>`
+alone on its line, between blank lines, leaves 40px: its one 24px line on top
+of the heading's 16px margin, measured as before. Two `<br>`s on the line of
+`</div>` would have left 64px.
+
+- `<br>` is now an allowed tag, after probing each way of writing it through
+  GitHub. Alone on its line it adds a line of space, and so it does directly
+  under a heading, a `</div>` or a list item; with text on its line it is an
+  ordinary line break. With no blank line after it the next line is printed as
+  typed, and directly under a line of text it joins that paragraph as a last
+  line break, which adds no space.
+  - `tests/markdown.test.js` allows `<br>`, and a new rule requires a `<br>`
+    alone on its line to have a blank line after it and no text directly
+    above. The centred-block rule now also accepts a `<br>` line directly
+    under `</div>`, which GitHub renders as one HTML block with it.
+  - `tests/check-render.js` reads `<br>` as holding no words, and counts each
+    one in the source as a line break the page must have.
+- Every probe of this entry and the one above was rendered again in the API's
+  default mode, the one `check-render` uses and a file's page matches: the
+  first round used `gfm`, which turns each line break inside a paragraph into
+  a `<br>`. The results were the same.
+- Proven both ways, every file restored byte for byte:
+  - the two defects appended to `SPEC.md` failed, and the five correct forms
+    passed;
+  - with the allowance removed README failed, with each part of the new rule
+    removed the defect it exists for got through, and with each of its three
+    exemptions removed a correct form raised an alarm;
+  - the centred-block rule's new exemption, removed, raised an alarm on a
+    `</div>` with a `<br>` under it, and widened to any line let the printed
+    paragraph through;
+  - and `check-render`, without `<br>` among its tags, reported the word "br"
+    missing, and without its count, line breaks the source does not ask for.
+    The centred-block proof was run again in full.
 
 ### 2026-10-06: HARD RULE 4 read broadly in README and SPEC.md
 

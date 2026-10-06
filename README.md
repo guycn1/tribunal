@@ -6,7 +6,7 @@
 
 </div>
 
-&nbsp;
+<br>
 
 ![A completed trial of Case T-001: the case card, the four representatives'
 arguments and the three judges' rulings side by side, with the run history on
