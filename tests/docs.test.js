@@ -172,8 +172,10 @@ const norm = (s) => String(s ?? '').replace(/\*\*|\*|`/g, '').replace(/[“”]/
  * @typedef {object} TableInfo
  * @property {string[]} columns
  * @property {Record<string, string[]>} checks Allowed values, by column.
- * @property {boolean} keyedByTrialAndRole Unique or primary key on (trial_id, role).
- * @property {boolean} cascades trial_id references trials(id) on delete cascade.
+ * @property {boolean} keyedByTrialAndRole Unique or primary key on
+ *   (trial_id, role).
+ * @property {boolean} cascades trial_id references trials(id) on delete
+ *   cascade.
  */
 /** @type {Record<string, TableInfo>} */
 const TABLES = {};
@@ -200,7 +202,9 @@ const SEED = (() => {
 })();
 
 // ------------------------------------------------------------ the repository
-/** Every file that is or would be committed: tracked, plus new and not ignored. */
+/**
+ * Every file that is or would be committed: tracked, plus new and not ignored.
+ */
 const REPO_FILES = (() => {
   try {
     return execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard'], { cwd: ROOT, encoding: 'utf8' })
@@ -259,7 +263,7 @@ async function main() {
   const backend = compileBackend(['lib/openrouter.ts', 'lib/representatives.ts', 'lib/judges.ts', 'lib/pricing.ts', 'trials.ts', 'trial.ts', 'case.ts', 'abort.ts', 'representative-background.ts', 'judge-background.ts']);
   useFakeSupabase(backend.outDir);
 
-  // ====================================================== README: unwrapping
+  // ============================================ README: unwrapping
   // Every check below reads README through unwrap(), so it is checked first,
   // on a sample with each kind of line it must keep apart, set directly
   // after a wrapped paragraph line.
@@ -279,7 +283,7 @@ async function main() {
   check('unwrap() joins wrapped lines and keeps every other line apart', unwrap(wrapped) === joined, JSON.stringify(unwrap(wrapped)));
   check('unwrap() leaves an unwrapped file as it is', unwrap(joined) === joined, JSON.stringify(unwrap(joined)));
 
-  // ======================================================== README: layout
+  // ============================================ README: layout
   console.log('\n=== README: the project layout lists every file, and only real ones ===');
   const layout = section(README, '## Project layout');
   const treeBlock = (layout.match(/```text\n([\s\S]*?)```/) || [])[1] || '';
@@ -307,7 +311,7 @@ async function main() {
   const missingDirs = tree.filter((t) => t.isDir && !(fs.existsSync(path.join(ROOT, t.path)) && fs.statSync(path.join(ROOT, t.path)).isDirectory()));
   check('every directory in the tree exists', missingDirs.length === 0, missingDirs.map((t) => t.path).join(', '));
 
-  // ======================================================== README: endpoints
+  // ============================================ README: endpoints
   console.log('\n=== README: the endpoint list matches netlify.toml and the handlers ===');
   const api = section(README, '### API endpoints');
   // Each endpoint is a list item of two lines: its route, as one code
@@ -362,7 +366,11 @@ async function main() {
    * @param {string} fn The function file's name, without .ts.
    * @param {string} method
    * @param {string} urlPath
-   * @param {{headers?: Record<string, string>, body?: string, trialStatus?: string}} [request]
+   * @param {{
+   *   headers?: Record<string, string>,
+   *   body?: string,
+   *   trialStatus?: string
+   * }} [request]
    *   trialStatus is the status the one trial holds.
    * @returns {Promise<number>}
    */
@@ -531,7 +539,7 @@ async function main() {
   const listLimit = Number((read('netlify', 'functions', 'lib', 'db.ts').match(/function listTrials\(limit = (\d+)\)/) || [])[1]);
   check(`GET /api/trials returns the ${listLimit} most recent trials`, api.includes(`The ${listLimit} most recent trials`), String(listLimit));
 
-  // ======================================================== README: database
+  // ============================================ README: database
   console.log('\n=== README: the database section matches schema.sql ===');
   const db = section(README, '### Database');
   const tableNames = Object.keys(TABLES);
@@ -591,7 +599,7 @@ async function main() {
   const caseInCode = [...FUNCTION_SOURCES.map(([f, src]) => [f, src]), ['public/app.js', read('public', 'app.js')]].filter(([, src]) => SEED.agreedFacts.some((fact) => src.includes(fact.slice(0, 60))));
   check('the case text lives only in the database, not in code', /reads the case from here at runtime/.test(sections.case_definitions || '') && caseInCode.length === 0, caseInCode.map(([f]) => f).join(', '));
 
-  // ======================================================== README: numbers the code sets
+  // ============================================ README: numbers the code sets
   console.log('\n=== README: the escalation chain, detectors and prices match the code ===');
   process.env.OPENROUTER_API_KEY = 'test-key';
   const { callOpenRouter } = backend.load('lib/openrouter.js');
@@ -615,7 +623,12 @@ async function main() {
    * @param {string} model
    * @param {string} content
    * @param {string} [finishReason='stop']
-   * @returns {{ok: boolean, status: number, headers: Map<string, string>, json: () => Promise<object>}}
+   * @returns {{
+   *   ok: boolean,
+   *   status: number,
+   *   headers: Map<string, string>,
+   *   json: () => Promise<object>
+   * }}
    */
   const reply =(model, content, finishReason = 'stop') => ({
     ok: true, status: 200, headers: new Map(),
@@ -650,7 +663,8 @@ async function main() {
      */
     const perMillion = (model) => [calculateCost(model, 1e6, 0), calculateCost(model, 0, 1e6)];
     const [defaultPrices, tier2Prices] = [perMillion(tiers[0].model), perMillion(tiers[1].model)];
-    // "Significantly": several times the price, for prompt and completion tokens alike.
+    // "Significantly": several times the price, for prompt and completion
+    // tokens alike.
     check('tier 2 is several times the default\'s price', tier2Prices.every((p, i) => p >= 3 * defaultPrices[i]), `${defaultPrices.join('/')} vs ${tier2Prices.join('/')}`);
   }
 
@@ -850,7 +864,13 @@ async function main() {
      * `changed` words replaced, then `after` fillers. 100 words by default,
      * so likeness moves in steps of 1%. Each run of fillers is numbered apart
      * from the others, so no filler appears twice.
-     * @param {{len?: number, changed?: number, gap?: number, after?: number, lead?: number}} [options]
+     * @param {{
+     *   len?: number,
+     *   changed?: number,
+     *   gap?: number,
+     *   after?: number,
+     *   lead?: number
+     * }} [options]
      *   `len` defaults to 100, `changed` to the number of words that leaves
      *   a 100-word copy exactly at the stated likeness, `gap` to 1, `after`
      *   to 0 and `lead` to 20.
@@ -877,7 +897,8 @@ async function main() {
   check('the fast-failure threshold is stated, the same everywhere', fastClaims.length > 0 && fastClaims.every((n) => n === fastClaims[0]), fastClaims.join(', '));
   if (fastClaims.length) {
     /**
-     * Whether a rate limit that takes `seconds` to come back is retried for free.
+     * Whether a rate limit that takes `seconds` to come back is retried for
+     * free.
      * @param {number} seconds
      * @returns {Promise<boolean>}
      */
@@ -919,7 +940,7 @@ async function main() {
   check(`every "a trial sends N" uses ${agentCount}, one request per agent`, requestClaims.length > 0 && requestClaims.every((n) => n === agentCount), requestClaims.join(', ') || 'not stated');
   backend.cleanup();
 
-  // ======================================================== README: what the UI shows
+  // ============================================ README: what the UI shows
   console.log('\n=== README: the badge tables match what app.js renders ===');
   installDom();
   const app = loadApp([
@@ -1046,7 +1067,7 @@ async function main() {
   const resultClaims = [...README.matchAll(/(?:all|its) (\d+)(?: of (\d+))? results/g)].flatMap((m) => [m[1], m[2]].filter(Boolean).map(Number));
   check(`every "N of ${expected} results" uses ${expected}`, resultClaims.length > 0 && resultClaims.every((n) => n === expected), resultClaims.join(', '));
 
-  // ======================================================== README: local development
+  // ============================================ README: local development
   console.log('\n=== README: setup and the test suites match package.json and .env.example ===');
   const local = section(README, '## Local development');
   const suites = [...(PKG.scripts.test || '').matchAll(/node (tests\/[\w.-]+\.js)/g)].map((m) => m[1]);
@@ -1087,7 +1108,7 @@ async function main() {
   const threeTier = README.split('\n').find((line) => line.startsWith('Three-tier:')) || '';
   check('the bundler is esbuild, as the architecture line says', /bundled by esbuild/.test(threeTier) && /node_bundler = "esbuild"/.test(TOML), threeTier || 'no "Three-tier:" line in README');
 
-  // ======================================================== README: anti-abuse layers
+  // ============================================ README: anti-abuse layers
   console.log('\n=== README: the anti-abuse layers are the ones the code has ===');
   // Each layer, the words README names it by, and whether the code applies
   // it to every call that spends quota. The call cap and the site gate are
@@ -1124,7 +1145,7 @@ async function main() {
   const routeClaims = statedCounts(README, 'routes');
   check(`every "N routes" in README uses ${agentRoutes.length}, the routes to agent functions`, routeClaims.length > 0 && routeClaims.every((w) => countOf(w) === agentRoutes.length), routeClaims.join(', ') || 'not stated');
 
-  // ======================================================== README: the diagram
+  // ============================================ README: the diagram
   console.log('\n=== README: the architecture diagram draws what the code does ===');
   // The Mermaid diagram under "What talks to what", read as nodes (an id,
   // its shape and its label) and arrows (from, to and any label). A node
@@ -1226,7 +1247,7 @@ async function main() {
   const databaseTables = (nodes.get(databaseNode || '') || { label: '' }).label.split('<br/>').slice(1);
   check('the database node lists every table, in schema order', JSON.stringify(databaseTables) === JSON.stringify(Object.keys(TABLES)), databaseTables.join(', '));
 
-  // ======================================================== paths named anywhere
+  // ============================================ paths named anywhere
   console.log('\n=== README, SPEC.md and CLAUDE.md\'s requirement parts: every file and route they name exists ===');
   const CLAUDE_REQUIREMENTS = `${section(CLAUDE, '## Part 1 — The canonical charge sheet (fixed content, not user input)')}\n${section(CLAUDE, '## Part 5 — Core technical requirements')}`;
   check('CLAUDE.md Parts 1 and 5 were found', /^## Part 1 /m.test(CLAUDE_REQUIREMENTS) && /^## Part 5 /m.test(CLAUDE_REQUIREMENTS));
@@ -1263,7 +1284,7 @@ async function main() {
     check(`${doc}: all ${named.length} file names resolve`, named.length > 0 && missing.length === 0, missing.join(', '));
   }
 
-  // ======================================================== SPEC.md and CLAUDE.md
+  // ============================================ SPEC.md and CLAUDE.md
   console.log('\n=== SPEC.md and CLAUDE.md: the case is the one the app serves ===');
   const seedParts = [['accused', SEED.accused], ['deceased', SEED.deceased], ['act alleged', SEED.actAlleged], ['question', SEED.question], ['scope note', SEED.scopeNote],
     ...SEED.background.map((p, i) => [`background paragraph ${i + 1}`, p]), ...SEED.agreedFacts.map((f, i) => [`stipulated fact ${i + 1}`, f])];
@@ -1330,7 +1351,11 @@ function headingAnchors(doc) {
  * heading, a table row, a list item with its continuation lines, or a
  * paragraph. Fenced code blocks are left out, since they cannot hold a link.
  * @param {string} doc
- * @returns {{ text: string, kind: 'heading' | 'row' | 'item' | 'para', headings: string[] }[]}
+ * @returns {{
+ *   text: string,
+ *   kind: 'heading' | 'row' | 'item' | 'para',
+ *   headings: string[]
+ * }[]}
  */
 function markdownUnits(doc) {
   const units = [];
@@ -1463,7 +1488,10 @@ function checkReferencesAreLinks() {
       if (kind === 'heading') continue;
       const done = new Set();
       const section = headings[headings.length - 1] || '';
-      /** Requires the first mention of `target` in this unit to link where `ok` says. */
+      /**
+       * Requires the first mention of `target` in this unit to link where `ok`
+       * says.
+       */
       const firstMustLink = (bucket, target, dest, ok, label) => {
         if (done.has(target)) return;
         done.add(target);

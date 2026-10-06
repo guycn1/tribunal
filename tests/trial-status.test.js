@@ -138,7 +138,7 @@ async function quietly(fn) {
   }
 }
 
-// ---------------------------------------------------------------- the judge endpoint
+// ---------------------------------------------------------- the judge endpoint
 const TRIAL_ID = '0d6f6a8e-4a3c-4d7e-9b52-1f0a2b3c4d5e';
 const CASE_ROW = {
   case_code: 'T-001', title: 'The Realm v. Jon Snow', accused: 'Jon Snow', deceased: 'Daenerys Targaryen',
@@ -162,7 +162,12 @@ const GOOD_RULING = 'VERDICT: justified\n\nThe record shows a surrendered city b
  * @param {object[]} [scenario.barakRows] Rows barak already has in the log.
  * @param {Record<string, string[]>} [scenario.missingColumns] Columns the
  *   database does not have yet - see fakeSupabase.
- * @returns {Promise<{status: number, tables: object, writes: object[], modelCalls: number}>}
+ * @returns {Promise<{
+ *   status: number,
+ *   tables: object,
+ *   writes: object[],
+ *   modelCalls: number
+ * }>}
  */
 async function runJudge({ reply, aborted = false, abortDuringCall = false, abortAfterDoor = false, barakRows = [], missingColumns }) {
   const replies = Array.isArray(reply) ? [...reply] : [reply];
@@ -433,7 +438,12 @@ async function main() {
    * @param {string} role
    * @param {object[]} rows
    * @param {object} [options] Passed to fakeSupabase.
-   * @returns {Promise<{status: number, modelCalls: number, writes: object[], tables: object}>}
+   * @returns {Promise<{
+   *   status: number,
+   *   modelCalls: number,
+   *   writes: object[],
+   *   tables: object
+   * }>}
    */
   const callFor = async (kind, role, rows, options) => {
     const fake = fakeSupabase({
@@ -513,10 +523,19 @@ async function main() {
    * the foreign key, as in the real schema.
    * @param {string} trialId
    * @param {string[]} roles
-   * @param {{status?: string, rows?: object[], headers?: Record<string, string>, failReadsOf?: string[]}} [setup]
+   * @param {{
+   *   status?: string,
+   *   rows?: object[],
+   *   headers?: Record<string, string>,
+   *   failReadsOf?: string[]
+   * }} [setup]
    *   The trial's status, the call-log rows it already has, the request's
    *   headers, and tables whose reads fail.
-   * @returns {Promise<{status: number, logged: string[] | undefined, rows: object[]}>}
+   * @returns {Promise<{
+   *   status: number,
+   *   logged: string[] | undefined,
+   *   rows: object[]
+   * }>}
    */
   const abortWith = async (trialId, roles, { status = 'created', rows = [], headers = {}, failReadsOf } = {}) => {
     const fake = fakeSupabase({ trials: [{ id: TRIAL_ID, case_code: 'T-001', status }], api_call_logs: [...rows] }, {

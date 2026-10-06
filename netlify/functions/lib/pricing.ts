@@ -14,19 +14,21 @@ const PRICING_PER_MILLION_TOKENS: Record<string, { prompt: number; completion: n
   // Checked 2026-08-28.
   'mistralai/mistral-small-24b-instruct-2501': { prompt: 0.05, completion: 0.08 },
   // No longer used (see the comment above TRUNCATION_FALLBACK_MODEL in
-  // models.ts) -
-  // mistralai/mistral-large-2512 was deprecated/removed from OpenRouter's
-  // catalogue (confirmed 2026-09-20, when its model page returned 404).
+  // models.ts) - mistralai/mistral-large-2512 was deprecated/removed from
+  // OpenRouter's catalogue (confirmed 2026-09-20, when its model page returned
+  // 404).
   // Entry kept, not deleted, as the record of the price that real historical
   // api_call_logs rows naming this model were costed at. This table's only
-  // consumer (calculateCost) never runs against stored rows, so the entry
-  // has no effect at runtime either way.
-  // Source (as it was, checked 2026-08-29): https://openrouter.ai/mistralai/mistral-large-2512
+  // consumer (calculateCost) never runs against stored rows, so the entry has
+  // no effect at runtime either way.
+  // Source (as it was, checked 2026-08-29):
+  // https://openrouter.ai/mistralai/mistral-large-2512
   'mistralai/mistral-large-2512': { prompt: 0.5, completion: 1.5 },
   // Tier 2 of the escalation chain (see getTruncationFallbackModel in
   // models.ts) - only ever billed on the minority of calls where the
   // default model failed to produce a usable result.
-  // Source: https://openrouter.ai/api/v1/models/anthropic/claude-haiku-4.5/endpoints
+  // Source:
+  // https://openrouter.ai/api/v1/models/anthropic/claude-haiku-4.5/endpoints
   // (checked directly against the live per-token price on 2026-09-20, not
   // assumed - consistent across all 8 providers/regions it was routed to
   // that day).

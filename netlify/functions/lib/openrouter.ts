@@ -13,31 +13,29 @@ const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 // 10s or longer, or a fast one past those - uses up one of its tier's
 // attempts.
 //
-// representative-background.ts/judge-background.ts run as Netlify
-// Background Functions (declared by their -background filenames), not
-// standard synchronous invocations. Before that move this file budgeted against a
-// tight ~26s ceiling, calibrated against a *standard* Netlify Function
-// invocation limit that turned out to be wrong for what this project
-// actually runs on: the real synchronous limit on Netlify's free plan was
-// far shorter (checked against Netlify's own docs and support forum on
-// 2026-08-28), and real calls on the default model routinely ran past it,
-// however carefully the old budget was tuned - no amount of
-// constant-tuning fixes an architecture mismatch.
+// representative-background.ts/judge-background.ts run as Netlify Background
+// Functions (declared by their -background filenames), not standard synchronous
+// invocations. Before that move this file budgeted against a tight ~26s
+// ceiling, calibrated against a *standard* Netlify Function invocation limit
+// that turned out to be wrong for what this project actually runs on: the real
+// synchronous limit on Netlify's free plan was far shorter (checked against
+// Netlify's own docs and support forum on 2026-08-28), and real calls on the
+// default model routinely ran past it, however carefully the old budget was
+// tuned - no amount of constant-tuning fixes an architecture mismatch.
 // Background Functions get far longer instead, which is what makes
 // the current value possible at all: it was set lower on that move, then
 // raised twice - for a fallback model, then to fit the full escalation
 // chain (see buildRetryTiers below).
-// Worst case is sized by attemptTimeoutFor()'s prompt-aware formula -
-// see its own comment for the arithmetic: ~649s of attempt ceilings for a
-// judge across all four tiers, ~587s for a representative, both before
-// backoff delays. 650000ms (650s, ~10.8 minutes) is deliberately sized
-// against that, and stays comfortably under the background-function
-// ceiling - 900s (15 minutes) in Netlify's docs as checked on 2026-08-28,
-// https://docs.netlify.com/build/functions/background-functions/ - rather
-// than razor-close to it. A chain that
-// still overruns degrades gracefully rather than silently: remainingMs()
-// clamps the final attempt, and the loop says plainly that the budget ran
-// out before a further tier could be tried.
+// Worst case is sized by attemptTimeoutFor()'s prompt-aware formula - see its
+// own comment for the arithmetic: ~649s of attempt ceilings for a judge across
+// all four tiers, ~587s for a representative, both before backoff delays.
+// 650000ms (650s, ~10.8 minutes) is deliberately sized against that, and stays
+// comfortably under the background-function ceiling - 900s (15 minutes) in
+// Netlify's docs as checked on 2026-08-28,
+// https://docs.netlify.com/build/functions/background-functions/ - rather than
+// razor-close to it. A chain that still overruns degrades gracefully rather
+// than silently: remainingMs() clamps the final attempt, and the loop says
+// plainly that the budget ran out before a further tier could be tried.
 const TOTAL_BUDGET_MS = 650000;
 // Don't start an attempt the remaining budget cannot plausibly finish.
 // With a budget measured in minutes rather than the old ~26s, this no
@@ -62,19 +60,18 @@ const MIN_REMAINING_TO_ATTEMPT_MS = 10000;
 // A burst limit is exactly the failure that deserves a patient retry on
 // the cheapest model, not an immediate escalation to a pricier one.
 //
-// A genuine hang is the opposite case and is what the escalation budget
-// exists for: it consumes the whole per-attempt ceiling before failing.
-// The line was set from those two: a 429 comes back within a few seconds,
-// while a timeout runs the full per-attempt ceiling, which was several
-// times the line then and is longer now that attemptTimeoutFor() scales
-// with prompt size. The same 10s line applies to every other transient
-// failure - a 408, a 5xx, a network error, a 200 with no usable content: one back in
-// under 10s gets the free same-model retry, and one that took longer
-// counts against its tier.
+// A genuine hang is the opposite case and is what the escalation budget exists
+// for: it consumes the whole per-attempt ceiling before failing.
+// The line was set from those two: a 429 comes back within a few seconds, while
+// a timeout runs the full per-attempt ceiling, which was several times the line
+// then and is longer now that attemptTimeoutFor() scales with prompt size. The
+// same 10s line applies to every other transient failure - a 408, a 5xx, a
+// network error, a 200 with no usable content: one back in under 10s gets the
+// free same-model retry, and one that took longer counts against its tier.
 //
 // The fast path is strictly bounded (see MAX_FAST_TRANSIENT_RETRIES_PER_TIER)
-// so it can never recreate the original unbounded-retry behaviour: a tier gets at
-// most a few free fast retries before its failures start counting normally.
+// so it can never recreate the original unbounded-retry behaviour: a tier gets
+// at most a few free fast retries before its failures start counting normally.
 const FAST_FAILURE_THRESHOLD_MS = 10000;
 // Per tier, and reset on every escalation. The backoff() pauses between
 // these retries add up to several seconds per tier, a little more at later
@@ -111,14 +108,14 @@ const MAX_FAST_TRANSIENT_RETRIES_PER_TIER = 4;
  * median) to 587.0s, both just inside the 650s budget. Those two figures
  * are what the budget was sized against.
  *
- * It is NOT inside the budget by construction. The ceiling scales with
- * prompt size and real prompts have a long tail - as of 2026-09-21, the
- * largest judge prompt in the log was more than twice p90, and its ceilings
- * summed to nearly two minutes over budget. p90 (4483) only just fits, so a judge prompt
- * a little above it already sums past the budget. That matters only when
- * every attempt in the chain runs to its ceiling, and it bites safely
- * when it does: remainingMs() clamps the last attempt and the loop reports
- * honestly that the budget ran out before a further tier could be tried.
+ * It is NOT inside the budget by construction. The ceiling scales with prompt
+ * size and real prompts have a long tail - as of 2026-09-21, the largest judge
+ * prompt in the log was more than twice p90, and its ceilings summed to nearly
+ * two minutes over budget. p90 (4483) only just fits, so a judge prompt a
+ * little above it already sums past the budget. That matters only when every
+ * attempt in the chain runs to its ceiling, and it bites safely when it does:
+ * remainingMs() clamps the last attempt and the loop reports honestly that the
+ * budget ran out before a further tier could be tried.
  * The effect of an outsized prompt is fewer tiers actually reached, not a
  * silent overrun.
  *
@@ -154,52 +151,50 @@ export interface OpenRouterMessage {
   content: string;
 }
 
-// Appended (as an extra user turn, not a continuation of the cut-off
-// content) to every attempt after the first - see isFallbackAttempt
-// below. It began life as a single retry for a response that hit
-// max_tokens before reaching a natural conclusion, which is where the
-// wording comes from. A truncated response was previously
-// accepted as a plain success with no corrective action - real testing
-// found this happening to a real, non-trivial share of calls (5 of 21, about
-// 1 in 4, in a batch on 2026-08-28, at that day's frequency_penalty/
-// presence_penalty of 0.4/0.2), so silently accepting it was leaving a
-// known, common failure mode unaddressed. Framed as a fresh attempt, not "finish what you
-// started," since the model never sees its own truncated fragment here.
-// A single same-model retry was not enough on its own: in a test on
-// 2026-08-29, once daenerys_targaryen's or grey_worm's first attempt
-// truncated, a same-model retry truncated again 3 times in 5 and 3 times
-// in 4 - closer to "that generation was already in a bad state" than to
-// an independent second roll. That test ran under that day's settings,
-// not today's: the token cap was the only check on a reply, and the
-// retry's added instruction spoke of length alone. Still worth
-// having as tier 1's own second attempt (see maxAttempts below) precisely
-// because it's the cheapest possible recovery to try first, before paying
-// for a pricier tier - it just isn't relied on alone. A single
-// different-model fallback helped but still wasn't reliable enough on its
-// own either: in targeted tests on 2026-08-29 against Mistral Large, tier
-// 2's original model, some of its fallback attempts truncated too. Rather
-// than one fallback, this is a genuine
-// escalation chain - each tier a different model, reached once the tier
-// before it is done - which usually means it spent every attempt allowed
-// it, on truncation, degeneration or a transient failure that counted (a
-// slow one, or a fast one past its tier's free retries), but not always:
-// a plain HTTP error (a removed model id, say) escalates
-// immediately and forfeits that tier's remaining attempts, since
-// re-asking a model that just 404'd cannot help. The last two tiers are
-// deliberately from two different companies, not two models in the same
-// family, so a shared-vendor quirk can't explain a failure that makes it
-// that far.
+// Appended (as an extra user turn, not a continuation of the cut-off content)
+// to every attempt after the first - see isFallbackAttempt below. It began life
+// as a single retry for a response that hit max_tokens before reaching a
+// natural conclusion, which is where the wording comes from. A truncated
+// response was previously accepted as a plain success with no corrective
+// action - real testing found this happening to a real, non-trivial share of
+// calls (5 of 21, about 1 in 4, in a batch on 2026-08-28, at that day's
+// frequency_penalty/presence_penalty of 0.4/0.2), so silently accepting it was
+// leaving a known, common failure mode unaddressed. Framed as a fresh attempt,
+// not "finish what you started," since the model never sees its own truncated
+// fragment here.
+// A single same-model retry was not enough on its own: in a test on 2026-08-29,
+// once daenerys_targaryen's or grey_worm's first attempt truncated, a
+// same-model retry truncated again 3 times in 5 and 3 times in 4 - closer to
+// "that generation was already in a bad state" than to an independent second
+// roll. That test ran under that day's settings, not today's: the token cap was
+// the only check on a reply, and the retry's added instruction spoke of length
+// alone. Still worth having as tier 1's own second attempt (see maxAttempts
+// below) precisely because it's the cheapest possible recovery to try first,
+// before paying for a pricier tier - it just isn't relied on alone. A single
+// different-model fallback helped but still wasn't reliable enough on its own
+// either: in targeted tests on 2026-08-29 against Mistral Large, tier 2's
+// original model, some of its fallback attempts truncated too. Rather than one
+// fallback, this is a genuine escalation chain - each tier a different model,
+// reached once the tier before it is done - which usually means it spent every
+// attempt allowed it, on truncation, degeneration or a transient failure that
+// counted (a slow one, or a fast one past its tier's free retries), but not
+// always:
+// a plain HTTP error (a removed model id, say) escalates immediately and
+// forfeits that tier's remaining attempts, since re-asking a model that just
+// 404'd cannot help. The last two tiers are deliberately from two different
+// companies, not two models in the same family, so a shared-vendor quirk can't
+// explain a failure that makes it that far.
 // Every tier also gets more token headroom than the one before it, as a
 // safeguard in case a sound response ever runs past the cap. None from the
-// default model had been seen to as of 2026-09-27: every capped reply from
-// it whose text was stored was a repetition loop that ran until the cap
-// stopped it, and every tier-1 reply kept as sound had stayed well short
-// of the cap. (A loop that stops on its
-// own can come much closer to it.) For a loop, a bigger cap only means a longer loop; what recovers it is
-// the fresh attempt itself, on the same model or the next. Reached rarely
-// enough, given how many tiers already stand before it, that the real
-// cost stays small despite the later tiers being far pricier than the
-// default - see pricing.ts for the real numbers.
+// default model had been seen to as of 2026-09-27: every capped reply from it
+// whose text was stored was a repetition loop that ran until the cap stopped
+// it, and every tier-1 reply kept as sound had stayed well short of the cap. (A
+// loop that stops on its own can come much closer to it.) For a loop, a bigger
+// cap only means a longer loop; what recovers it is the fresh attempt itself,
+// on the same model or the next. Reached rarely enough, given how many tiers
+// already stand before it, that the real cost stays small despite the later
+// tiers being far pricier than the default - see pricing.ts for the real
+// numbers.
 //
 // Tier 2 measured far ahead of the default model on this workload - see
 // models.ts for the measurements.
@@ -214,19 +209,17 @@ interface RetryTier {
  * and number of attempts. callOpenRouter() moves to the next tier once the
  * current one's attempts are spent, or at once on a plain HTTP error.
  *
- * Tier 1's maxAttempts raised 1 -> 2 (2026-09-20), when tier 2's model
- * was replaced (mistralai/mistral-large-2512, deprecated/removed from
- * OpenRouter - see the comment above TRUNCATION_FALLBACK_MODEL in models.ts - by
- * anthropic/claude-haiku-4.5). A second attempt at the default model
- * catches more recoverable truncations/degeneracies before reaching for a
- * costlier tier. Note that
- * every tier in this chain is a genuinely paid model - nothing here runs
- * on a free tier - so this is about relative cost, not about avoiding
- * spend altogether: tier 2 is significantly pricier than the default tier
- * (see pricing.ts). This is also what surfaced
- * the isFallbackAttempt fix below: with tier 1 now allowed more than one
- * attempt, "is this attempt a retry" could no longer be inferred from
- * tierIndex alone.
+ * Tier 1's maxAttempts raised 1 -> 2 (2026-09-20), when tier 2's model was
+ * replaced (mistralai/mistral-large-2512, deprecated/removed from OpenRouter -
+ * see the comment above TRUNCATION_FALLBACK_MODEL in models.ts - by
+ * anthropic/claude-haiku-4.5). A second attempt at the default model catches
+ * more recoverable truncations/degeneracies before reaching for a costlier
+ * tier. Note that every tier in this chain is a genuinely paid model - nothing
+ * here runs on a free tier - so this is about relative cost, not about avoiding
+ * spend altogether: tier 2 is significantly pricier than the default tier (see
+ * pricing.ts). This is also what surfaced the isFallbackAttempt fix below: with
+ * tier 1 now allowed more than one attempt, "is this attempt a retry" could no
+ * longer be inferred from tierIndex alone.
  */
 function buildRetryTiers(defaultModel: string, defaultMaxTokens: number): RetryTier[] {
   return [
@@ -400,19 +393,18 @@ function detectDegenerateRun(content: string): { degenerate: boolean; runLength:
 // far past the 40-word line, and the 84-word one was read in full and
 // confirmed degenerate.
 //
-// On false positives: the thresholds above deliberately accept some (a
-// refrain, a structural line) in exchange for missing as little as
-// possible, and their precision was measured on live output in the two
-// runs above. Of the replies these rules rejected in the 20-trial run, 15
-// of 24 were degenerate with the long-sentence minimum at 15, and 15 of 22
-// at 18; in the 16-trial run, at 18, 10 of 12 - while the whole quality
-// gate caught 94.7% and 96.0% of the degenerate replies. Deliberate
-// anaphora is safe from the sentence rules by construction: it varies the
-// continuation, so the whole sentences differ, and every stored catch of
-// those rules shows a full sentence repeated verbatim. The clause and
-// near-copy rules work differently, as above. Since 2026-09-27 every discarded reply is
-// stored in full (api_call_logs.response_text), so any catch can be read
-// and judged after the fact.
+// On false positives: the thresholds above deliberately accept some (a refrain,
+// a structural line) in exchange for missing as little as possible, and their
+// precision was measured on live output in the two runs above. Of the replies
+// these rules rejected in the 20-trial run, 15 of 24 were degenerate with the
+// long-sentence minimum at 15, and 15 of 22 at 18; in the 16-trial run, at 18,
+// 10 of 12 - while the whole quality gate caught 94.7% and 96.0% of the
+// degenerate replies. Deliberate anaphora is safe from the sentence rules by
+// construction: it varies the continuation, so the whole sentences differ, and
+// every stored catch of those rules shows a full sentence repeated verbatim.
+// The clause and near-copy rules work differently, as above. Since 2026-09-27
+// every discarded reply is stored in full (api_call_logs.response_text), so any
+// catch can be read and judged after the fact.
 const REPEATED_SENTENCE_THRESHOLD = 3;
 const CONSECUTIVE_REPEAT_THRESHOLD = 2;
 const LONG_SENTENCE_WORDS = 18;
@@ -543,7 +535,7 @@ function wordCount(normalized: string): number {
 function detectRepeatedSentences(content: string): { degenerate: boolean; reason: string } {
   const sentences = content.split(/[.!?]+/).map(normalizeSentenceForRepeatCheck).filter((s) => wordCount(s) > 0);
   const total = sentences.length;
-  /** The first 60 characters of a sentence or clause, quoted for a reason text. */
+  /** The first 60 characters of a sentence or clause, quoted in a reason. */
   const quote = (s: string) => `("${s.slice(0, 60)}...")`;
   /** 0-based indexes in, "sentences 3, 17 and 31 of 32" out. */
   const where = (indexes: number[]) => {
@@ -712,20 +704,19 @@ const CONCISENESS_REMINDER: OpenRouterMessage = {
     'Your previous attempt did not produce a usable response - it either ran past the length target and was cut off, or trailed into repetitive, run-on text without normal punctuation before finishing. Write your response again from scratch: stay well within the word count you were given, use clear sentences with normal punctuation throughout, and make sure to reach a clear, complete ending.',
 };
 
-// Every discarded attempt - whatever discarded it: truncation or
-// degeneration, a plain HTTP failure at that tier, or a transient failure
-// - gets logged as its own real row via logApiCall(), not folded silently
-// into whichever attempt was eventually kept, and so does a call that
-// stops itself because the trial was aborted - the whole point being that
-// a reader of the call log can see that a role needed a fallback at all,
-// not just its final outcome. All six marker prefixes below are
-// duplicated as literal strings in app.js (same pattern as
-// ABORTED_BY_USER_MESSAGE, which is defined in db.ts and copied there too) so the frontend can tell a
-// discarded-but-recovered attempt from a discarded-and-fatal one without
-// any shared module between the two. Adding a marker here means adding it
-// there as well. No build step catches a mismatch, but
-// tests/shared-constants.test.js does - it reads both files and asserts
-// the two sets are identical.
+// Every discarded attempt - whatever discarded it: truncation or degeneration,
+// a plain HTTP failure at that tier, or a transient failure - gets logged as
+// its own real row via logApiCall(), not folded silently into whichever attempt
+// was eventually kept, and so does a call that stops itself because the trial
+// was aborted - the whole point being that a reader of the call log can see
+// that a role needed a fallback at all, not just its final outcome. All six
+// marker prefixes below are duplicated as literal strings in app.js (same
+// pattern as ABORTED_BY_USER_MESSAGE, which is defined in db.ts and copied
+// there too) so the frontend can tell a discarded-but-recovered attempt from a
+// discarded-and-fatal one without any shared module between the two. Adding a
+// marker here means adding it there as well. No build step catches a mismatch,
+// but tests/shared-constants.test.js does - it reads both files and asserts the
+// two sets are identical.
 //
 // NAMING, worth knowing before trusting the word: "DEGENERATE" in these
 // three constants is an umbrella for the whole content-quality class, NOT
@@ -887,9 +878,9 @@ export interface OpenRouterResult {
 /**
  * Asks OpenRouter for one agent's reply, walking the escalation chain
  * (buildRetryTiers) until an attempt is kept, every tier is spent, the time
- * budget runs out or the trial is aborted - or at once, on a failure no
- * retry can fix: not enough credit (HTTP 402), a rate limit whose reset
- * outlasts the budget, or no OpenRouter key configured. Never throws for an API failure:
+ * budget runs out or the trial is aborted - or at once, on a failure no retry
+ * can fix: not enough credit (HTTP 402), a rate limit whose reset outlasts the
+ * budget, or no OpenRouter key configured. Never throws for an API failure:
  * every outcome, success or failure, comes back as an OpenRouterResult, with
  * the attempts discarded on the way listed in it.
  *
@@ -1055,10 +1046,10 @@ export async function callOpenRouter(
     skipRestOfTier?: boolean;
     // Set only for genuinely transient failures: a 408, a 429, a 5xx, a 200
     // with no content or with a reply an upstream error cut short, and the
-    // fetch-level catch (a timeout or a network error). That last one is included on purpose
-    // even though a real timeout can never be "fast" - a network error
-    // that fails instantly, like a DNS blip or a connection reset, is
-    // exactly the case worth a cheap same-model retry.
+    // fetch-level catch (a timeout or a network error). That last one is
+    // included on purpose even though a real timeout can never be "fast" - a
+    // network error that fails instantly, like a DNS blip or a connection
+    // reset, is exactly the case worth a cheap same-model retry.
     // A fast one of these gets a free same-model retry that does not spend
     // a tier attempt - see FAST_FAILURE_THRESHOLD_MS. Deliberately NOT set
     // for an HTTP error like a removed model id (the same request gets the
@@ -1337,25 +1328,24 @@ export async function callOpenRouter(
       }
 
       if (response.status === 402) {
-        // Not enough credit for this request: OpenRouter answers 402 when
-        // what is left of the account's balance, or of this key's own
-        // spending limit, cannot cover the request at its max_tokens -
-        // which can happen before the balance reaches zero - and when the
-        // balance is negative. Retrying within this call cannot change
-        // that: a same-tier retry would ask for the same, and each later
-        // tier for a larger max_tokens. So this returns immediately rather
-        // than retrying like the 429 branch above and the 5xx branch below,
-        // with OpenRouter's own message appended. The wording matters
-        // because it is what a reader actually sees: this message is persisted to
-        // api_call_logs.error_message and rendered verbatim on the agent's
-        // card, so it has to explain itself without a status code beside
-        // it. (It used to be matched by an isOutOfCredits() helper in
-        // app.js, which existed because the agent endpoints wrap an
-        // OpenRouter-layer failure as a 502 and the client therefore could
-        // not read the 402 directly. That helper went away with the move to
-        // Background Functions - the client no longer sees the agent's
-        // response at all, only what polling reads back out of the log -
-        // so nothing parses this string today.)
+        // Not enough credit for this request: OpenRouter answers 402 when what
+        // is left of the account's balance, or of this key's own spending
+        // limit, cannot cover the request at its max_tokens - which can happen
+        // before the balance reaches zero - and when the balance is negative.
+        // Retrying within this call cannot change that: a same-tier retry would
+        // ask for the same, and each later tier for a larger max_tokens. So
+        // this returns immediately rather than retrying like the 429 branch
+        // above and the 5xx branch below, with OpenRouter's own message
+        // appended. The wording matters because it is what a reader actually
+        // sees: this message is persisted to api_call_logs.error_message and
+        // rendered verbatim on the agent's card, so it has to explain itself
+        // without a status code beside it. (It used to be matched by an
+        // isOutOfCredits() helper in app.js, which existed because the agent
+        // endpoints wrap an OpenRouter-layer failure as a 502 and the client
+        // therefore could not read the 402 directly. That helper went away with
+        // the move to Background Functions - the client no longer sees the
+        // agent's response at all, only what polling reads back out of the
+        // log - so nothing parses this string today.)
         const message = `OpenRouter declined the request: not enough credit to cover it (HTTP 402): ${await describeErrorBody(response)}`;
         console.log(`[openrouter] ${label}: attempt ${attempt} - ${message}`);
         return failure(attemptModel, message, undefined, discardedAttempts, Date.now() - lastAttemptStartedAt, { tierIndex, tierCount: tiers.length });
@@ -1653,18 +1643,17 @@ export async function callOpenRouter(
  * A terminal failure's message, prefixed with the fact that every tier was
  * tried when that is so, and returned unchanged otherwise.
  *
- * Applied to a terminal failure only when it happened on the LAST
- * escalation tier (tierIndex === tierCount - 1) - i.e. every tier this
- * chain offers was genuinely tried and none of them produced a kept
- * result, regardless of which specific failure mode ended it (an HTTP
- * error, a rate limit, not enough credit, a timeout or network error, an
- * empty response, or a reply an upstream error cut short). Truncation and degeneration never come through
- * here: the DEGENERATE_FINAL_MARKER branch above words that case itself.
- * A failure that happens on an EARLIER tier (the time budget running out
- * before the chain reached the last tier, say, or a failure no retry can
- * fix, such as not enough credit) is a different, less complete situation and keeps its
- * own specific message instead of falsely claiming every tier was
- * exhausted.
+ * Applied to a terminal failure only when it happened on the LAST escalation
+ * tier (tierIndex === tierCount - 1) - i.e. every tier this chain offers was
+ * genuinely tried and none of them produced a kept result, regardless of which
+ * specific failure mode ended it (an HTTP error, a rate limit, not enough
+ * credit, a timeout or network error, an empty response, or a reply an upstream
+ * error cut short). Truncation and degeneration never come through here: the
+ * DEGENERATE_FINAL_MARKER branch above words that case itself.
+ * A failure that happens on an EARLIER tier (the time budget running out before
+ * the chain reached the last tier, say, or a failure no retry can fix, such as
+ * not enough credit) is a different, less complete situation and keeps its own
+ * specific message instead of falsely claiming every tier was exhausted.
  */
 function withTierContext(rawMessage: string, tierIndex: number, tierCount: number, attemptModel: string): string {
   if (tierIndex !== tierCount - 1) return rawMessage;

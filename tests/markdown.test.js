@@ -52,7 +52,10 @@ function markdownFiles() {
     .trim().split('\n').filter((f) => /\.md$/i.test(f) && fs.existsSync(path.join(ROOT, f)));
 }
 
-/** The tags written on purpose in prose, which GitHub keeps: README's endpoint list and badge tables. */
+/**
+ * The tags written on purpose in prose, which GitHub keeps: README's endpoint
+ * list and badge tables.
+ */
 const KEPT_TAGS = new Set(['code', 'b']);
 
 /**

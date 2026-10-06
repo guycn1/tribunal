@@ -25,17 +25,16 @@
  *      click appeared to do nothing and the error reached only the console.
  *      A trigger Netlify's per-IP rate limit rejects - a bare 429 with an
  *      empty body - shows on the agent's card as that limit.
- *   4. The call log must say what actually happened: a response the token
- *      cap stopped is "truncated" and one a detector flagged
- *      "degenerated"; a "no response" row says whether it was retried or
- *      escalated; the legacy "truncated" badge marks only rows saved
- *      before truncation became a failure; a discarded attempt is dimmed
- *      and the role's own aborted row is not; an abort endpoint's row reads "abort requested",
- *      dimmed and uncaptioned, with its model printed as "n/a" rather than
- *      shortened like a model id; every cell carries its column name for
- *      the narrow card layout; the token breakdown can break only after
- *      its slash; and a model id is shortened by rule without losing the
- *      date stamp.
+ *   4. The call log must say what actually happened: a response the token cap
+ *      stopped is "truncated" and one a detector flagged "degenerated"; a "no
+ *      response" row says whether it was retried or escalated; the legacy
+ *      "truncated" badge marks only rows saved before truncation became a
+ *      failure; a discarded attempt is dimmed and the role's own aborted row is
+ *      not; an abort endpoint's row reads "abort requested", dimmed and
+ *      uncaptioned, with its model printed as "n/a" rather than shortened like
+ *      a model id; every cell carries its column name for the narrow card
+ *      layout; the token breakdown can break only after its slash; and a model
+ *      id is shortened by rule without losing the date stamp.
  *   5. Every badge label, on the agent cards as in the call log, reads in
  *      lowercase in the text itself.
  *   6. The banner above the judges names each representative whose
@@ -386,14 +385,14 @@ const footLabelled = (footRow.match(/data-label=/g) || []).length;
 check('totals row labels its three real value cells', footLabelled === 3, String(footLabelled));
 
 console.log('\n=== Model ids shorten to something the table column can hold ===');
-// The table is narrowest at a 901px viewport (below that the sidebar
-// stacks and the table gets more room, not less): 655px wide, with a 131px
-// Model column, or 640px and 128px once the page has a classic scrollbar.
-// Measured at 655px, the id with "-instruct" left in needed 161px and
-// wrapped; every id below now fits on one line, at 640px too. These assert the rules, not
-// the pixels: a vendor prefix goes, a ":free" suffix goes, a standalone
-// "-instruct" segment goes, and the date stamp stays - it is the only thing
-// telling two pinned snapshots of one model apart.
+// The table is narrowest at a 901px viewport (below that the sidebar stacks and
+// the table gets more room, not less): 655px wide, with a 131px Model column,
+// or 640px and 128px once the page has a classic scrollbar. Measured at 655px,
+// the id with "-instruct" left in needed 161px and wrapped; every id below now
+// fits on one line, at 640px too. These assert the rules, not the pixels: a
+// vendor prefix goes, a ":free" suffix goes, a standalone "-instruct" segment
+// goes, and the date stamp stays - it is the only thing telling two pinned
+// snapshots of one model apart.
 const { shortModelName } = app;
 [
   ['mistralai/mistral-small-24b-instruct-2501', 'mistral-small-24b-2501'],
@@ -426,7 +425,13 @@ console.log("\n=== A card's bottom fade stops where its scrollbar begins ===");
 // content-and-padding width.
 /**
  * A card body inside its fade wrapper, measured as a browser would report it.
- * @param {{offsetWidth: number, clientWidth: number, scrollHeight: number, clientHeight: number, scrollTop?: number}} size
+ * @param {{
+ *   offsetWidth: number,
+ *   clientWidth: number,
+ *   scrollHeight: number,
+ *   clientHeight: number,
+ *   scrollTop?: number
+ * }} size
  * @returns {{wrap: object, body: object}}
  */
 function fadedBody(size) {

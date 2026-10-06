@@ -16,15 +16,14 @@ import type {
 // Written by abort.ts, one row per role still pending when the user clicked
 // Abort. This is a factual record of a client-side decision ("the browser
 // stopped waiting on this call, at the user's request") rather than a claim
-// about what happened server-side - the browser cannot cancel the
-// Background Function running that role, so it may still finish the
-// attempt it is on, and then logs that attempt as its final, aborted row,
-// with the attempt's real tokens and cost. (It checks for this row before
-// each attempt and as each one ends, and stops there - see isTrialAborted
-// below - and checks again before saving a result, which it does not save
-// into a trial it finds aborted.) Both rows are
-// legitimate; this schema already allows multiple api_call_logs rows per
-// role per trial (each retry attempt already produces its own row).
+// about what happened server-side - the browser cannot cancel the Background
+// Function running that role, so it may still finish the attempt it is on, and
+// then logs that attempt as its final, aborted row, with the attempt's real
+// tokens and cost. (It checks for this row before each attempt and as each one
+// ends, and stops there - see isTrialAborted below - and checks again before
+// saving a result, which it does not save into a trial it finds aborted.) Both
+// rows are legitimate; this schema already allows multiple api_call_logs rows
+// per role per trial (each retry attempt already produces its own row).
 //
 // No trials.status enum change needed for this - "aborted" is derived here
 // the same way hadFailures already is, by checking api_call_logs for this
@@ -314,15 +313,14 @@ export async function upsertJudgeRuling(params: {
 }
 
 /**
- * Overwrites (not appends - see agent_progress in schema.sql) the one row
- * for this trial/role with whichever attempt is now actually in flight.
- * Called from openrouter.ts's onAttemptStart callback the moment each
- * attempt begins, so a client polling mid-call sees the real current
- * model/attempt rather than only learning about it once that attempt is
- * later discarded or kept. Errors are thrown here and swallowed by
- * callOpenRouter(), which catches a failing onAttemptStart callback and
- * carries on - this is a live-progress signal, never allowed
- * to interrupt the actual retry logic.
+ * Overwrites (not appends - see agent_progress in schema.sql) the one row for
+ * this trial/role with whichever attempt is now actually in flight.
+ * Called from openrouter.ts's onAttemptStart callback the moment each attempt
+ * begins, so a client polling mid-call sees the real current model/attempt
+ * rather than only learning about it once that attempt is later discarded or
+ * kept. Errors are thrown here and swallowed by callOpenRouter(), which catches
+ * a failing onAttemptStart callback and carries on - this is a live-progress
+ * signal, never allowed to interrupt the actual retry logic.
  */
 export async function upsertAgentProgress(params: {
   trialId: string;
@@ -376,8 +374,8 @@ const GLOBAL_CALL_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 /**
  * Whether the site has logged GLOBAL_CALL_CAP call-log rows in the last 24
- * hours (the abort endpoint's aside), with the count. Always false under `netlify dev`, and false if the
- * count cannot be read.
+ * hours (the abort endpoint's aside), with the count. Always false under
+ * `netlify dev` , and false if the count cannot be read.
  *
  * Deliberately does NOT log anything when the cap is hit (unlike every
  * other outcome in this file) - a logged row here would itself count
@@ -390,25 +388,25 @@ const GLOBAL_CALL_WINDOW_MS = 24 * 60 * 60 * 1000;
  * reaches the browser - a trip is visible only in Netlify's function
  * logs.
  *
- * This whole cap exists to bound worst-case spend on the real, public,
- * deployed site - not to constrain the developer's own local testing,
- * which already needs its own explicit go-ahead before any OpenRouter
- * quota is spent (a separate, stricter gate than this one). NETLIFY_DEV
- * is injected as 'true' by the Netlify CLI itself for every invocation
- * under `netlify dev` (confirmed on 2026-08-29 in the source of the
- * netlify-cli installed then, commands/dev/dev.js; package.json allows
- * later 17.x releases, which could change it). No client request can set it, and a deployed
- * invocation has it only if someone adds it to Netlify's environment
- * variables, which the next paragraph rules out; a genuine hang chasing this
- * exact cap during local testing is what prompted checking for a way to
- * exempt local calls instead of only ever raising the number.
+ * This whole cap exists to bound worst-case spend on the real, public, deployed
+ * site - not to constrain the developer's own local testing, which already
+ * needs its own explicit go-ahead before any OpenRouter quota is spent (a
+ * separate, stricter gate than this one). NETLIFY_DEV is injected as 'true' by
+ * the Netlify CLI itself for every invocation under `netlify dev` (confirmed on
+ * 2026-08-29 in the source of the netlify-cli installed then,
+ * commands/dev/dev.js; package.json allows later 17.x releases, which could
+ * change it). No client request can set it, and a deployed invocation has it
+ * only if someone adds it to Netlify's environment variables, which the next
+ * paragraph rules out; a genuine hang chasing this exact cap during local
+ * testing is what prompted checking for a way to exempt local calls instead of
+ * only ever raising the number.
  *
- * Never set NETLIFY_DEV by hand - not in .env, and above all not in
- * Netlify's own environment variables. It is deliberately absent from
- * .env.example for this reason. Setting it would silently switch off the
- * call cap on the public site, and nothing would look wrong: calls would keep succeeding, the cap would simply never
- * trip. The CLI sets it for you locally; there is no case where you need
- * to.
+ * Never set NETLIFY_DEV by hand - not in .env, and above all not in Netlify's
+ * own environment variables. It is deliberately absent from .env.example for
+ * this reason. Setting it would silently switch off the call cap on the public
+ * site, and nothing would look wrong: calls would keep succeeding, the cap
+ * would simply never trip. The CLI sets it for you locally; there is no case
+ * where you need to.
  */
 export async function isGlobalCallCapExceeded(): Promise<{ exceeded: boolean; count: number }> {
   if (process.env.NETLIFY_DEV === 'true') {
@@ -457,10 +455,10 @@ export async function isGlobalCallCapExceeded(): Promise<{ exceeded: boolean; co
  * stop rather than carry on alone against a trial the user has visibly
  * walked away from.
  *
- * Fails open on error - a Supabase hiccup returns false ("not aborted"),
- * so the call carries on, and a transient lookup failure can never
- * silently kill a real, wanted call. Spending a little extra on a call the user abandoned
- * is the far cheaper outcome of the two.
+ * Fails open on error - a Supabase hiccup returns false ("not aborted"), so the
+ * call carries on, and a transient lookup failure can never silently kill a
+ * real, wanted call. Spending a little extra on a call the user abandoned is
+ * the far cheaper outcome of the two.
  */
 export async function isTrialAborted(trialId: string): Promise<boolean> {
   const supabase = getSupabaseClient();

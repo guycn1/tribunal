@@ -13,8 +13,8 @@
  * not know. For each file it asserts:
  *
  * - every word of the source reaches the page;
- * - no Markdown syntax is printed as text (**, __, a backtick, "](", "][", "[[",
- *   an HTML comment, a table left as a paragraph of pipes);
+ * - no Markdown syntax is printed as text (**, __, a backtick, "](", "][",
+ *   "[[", an HTML comment, a table left as a paragraph of pipes);
  * - the page has as many headings, tables, table cells, rules, code blocks,
  *   list items, quotes, line breaks, links, images and bold spans as the
  *   source asks for.

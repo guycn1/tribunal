@@ -42,15 +42,15 @@ export function sentToMainAddress(event: HandlerEvent): boolean {
  * shape. Nothing in netlify.toml sends it today, so it is a harmless
  * fallback rather than a path either environment takes.
  *
- * For the path fallback, id is located by UUID shape rather than by
- * position: production's redirect engine does not rewrite event.path to the
- * target function's path, so it arrives as the original request path (e.g.
+ * For the path fallback, id is located by UUID shape rather than by position:
+ * production's redirect engine does not rewrite event.path to the target
+ * function's path, so it arrives as the original request path (e.g.
  * /api/trials/:id/representatives/:role), which has a literal path segment
- * ("representatives") sitting between id and role - unlike the direct
- * function path (/.netlify/functions/representative-background/:id/:role),
- * where they are adjacent. Trial ids are always UUIDs, so searching for that shape
- * finds id correctly under either layout. role, when expected, is always
- * the final segment in both layouts.
+ * ("representatives") sitting between id and role - unlike the direct function
+ * path (/.netlify/functions/representative-background/:id/:role), where they
+ * are adjacent. Trial ids are always UUIDs, so searching for that shape finds
+ * id correctly under either layout. role, when expected, is always the final
+ * segment in both layouts.
  */
 export function extractParams(event: HandlerEvent, paramCount: 1 | 2): { id?: string; role?: string } {
   const qs = event.queryStringParameters || {};

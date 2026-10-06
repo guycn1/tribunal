@@ -23,10 +23,9 @@ import type { JudgeRole, RepresentativeRole } from './lib/types';
 
 // Judges are asked for the longest output in this system - a fuller opinion
 // plus the leading VERDICT line, against a longer word target than a
-// representative's. Sized with headroom above that target rather than a
-// tight fit against it,
-// since a reply that reaches the cap is never kept: callOpenRouter()
-// retries or escalates it, which costs a further attempt.
+// representative's. Sized with headroom above that target rather than a tight
+// fit against it, since a reply that reaches the cap is never kept:
+// callOpenRouter() retries or escalates it, which costs a further attempt.
 //
 // Asked for, not what was observed: in api_call_logs as of 2026-09-21,
 // the representatives had run out of room several times as often as the

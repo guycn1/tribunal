@@ -99,7 +99,7 @@ for (const [name, value] of backendMarkers) {
   check(`${name} has the same value in both`, frontendMarkers.get(name) === value, `backend '${value}' vs frontend '${frontendMarkers.get(name)}'`);
 }
 
-// --- 1b. Which markers mean "discarded and retried": the same set on both sides
+// --- 1b. Which markers mean "discarded and retried": one set on both sides --
 console.log('\n=== Both sides agree which markers are retries, not outcomes ===');
 
 // A row carrying one of these is not a role's final outcome. The frontend

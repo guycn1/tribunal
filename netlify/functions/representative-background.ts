@@ -248,30 +248,31 @@ export const handler = safeHandler(rawHandler);
 // 17.x releases, which could change it. The same goes for
 // judge-background.ts.
 //
-// Why a Background Function at all: the synchronous limit on Netlify's
-// free plan, as documented when checked on 2026-08-28, was far shorter
-// (the budget here was first built around a mistaken, longer one) than
-// real calls on the default model at the time routinely took per attempt.
+// Why a Background Function at all: the synchronous limit on Netlify's free
+// plan, as documented when checked on 2026-08-28, was far shorter (the budget
+// here was first built around a mistaken, longer one) than real calls on the
+// default model at the time routinely took per attempt.
 // No retry or timeout tuning inside callOpenRouter() could close that gap;
-// Background Functions get far longer. The trade-off: the client never
-// receives this handler's return value, since Netlify answers 202 at once, so the frontend learns the
-// outcome by polling GET /api/trials/:id - see the comment above the
-// site-gate and call-cap checks for what that means for their rejections.
-// Confirmed in production on 2026-09-21: all 28 trigger POSTs across four
-// live trials came back with Netlify's own 202 in ~0.3-0.5s, a status no
-// handler in this repository returns.
+// Background Functions get far longer. The trade-off: the client never receives
+// this handler's return value, since Netlify answers 202 at once, so the
+// frontend learns the outcome by polling GET /api/trials/:id - see the comment
+// above the site-gate and call-cap checks for what that means for their
+// rejections. Confirmed in production on 2026-09-21: all 28 trigger POSTs
+// across four live trials came back with Netlify's own 202 in ~0.3-0.5s, a
+// status no handler in this repository returns.
 //
 // No `config` export, on purpose. Netlify's bundler reads one only from a
-// function written with a default export; for a named `handler` export
-// like this one it ignores everything in it (parseSource in
+// function written with a default export; for a named `handler` export like
+// this one it ignores everything in it (parseSource in
 // @netlify/zip-it-and-ship-it 9.42.1, the version inside the installed
-// netlify-cli, read on 2026-10-02; a later version could differ). An exported config here
-// once declared background: true, a custom path and a per-IP rate limit,
-// and none of the three ever took effect: the 202s come from the filename,
-// routing comes from netlify.toml, and the rate limit was never applied -
-// 75 requests in 80 seconds from one IP on 2026-10-02 all got through. The
-// per-IP rate limit is on this function's redirect in netlify.toml, and the
-// handler's first check accepts only requests that came that way.
+// netlify-cli, read on 2026-10-02; a later version could differ). An exported
+// config here once declared background: true, a custom path and a per-IP rate
+// limit, and none of the three ever took effect: the 202s come from the
+// filename, routing comes from netlify.toml, and the rate limit was never
+// applied - 75 requests in 80 seconds from one IP on 2026-10-02 all got
+// through. The per-IP rate limit is on this function's redirect in
+// netlify.toml, and the handler's first check accepts only requests that came
+// that way.
 //
 // The filename and the redirect target in netlify.toml must name the same
 // function. When this file was renamed from representative.ts, every call

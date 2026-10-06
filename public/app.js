@@ -8,19 +8,22 @@
  *
  * This file is served as-is: no build step and no modules. It cannot import
  * from the Netlify Functions, so the values both sides must agree on are
- * duplicated here, and tests/shared-constants.test.js checks them: the
- * markers, the fixed messages and the phrase that marks a truncation, the
- * roles with their names and seats, and POLL_TIMEOUT_MS and
- * INTERRUPTED_THRESHOLD_MS against the server's time budget. It also checks
- * the values this file shares with styles.css: the scrollbar's resting
- * opacity, which styles.css repeats as a fallback, the spinner's two
- * durations, the class that dims a call-log row, and the custom property
- * that carries a card's scrollbar width to its fade. The types below mirror netlify/functions/lib/types.ts for the same reason. They
- * document the JSON this page receives, for readers and editors - nothing
+ * duplicated here, and tests/shared-constants.test.js checks them: the markers,
+ * the fixed messages and the phrase that marks a truncation, the roles with
+ * their names and seats, and POLL_TIMEOUT_MS and INTERRUPTED_THRESHOLD_MS
+ * against the server's time budget. It also checks the values this file shares
+ * with styles.css: the scrollbar's resting opacity, which styles.css repeats as
+ * a fallback, the spinner's two durations, the class that dims a call-log row,
+ * and the custom property that carries a card's scrollbar width to its fade.
+ * The types below mirror netlify/functions/lib/types.ts for the same reason.
+ * They document the JSON this page receives, for readers and editors - nothing
  * type-checks this file (tsconfig.json covers netlify/functions only).
  */
 
-/** @typedef {'jon_snow' | 'tyrion_lannister' | 'daenerys_targaryen' | 'grey_worm'} RepresentativeRole */
+/**
+ * @typedef {'jon_snow' | 'tyrion_lannister' | 'daenerys_targaryen'
+ *   | 'grey_worm'} RepresentativeRole
+ */
 /** @typedef {'barak' | 'elon' | 'shamgar'} JudgeRole */
 /** @typedef {RepresentativeRole | JudgeRole} AgentRole */
 /** @typedef {'defense' | 'prosecution'} Seat */
@@ -74,10 +77,28 @@
 /**
  * The body of GET /api/trials/:id.
  * @typedef {object} FullTrialResponse
- * @property {{id: string, caseCode: string, status: 'created' | 'completed', createdAt: string, updatedAt: string}} trial
+ * @property {{
+ *   id: string,
+ *   caseCode: string,
+ *   status: 'created' | 'completed',
+ *   createdAt: string,
+ *   updatedAt: string
+ * }} trial
  * @property {CaseDefinition} caseDef
- * @property {Array<{role: RepresentativeRole, seat: Seat, argumentText: string, modelUsed: string, createdAt: string}>} representativeArguments
- * @property {Array<{role: JudgeRole, verdict: Verdict, reasoningText: string, modelUsed: string, createdAt: string}>} judgeRulings
+ * @property {Array<{
+ *   role: RepresentativeRole,
+ *   seat: Seat,
+ *   argumentText: string,
+ *   modelUsed: string,
+ *   createdAt: string
+ * }>} representativeArguments
+ * @property {Array<{
+ *   role: JudgeRole,
+ *   verdict: Verdict,
+ *   reasoningText: string,
+ *   modelUsed: string,
+ *   createdAt: string
+ * }>} judgeRulings
  * @property {ApiCallLog[]} apiCallLogs Oldest first.
  * @property {Object<string, AttemptProgress>} agentProgress Keyed by role.
  */
@@ -257,19 +278,17 @@ const TRANSIENT_RETRIED_MARKER = '[transient-retried]';
 const ABORTED_MID_CALL_MARKER = '[aborted-mid-call]';
 
 /**
- * Sent as the X-Site-Gate header on every call that creates a trial,
- * spends OpenRouter quota or aborts a trial (see isSiteGateOk in
- * netlify/functions/lib/siteGate.ts). This is NOT a real secret and isn't
- * meant to be one - it's shipped in this public, unauthenticated file, so
- * anyone who looks can read it. Its only job is to reject automated
- * traffic that never loaded this page at all. Must match the SITE_GATE_TOKEN environment
- * variable configured on the Netlify Functions side exactly, or every
- * gated request is rejected (creating a trial with a 401; an agent call
- * silently, visible only in Netlify's function logs; an abort with a 401
- * the page does not show, so the running calls are not told to stop) - if
- * that env var is
- * left unset there,
- * isSiteGateOk() fails open (allows everything through) rather than
+ * Sent as the X-Site-Gate header on every call that creates a trial, spends
+ * OpenRouter quota or aborts a trial (see isSiteGateOk in
+ * netlify/functions/lib/siteGate.ts). This is NOT a real secret and isn't meant
+ * to be one - it's shipped in this public, unauthenticated file, so anyone who
+ * looks can read it. Its only job is to reject automated traffic that never
+ * loaded this page at all. Must match the SITE_GATE_TOKEN environment variable
+ * configured on the Netlify Functions side exactly, or every gated request is
+ * rejected (creating a trial with a 401; an agent call silently, visible only
+ * in Netlify's function logs; an abort with a 401 the page does not show, so
+ * the running calls are not told to stop) - if that env var is left unset
+ * there, isSiteGateOk() fails open (allows everything through) rather than
  * locking out real users, so this constant being "wrong" server-side is a
  * silent no-op, not an outage.
  */
@@ -492,11 +511,11 @@ const ORDINAL_WORDS = ['zeroth', 'first', 'second', 'third', 'fourth', 'fifth'];
 /**
  * Spells out a small ordinal: 1 -> "first", 2 -> "second", and so on.
  *
- * Used for the "(first attempt)"/"(second attempt)" suffix on a
- * still-loading card's model line (see buildAgentStatusBody) - only ever
- * needs to cover however many attempts buildRetryTiers() in openrouter.ts
- * gives any one tier (2 at most, as of 2026-10-05), but written to degrade to a plain
- * ordinal number rather than throw if that ever changes.
+ * Used for the "(first attempt)"/"(second attempt)" suffix on a still-loading
+ * card's model line (see buildAgentStatusBody) - only ever needs to cover
+ * however many attempts buildRetryTiers() in openrouter.ts gives any one tier
+ * (2 at most, as of 2026-10-05), but written to degrade to a plain ordinal
+ * number rather than throw if that ever changes.
  *
  * @param {number} n A one-based attempt number.
  * @returns {string}
@@ -731,12 +750,11 @@ function updateHistoryLockState() {
  * Persisting is not just bookkeeping - it does two jobs, and telling the
  * in-flight calls to stop is the more important one. Aborting a fetch()
  * client-side cannot stop the Netlify invocation it was talking to, so the
- * persisted row is the only channel there is: each running call checks for
- * it before each attempt and as each one ends, and stops itself
- * (isTrialAborted in db.ts). Second,
- * it makes the abort durable, so the sidebar reflects it on a later visit
- * and a stray success or failure logged after the fact can't make an
- * aborted run look like an ordinary one.
+ * persisted row is the only channel there is: each running call checks for it
+ * before each attempt and as each one ends, and stops itself (isTrialAborted in
+ * db.ts). Second, it makes the abort durable, so the sidebar reflects it on a
+ * later visit and a stray success or failure logged after the fact can't make
+ * an aborted run look like an ordinary one.
  *
  * @returns {Promise<void>} Settles once beginTrial() has finished unwinding
  *   and the loading overlay is cleared. Never rejects.
@@ -1387,14 +1405,14 @@ function renderHistoryPlaceholder(message, showSpinner) {
   `;
 }
 
-// This endpoint only touches Supabase, no OpenRouter/Netlify quota at
-// stake, so a few quick retries on a transient failure are cheap and
-// worthwhile - a brief failure here can clear a moment later (one was seen
-// in local testing, with a manual test call landing on the dev server at
-// the same moment as a page load), so it gets the same "self-heal before showing an alarming error"
-// treatment representative/judge calls already get - just on a much
-// shorter, lighter budget suited to a small metadata fetch rather than a
-// real generation.
+// This endpoint only touches Supabase, no OpenRouter/Netlify quota at stake, so
+// a few quick retries on a transient failure are cheap and worthwhile - a brief
+// failure here can clear a moment later (one was seen in local testing, with a
+// manual test call landing on the dev server at the same moment as a page
+// load), so it gets the same "self-heal before showing an alarming error"
+// treatment representative/judge calls already get - just on a much shorter,
+// lighter budget suited to a small metadata fetch rather than a real
+// generation.
 /** How many times to try GET /api/trials before showing an error. */
 const HISTORY_RETRY_ATTEMPTS = 3;
 /** Pause after a failed attempt, in ms, multiplied by the attempt number. */
@@ -1409,13 +1427,12 @@ const HISTORY_RETRY_BACKOFF_MS = 700;
  * @returns {Promise<void>} Never rejects.
  */
 async function refreshHistory() {
-  // Only show the big "fetching" placeholder when there's genuinely
-  // nothing to look at yet - this is what used to look frozen on a slow
-  // fetch (observed taking up to ~10s on 2026-08-27, while listTrials in
-  // db.ts still made its queries one after another - see the note there).
-  // A refresh of an
-  // already-populated list leaves the existing items on screen rather than
-  // flickering them out while fresh data loads.
+  // Only show the big "fetching" placeholder when there's genuinely nothing to
+  // look at yet - this is what used to look frozen on a slow fetch (observed
+  // taking up to ~10s on 2026-08-27, while listTrials in db.ts still made its
+  // queries one after another - see the note there).
+  // A refresh of an already-populated list leaves the existing items on screen
+  // rather than flickering them out while fresh data loads.
   if (state.history.length === 0) {
     renderHistoryPlaceholder('Fetching run history…', true);
   }
@@ -1642,10 +1659,11 @@ function buildAgentStatusBody(entry, role, verb) {
       const suffix = attempt.tierMaxAttempts > 1 ? ` (${ordinalWord(attempt.attemptInTier)} attempt)` : '';
       modelLine = `<div class="model-chain">Model: <span class="model-name">${shortModelName(attempt.model)}${suffix}</span></div>`;
     } else {
-      // No agent_progress row yet: the call's first attempt has not started
-      // or its write has not reached the database - and a call that ends
-      // before any attempt (turned away by the site gate or the call cap,
-      // say, or stopped by an abort) never writes one. Falls back to the starting model rather than showing nothing.
+      // No agent_progress row yet: the call's first attempt has not started or
+      // its write has not reached the database - and a call that ends before
+      // any attempt (turned away by the site gate or the call cap, say, or
+      // stopped by an abort) never writes one. Falls back to the starting model
+      // rather than showing nothing.
       const modelId = state.modelInfo && state.modelInfo[role];
       modelLine = modelId ? `<div class="model-chain">Model: <span class="model-name">${shortModelName(modelId)}</span></div>` : '';
     }
@@ -1774,36 +1792,34 @@ const SCROLLBAR_FADE_MS = 220;
  * Fades a scrollbar thumb brighter while the pointer is over its
  * container, and back to rest when it leaves.
  *
- * An earlier version of this used a fixed hover-intent delay (wait, then
- * snap) to keep an incidental pointer pass from flashing the scrollbar
- * bright. That read as sluggish on a deliberate hover (real user
- * report, 2026-09-04): motion didn't start until the delay had already
- * elapsed. This drives the fade itself in JS instead - a plain
- * rAF loop writes progressively interpolated values into a CSS custom
- * property (--scrollbar-thumb-opacity, read by the color-mix() calls in
- * styles.css) every frame. Each individual frame is just an ordinary,
- * instant custom-property change, which every browser already handles
- * fine (that's exactly the mechanism the old .scrollbar-hover class swap
- * used) - repeating it ~13 times over SCROLLBAR_FADE_MS produces a real
- * smooth fade with no CSS transition or animation involved. This incidentally fixes the original flash problem better
- * than the delay did, with no artificial dead time: a quick pass only
- * reaches a small partial brightening before reversing back towards
- * rest, rather than either waiting through a delay or snapping to full
- * brightness instantly. animateTo() reverses smoothly from wherever the
- * fade currently is if the target flips mid-animation (e.g. the pointer
- * leaves while still fading in), not by restarting from rest.
+ * An earlier version of this used a fixed hover-intent delay (wait, then snap)
+ * to keep an incidental pointer pass from flashing the scrollbar bright. That
+ * read as sluggish on a deliberate hover (real user report, 2026-09-04): motion
+ * didn't start until the delay had already elapsed. This drives the fade itself
+ * in JS instead - a plain rAF loop writes progressively interpolated values
+ * into a CSS custom property (--scrollbar-thumb-opacity, read by the
+ * color-mix() calls in styles.css) every frame. Each individual frame is just
+ * an ordinary, instant custom-property change, which every browser already
+ * handles fine (that's exactly the mechanism the old .scrollbar-hover class
+ * swap used) - repeating it ~13 times over SCROLLBAR_FADE_MS produces a real
+ * smooth fade with no CSS transition or animation involved. This incidentally
+ * fixes the original flash problem better than the delay did, with no
+ * artificial dead time: a quick pass only reaches a small partial brightening
+ * before reversing back towards rest, rather than either waiting through a
+ * delay or snapping to full brightness instantly. animateTo() reverses smoothly
+ * from wherever the fade currently is if the target flips mid-animation (e.g.
+ * the pointer leaves while still fading in), not by restarting from rest.
  *
- * A bonus not asked for: this also gives Firefox the actual fade effect
- * for the first time - its scrollbar-color has no thumb-scoped
- * pseudo-classes for a genuine :hover-driven CSS rule to key off, but a
- * plain custom-property value it's already reading recalculates on
- * every write exactly like Chromium does, so the same JS loop works
- * identically there. The dragging tier is separate and untouched by any of
- * this - a ::-webkit-scrollbar-thumb:active rule, snapping instantly, since
- * direct-manipulation feedback to a physical mouse press arguably should
- * stay instant, not fade in. It did not render in Chrome, Edge or Firefox
- * as measured in September 2026 (Chrome 154, Edge 153, Firefox 155),
- * though - see the scrollbar comments in styles.css.
+ * A bonus not asked for: this also gives Firefox the actual fade effect for the
+ * first time - its scrollbar-color has no thumb-scoped pseudo-classes for a
+ * genuine :hover-driven CSS rule to key off, but a plain custom-property value
+ * it's already reading recalculates on every write exactly like Chromium does,
+ * so the same JS loop works identically there. The dragging tier is separate
+ * and untouched by any of this - a ::-webkit-scrollbar-thumb:active rule,
+ * snapping instantly, since direct-manipulation feedback to a physical mouse
+ * press arguably should stay instant, not fade in. It did not render in Chrome,
+ * Edge or Firefox as measured in September 2026 (Chrome 154, Edge 153, Firefox
+ * 155), though - see the scrollbar comments in styles.css.
  *
  * @param {HTMLElement} el The element to watch for the pointer. The opacity
  *   is written to its --scrollbar-thumb-opacity custom property, which a
@@ -1933,7 +1949,10 @@ function agentCardSignature(entry, role) {
  * @param {HTMLElement} container The phase's card grid.
  * @param {AgentRole[]} roles In display order - one card per role.
  * @param {(role: AgentRole) => (AgentEntry | undefined)} entryFor
- * @param {(role: AgentRole, entry: AgentEntry | undefined) => BuiltCard} buildCard
+ * @param {(
+ *   role: AgentRole,
+ *   entry: AgentEntry | undefined
+ * ) => BuiltCard} buildCard
  */
 function reconcileAgentCards(container, roles, entryFor, buildCard) {
   roles.forEach((role, index) => {
@@ -2189,15 +2208,14 @@ function renderCallLog() {
   for (const entry of state.callLog) {
     const tr = document.createElement('tr');
     const err = entry.errorMessage || '';
-    // A truncated or degenerate attempt that was discarded (then retried
-    // at the same tier or escalated to the next one) gets its own row,
-    // tagged with one of the two "retried" markers - see the DEGENERATE_*_MARKER
-    // comment above. A row tagged with the "final" marker instead means
-    // the chain had nothing left to try - the last tier, or no time budget
-    // for another - and this attempt was *also* truncated/degenerate: a
-    // genuinely fatal outcome, not a recovered one, so it's styled
-    // distinctly (red, full opacity, no retry caption) rather than folded
-    // into the same "still recovering" look.
+    // A truncated or degenerate attempt that was discarded (then retried at the
+    // same tier or escalated to the next one) gets its own row, tagged with one
+    // of the two "retried" markers - see the DEGENERATE_*_MARKER comment above.
+    // A row tagged with the "final" marker instead means the chain had nothing
+    // left to try - the last tier, or no time budget for another - and this
+    // attempt was *also* truncated/degenerate: a genuinely fatal outcome, not a
+    // recovered one, so it's styled distinctly (red, full opacity, no retry
+    // caption) rather than folded into the same "still recovering" look.
     const isRetriedSameModel = err.startsWith(DEGENERATE_RETRIED_SAME_MODEL_MARKER);
     const isRetriedDiffModel = err.startsWith(DEGENERATE_RETRIED_DIFF_MODEL_MARKER);
     const isDegenerateRetried = isRetriedSameModel || isRetriedDiffModel;
@@ -2210,10 +2228,10 @@ function renderCallLog() {
     // broken model id has no plausible upside.
     const isHttpErrorEscalated = err.startsWith(HTTP_ERROR_ESCALATED_MARKER);
     // A transient failure (timeout or network error/408/429/5xx/empty or
-    // cut-short reply)
-    // that was retried or escalated. These are the rows that did not exist at all before
-    // 2026-09-20 - the retry branches used to loop silently, which is
-    // exactly why a six-minute stall left nothing to read here afterwards.
+    // cut-short reply) that was retried or escalated. These are the rows that
+    // did not exist at all before 2026-09-20 - the retry branches used to loop
+    // silently, which is exactly why a six-minute stall left nothing to read
+    // here afterwards.
     const isTransientRetried = err.startsWith(TRANSIENT_RETRIED_MARKER);
     const isAbortedMidCall = err.startsWith(ABORTED_MID_CALL_MARKER);
     // The row the abort endpoint writes for each role still pending when
