@@ -512,10 +512,10 @@ export async function agentCallRefusal(trialId: string, role: string): Promise<'
 }
 
 /**
- * The roles that already have an abort row in this trial, so abort.ts
- * writes at most one per role however often it is called. Fails open: a
- * lookup error returns an empty set, and the rows are written anyway,
- * since they are what stops the running calls.
+ * The roles that already have an abort row in this trial, for which
+ * abort.ts writes no second one. Fails open: a lookup error returns an
+ * empty set, and the rows are written anyway, since they are what stops the
+ * running calls.
  */
 export async function getAbortedRoles(trialId: string): Promise<Set<string>> {
   const supabase = getSupabaseClient();

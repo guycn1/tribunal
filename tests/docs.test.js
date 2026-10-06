@@ -1371,15 +1371,16 @@ function isCommit(hash) {
  * of something with a home of its own is a link to that home, at its first
  * mention in each paragraph, and every link lands. Checked here: that every
  * link resolves (a file or directory in the repository, a heading's anchor,
- * a commit by its full hash); that no link destination holds whitespace; and,
+ * a commit by its full hash, or a compare page by full hashes whose base is
+ * an ancestor of its head); that no link destination holds whitespace; and,
  * for the kinds of mention a script can recognise, that the first mention in
  * each paragraph is linked to the right place - a file or directory in the
- * repository, another Markdown file, a commit hash, `npm test`, a database
- * table outside its own README section, an API route outside README's
- * endpoint list, and the thing a README section's heading names ("The
- * escalation chain") outside that section. Whether a prose mention of a
- * commit is linked, or a link's words describe its target, stays a reading
- * job.
+ * repository, another Markdown file, `npm test`, a database table outside
+ * its own README section, an API route outside README's endpoint list, and
+ * the thing a README section's heading names ("The escalation chain")
+ * outside that section - and that a commit hash is linked at every mention.
+ * Whether a prose mention of a commit is linked, or a link's words describe
+ * its target, stays a reading job.
  */
 function checkReferencesAreLinks() {
   console.log('\n=== Every Markdown file but CLAUDE.md: references are links (HARD RULE 4) ===');
@@ -1438,7 +1439,7 @@ function checkReferencesAreLinks() {
         }
       }
     }
-    check(`${doc}: every link lands - a tracked file or directory, a heading's anchor, or a commit by its full hash`, broken.length === 0, broken.join(' | '));
+    check(`${doc}: every link lands - a tracked file or directory, a heading's anchor, or a commit or compare page by full hashes`, broken.length === 0, broken.join(' | '));
     check(`${doc}: no link destination holds whitespace`, spaced.length === 0, spaced.join(' | '));
 
     /**

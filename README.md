@@ -21,7 +21,7 @@ him up a tier.*
 
 A fixed, canonical fictional tribunal — **[Case T-001: The Realm v. Jon
 Snow](SPEC.md#1-the-charge-sheet)** — argued and ruled on by [seven independent
-AI agents](SPEC.md#2-the-seven-agents): [four
+**AI agents**](SPEC.md#2-the-seven-agents): [four
 representatives](SPEC.md#representatives) (two defense, two prosecution) and
 [three judges](SPEC.md#judges), each modelled on a distinct real judicial
 reasoning method (Aharon Barak, Menachem Elon, Meir Shamgar).
@@ -341,11 +341,11 @@ description. Everything this app's own code returns is JSON.
 - <code><b>POST</b> /api/trials/:id/abort</code>\
   [`abort.ts`](netlify/functions/abort.ts): Takes `{ "roles": [...] }` — the
   roles still pending — records [an abort](#aborting-a-trial) for each one it
-  recognises, at most once per role per trial, and replies with the roles it
-  recorded. The running calls check for it before every attempt and as each
-  attempt ends, and stop. Needs the [site-gate
-  header](#anti-abuse-and-cost-controls). `409` for a trial already completed,
-  which has nothing left running to stop.
+  recognises, writing no second one for a role named twice or already
+  recorded, and replies with the roles it recorded. The running calls check
+  for it before every attempt and as each attempt ends, and stop. Needs the
+  [site-gate header](#anti-abuse-and-cost-controls). `409` for a trial already
+  completed, which has nothing left running to stop.
 
 #### The two agent endpoints
 
@@ -738,9 +738,10 @@ DOM](tests/support/load-app.js) — except
     completed and never gains a result;
   - that [abort rows](#api_call_logs) do not count against [the call
     cap](#anti-abuse-and-cost-controls), and [the abort
-    endpoint](#api-endpoints) needs the site-gate header, writes at most one per
-    role, refuses a completed trial, still records the abort when a lookup
-    fails, and replies with only the rows it wrote;
+    endpoint](#api-endpoints) needs the site-gate header, writes no second row
+    for a role named twice or already recorded, refuses a completed trial,
+    still records the abort when a lookup fails, and replies with only the
+    rows it wrote;
   - that [the agent endpoints](#the-two-agent-endpoints) turn away a call the
     page never sends: a role that already has an outcome, a trial that was
     aborted, or a role that is not one of [the
@@ -824,9 +825,9 @@ and compares the page with its source:
 
 That is what catches a defect nobody has thought of yet. Run it [before every
 commit that touches a Markdown file](CLAUDE.md#when-to-run-them); it uses one
-unauthenticated GitHub request per file, or per piece of a file too large for
-GitHub's API, which [renders at most 400
-KB](CLAUDE.md#2026-10-06-readmes-hero-and-images-in-the-render-check): such a
+unauthenticated GitHub request per file, or per piece of a file over 200,000
+characters: GitHub's API [renders at most 400
+KB](CLAUDE.md#2026-10-06-readmes-hero-and-images-in-the-render-check), so such a
 file is sent in pieces cut before its headings.
 
 ### Local costs

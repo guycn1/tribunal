@@ -37,9 +37,10 @@
  *      any call-log row stored as failed, an abort's included.
  *   7. The abort endpoint replies with the roles whose rows it wrote, and
  *      only those: a role it does not recognise, or whose row the
- *      database rejects, is left out. It writes at most one row per role
- *      per trial, needs the site-gate header, refuses a completed trial,
- *      and still records the abort when the trial cannot be looked up.
+ *      database rejects, is left out. It writes one row for a role named
+ *      twice and none for a role already recorded, needs the site-gate
+ *      header, refuses a completed trial, and still records the abort when
+ *      the trial cannot be looked up.
  *   8. An agent call the page never sends is refused before any model
  *      call, unlogged: a role that already has a final outcome, a role
  *      that is not one of the seven (a name every object inherits, such
@@ -533,7 +534,7 @@ async function main() {
   const unknown = await abortWith('9e8d7c6b-5a4f-4e3d-8c2b-1a0f9e8d7c6b', ['barak', 'jon_snow']);
   check('a row the database rejects is not reported', unknown.status === 200 && unknown.logged.length === 0 && unknown.rows.length === 0, JSON.stringify(unknown));
 
-  say('\n=== The abort endpoint writes at most one row per role, and only for a running trial ===');
+  say('\n=== The abort endpoint writes one row per role named, none for one already recorded, and only for a running trial ===');
   const twice = await abortWith(TRIAL_ID, ['barak', 'barak', 'jon_snow', 'jon_snow', 'barak']);
   check('a role named more than once gets one row', twice.status === 200 && JSON.stringify(twice.logged) === JSON.stringify(['barak', 'jon_snow']) && twice.rows.length === 2, JSON.stringify(twice));
   const again = await abortWith(TRIAL_ID, ['barak', 'elon'], { rows: [judgeRow('barak', ABORTED_BY_USER_MESSAGE, TRIAL_ID)] });

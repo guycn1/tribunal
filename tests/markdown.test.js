@@ -251,9 +251,10 @@ for (const file of markdownFiles()) {
     // A line of only - or = under text makes that text a heading.
     if (/^\s*(-+|=+)\s*$/.test(lineText) && prevIsParagraph) found.setext.push(at(n, `"${prev.trim().slice(0, 40)}" becomes a heading`));
     // A list item, a "1." item, a heading or a quote can start in the middle
-    // of a paragraph: a line wrapped so it begins with "- ", "+ ", "1. ", "# "
-    // or ">" starts that block. A list here always follows a blank line, so
-    // one directly under an unindented paragraph line is a wrapped line.
+    // of a paragraph: a line wrapped so it begins with "- ", "* ", "+ ", "1. ",
+    // "1) ", "# " or ">" starts that block. A list here always follows a blank
+    // line, so one directly under an unindented paragraph line is a wrapped
+    // line.
     if (BLOCK_START.test(lineText) && prevIsParagraph && !/^\s/.test(prev) && !LIST_ITEM.test(prev) && !/^>/.test(prev)) {
       found.interrupts.push(at(n, lineText));
     }

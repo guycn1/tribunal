@@ -91,8 +91,9 @@
  * @property {string} createdAt
  * @property {string} updatedAt
  * @property {boolean} hadFailures Whether any of the trial's call-log rows
- *   is stored as failed: a failed attempt, recovered or not, or a row an
- *   abort wrote. Deliberately not what the sidebar label is based on - see
+ *   is stored as failed: a failed attempt, recovered or not, the row a call
+ *   ends on when the server has no OpenRouter key, or a row an abort wrote.
+ *   Deliberately not what the sidebar label is based on - see
  *   TOTAL_EXPECTED_RESULTS.
  * @property {boolean} wasAborted
  * @property {number} resultCount How many of the seven expected results
@@ -824,9 +825,9 @@ async function abortCurrentTrial() {
 // together. Measured, not assumed: as of 2026-09-21, across the 41 trials
 // in this project's own api_call_logs that carry real duration data, 36 ran
 // all 4 representatives simultaneously (reconstructing each call's start as
-// its timestamp minus duration_ms) - including every one of the four trials
-// run against the live deployed site, each of which ran 4 of 4
-// representatives and 3 of 3 judges at once. What these constants
+// its timestamp minus duration_ms) - including the four trials run on the
+// live deployed site to verify that day's merge, every one of which ran 4 of
+// 4 representatives and 3 of 3 judges at once. What these constants
 // actually bound now is how many trigger POSTs overlap - not OpenRouter's
 // account-level concurrency, and not Netlify's per-IP rate limit either,
 // which counts requests in a window however they overlap.
@@ -836,7 +837,7 @@ async function abortCurrentTrial() {
 // model, but while the agent calls were still synchronous functions - and
 // has since been overtaken by evidence: since the move, full trials have
 // run with all 4 representatives in flight together (36 of the 41 measured
-// above, and all four production trials of 2026-09-21), so there is no
+// above, and all four of the 2026-09-21 verification trials), so there is no
 // demonstrated problem left to solve. Removing the pool
 // would gain nothing either: a bounded, staggered dispatch costs about a
 // second per phase.

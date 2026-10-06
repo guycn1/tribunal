@@ -33,11 +33,10 @@ import { logApiCall, getTrial, getAbortedRoles, ABORTED_BY_USER_MESSAGE, NO_MODE
  * site-wide call cap (isGlobalCallCapExceeded in db.ts).
  *
  * Replies with the roles whose rows were written. A role it does not
- * recognise is skipped, each role is recorded at most once per trial - a
- * role named twice, or one that already has an abort row, gets no second
- * one - and one whose row the database rejects (an id with no trial behind
- * it, say) is left out of the reply. So a trial never holds more than one
- * abort row per role, however the endpoint is called.
+ * recognise is skipped; a role named twice gets one row, and one that
+ * already has an abort row in the trial gets none; and one whose row the
+ * database rejects (an id with no trial behind it, say) is left out of the
+ * reply.
  *
  * Needs the site-gate header, as creating a trial does, and refuses a
  * trial already marked completed (409): every judge has an outcome then,

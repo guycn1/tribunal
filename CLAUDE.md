@@ -375,7 +375,7 @@ tag it does not know.
   centre a block but not set its spacing: blank lines collapse, and a `<br>`
   alone on its line adds one line of space.
 - A list follows a blank line, and a wrapped line never starts with `- `, `+ `,
-  `* `, `1. `, `#` or `>`.
+  `* `, `1. `, `1) `, `#` or `>`.
 - Nothing but a blank line sits directly above a `---`, and no `---` sits right
   before a heading.
 - No pipe inside a code span in a table, no `[[wiki-style]]` link, and no line
@@ -638,7 +638,10 @@ it should be.
   - don't re-run the full 4-representative + 3-judge pipeline to verify a fix —
     hit a single agent endpoint (e.g.
     `POST /api/trials/:id/representatives/jon_snow`) directly instead, and
-    reserve full end-to-end runs for a final check.
+    reserve full end-to-end runs for a final check. The endpoint takes the
+    request only through its `/api` route, with the site-gate header, and
+    refuses a role that already has a final outcome in the trial, so each
+    such call needs a trial where that role has none.
   - **There is no request allowance to budget against.** The free-tier daily
     request cap (50/day, or 1000/day with $10+ of credit added) applied only
     until 2026-08-28; since then every model this project calls is a genuinely
@@ -2347,6 +2350,10 @@ zero escalations, zero truncations.**
     count instead of ruling presence for the remaining rounds.
   - Not a bug in the shipped app - `deriveRoleStates`'s presence-based check is
     correct for its real use case (a trial that only ever runs once).
+  - *(A trial can no longer be reused this way: since 2026-10-06 an agent
+    endpoint refuses a role that already has a final outcome, so each round
+    needs a trial of its own - see "2026-10-06: the abort endpoint, and agent
+    calls the page never sends".)*
 
 #### The rate limit raised, the merge, and the production env vars
 
@@ -2671,7 +2678,10 @@ cover everything relevant, load-bearingly").**
       methods;
     - the Background Function claims (including that the `-background` filename,
       which local dev keys off, and `config.background`, which the platform keys
-      off, agree);
+      off, agree); *(the platform did not read `config.background` either: with
+      a named `handler` export the whole `config` export was ignored, as found
+      on 2026-10-02, and since then the suite fails if a function has one -
+      see that day's entry)*
     - rate-limit and quota-spending claims;
     - every table, column, allowed value, uniqueness rule, cascade and RLS claim
       against `schema.sql`;
@@ -4934,6 +4944,32 @@ lists, and the ones that the new handler checks, the abort endpoint's site gate
 and refusal, the new suites and checks and README's new layout had left behind
 were completed. The details are in the commit message.
 
+### 2026-10-06: stale and contradicting statements checked again
+
+**Every Markdown file and every code comment read again for what the work since
+the 2026-09-27 evening merge (`67f00f1`) had left stale or contradicted
+(2026-10-06, on the user's request, ahead of the next merge to `main`).** Every
+statement, figure, pointer and list was read against the code, the tests and
+the other statements that touch the same fact.
+
+- Part 5's advice to test one agent endpoint at a time now says that the
+  endpoint takes a request only through its route, with the site-gate header,
+  and refuses a role that already has a final outcome; and HARD RULE 5's list
+  of what a wrapped line never starts with gains `1) `, which the offline
+  check catches too.
+- Notes were added where a dated entry had become misleading: test rounds that
+  reused one trial, the local workaround of calling a function at its own
+  address, the platform credited with reading `config.background`, the per-IP
+  limiter's `429` described as an error page, and the card's text area at
+  340px.
+- In README and the comments: what the abort endpoint writes for a role named
+  twice or already recorded, when the render check cuts a file into pieces,
+  which trials the concurrency measurement covered, which rows the run
+  history's failure flag counts, and what the HARD RULE 4 check accepts as a
+  link.
+
+The details are in the commit message.
+
 ## Operational notes
 
 ### Image and screenshot volume in long sessions
@@ -5738,6 +5774,10 @@ to `draft` by 2026-09-03:
 7. **Capped card height** — `.card-body-scroll` (340px max-height, themed
    scrollbar) on the actual argument/ruling text only, not the short
    loading/failed status text. `ed9a2de`.
+   *(Capped at 18 lines, `18lh`, since 2026-10-06, so the box ends between two
+   lines rather than through one, with 340px kept for a browser without `lh` -
+   see "2026-10-06: README's hero, and images in the render check" under
+   "Status log".)*
 
 All 7 verified via offline tests (extracted real functions against synthetic
 data/DOM stubs) or structural/typecheck review — no OpenRouter calls spent on
@@ -6351,10 +6391,10 @@ this took a real fix, not just returning better text server-side:
 
 - `callAgentWithRetry()` in `app.js` previously called `res.json()`
   unconditionally, so a response that DOESN'T come back as this app's own JSON
-  shape (the realistic case for Netlify's platform-level rate-limit block, which
-  returns a plain error page) threw a raw `SyntaxError` that fell into the
-  generic network-failure branch - confusing, and would have incorrectly retried
-  a permanently-blocked request.
+  shape (the realistic case for Netlify's platform-level rate-limit block,
+  whose `429` has an empty body, as measured on the live site on 2026-10-02)
+  threw a raw `SyntaxError` that fell into the generic network-failure branch -
+  confusing, and would have incorrectly retried a permanently-blocked request.
   - Fixed by splitting the fetch and the JSON parse into separate try/catches,
     with a specific message for a non-JSON 429 (recognised as the platform rate
     limiter) and a fallback for any other unrecognised non-JSON response.
@@ -6476,7 +6516,10 @@ this log didn't exist yet to check against).
   - *(No longer reproduces: every local browser trial since the Background
     Functions move of 2026-08-28 has gone through exactly these `/api/...`
     routes - trigger and poll alike - and worked, and the deployed site never
-    had it. The workaround is no longer needed.)*
+    had it. The workaround is no longer needed, and for the agent functions it
+    no longer works: since 2026-10-06 each refuses a request sent to its own
+    address - see "2026-10-06: the agent functions accept requests only through
+    their routes" under "Status log".)*
 - **A representative call that got cut off by `netlify dev`'s local 30-second
   lambda-local timeout had actually already succeeded server-side** — the
   OpenRouter call, the Supabase write, and the call log all completed and saved

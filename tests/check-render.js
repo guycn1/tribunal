@@ -9,7 +9,7 @@
  * The offline half (tests/markdown.test.js, in `npm test`) only knows the
  * defects someone has already found. This one asks GitHub, so it also
  * catches one nobody has thought of yet - such as the `<date>` that HARD
- * RULE 3 printed for weeks as "until ," because GitHub drops a tag it does
+ * RULE 3 printed for nine days as "until ," because GitHub drops a tag it does
  * not know. For each file it asserts:
  *
  * - every word of the source reaches the page;
@@ -22,8 +22,8 @@
  * It needs the network, so it is not part of `npm test`: run it before every
  * commit that touches a Markdown file, and before every merge to main. It
  * uses GitHub's unauthenticated API (60 requests an hour), one request per
- * file, or per piece of one too large for the API (see pieces() below), and
- * spends no quota of this project's. Exits 1 on a defect, and 2
+ * file, or per piece of one over PIECE_LIMIT characters (see pieces()
+ * below), and spends no quota of this project's. Exits 1 on a defect, and 2
  * when GitHub could not be reached, so an unreachable API never passes.
  */
 
