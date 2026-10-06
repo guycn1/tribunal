@@ -27,6 +27,91 @@ database stores:
   and the model's reply word for word, kept for audit);
 - and the attempt each running call is on.
 
+### What talks to what
+
+```mermaid
+flowchart TB
+  B["Browser<br/>public/: HTML, CSS, vanilla JS"]
+  RT["netlify.toml<br/>the /api/* routes"]
+
+  subgraph FN["Netlify Functions — every secret stays here"]
+    READ["case.ts, trial.ts<br/>read the case and a trial"]
+    WRITE["trials.ts, abort.ts<br/>create, list and abort trials"]
+    AG["representative-background.ts<br/>judge-background.ts<br/>one agent per call"]
+    DBM["db.ts, chargeSheet.ts<br/>every read and write"]
+    GATE["siteGate.ts<br/>the site-gate header"]
+    PR["prompts.ts<br/>an agent's messages"]
+    OR["openrouter.ts<br/>the escalation chain"]
+    SB["supabase.ts<br/>the one client"]
+  end
+
+  DB[("Supabase / Postgres<br/>case_definitions<br/>trials<br/>representative_arguments<br/>judge_rulings<br/>api_call_logs<br/>agent_progress")]
+  OAPI(["OpenRouter"])
+
+  B -->|"fetch /api/*"| RT
+  RT --> READ
+  RT --> WRITE
+  RT -->|"per-IP limit"| AG
+  READ --> DBM
+  WRITE --> DBM
+  WRITE --> GATE
+  AG --> GATE
+  AG --> DBM
+  AG --> PR
+  AG --> OR
+  DBM --> SB
+  SB --> DB
+  OR --> OAPI
+```
+
+**What the picture claims**, each held to the code by
+[`tests/docs.test.js`](tests/docs.test.js):
+
+- **The browser has one way in.** Every request [`app.js`](public/app.js) makes
+  goes to a route under /api/ on the site itself, served through the redirects
+  in [`netlify.toml`](netlify.toml), and [`index.html`](public/index.html) loads
+  nothing from another host. There is no line from the browser to OpenRouter or
+  to the database because there is no such call.
+- **Each secret is read in one module:** the OpenRouter key only in
+  [`openrouter.ts`](netlify/functions/lib/openrouter.ts), and the Supabase URL
+  and key only in [`supabase.ts`](netlify/functions/lib/supabase.ts). Both come
+  from Netlify's environment variables and never reach the browser. The
+  site-gate token in [`app.js`](public/app.js) is the one value the page sends
+  for the backend to check, and it is no secret (see [Anti-abuse and cost
+  controls](#anti-abuse-and-cost-controls)).
+- **Only the two agent functions reach OpenRouter**, and only through
+  [`openrouter.ts`](netlify/functions/lib/openrouter.ts), which makes the
+  backend's one outgoing request. The functions that read, create, list or
+  abort trials cannot spend quota.
+- **Every database access goes through [`db.ts`](netlify/functions/lib/db.ts)
+  or [`chargeSheet.ts`](netlify/functions/lib/chargeSheet.ts)**, the only
+  modules that import [`supabase.ts`](netlify/functions/lib/supabase.ts), where
+  the one client is made with the service-role key (see [Database](#database)
+  for what the tables let other keys do).
+- **The site gate is checked by every function that creates or aborts a trial
+  or starts an agent**, through
+  [`siteGate.ts`](netlify/functions/lib/siteGate.ts);
+  [`case.ts`](netlify/functions/case.ts) and
+  [`trial.ts`](netlify/functions/trial.ts), which only read, do not import it.
+- **The per-IP limit sits on the routes, not in the code:**
+  [`netlify.toml`](netlify.toml) sets it on the two agent routes only, and each
+  agent function refuses a request that did not come through its route on the
+  site's main address, through
+  [`extractParams.ts`](netlify/functions/lib/extractParams.ts).
+- **Not drawn:** the helper modules
+  [`extractParams.ts`](netlify/functions/lib/extractParams.ts),
+  [`judges.ts`](netlify/functions/lib/judges.ts),
+  [`models.ts`](netlify/functions/lib/models.ts),
+  [`pricing.ts`](netlify/functions/lib/pricing.ts),
+  [`representatives.ts`](netlify/functions/lib/representatives.ts),
+  [`response.ts`](netlify/functions/lib/response.ts),
+  [`safeHandler.ts`](netlify/functions/lib/safeHandler.ts) and
+  [`types.ts`](netlify/functions/lib/types.ts), and the imports between the
+  modules of [`netlify/functions/lib/`](netlify/functions/lib) other than those
+  into [`supabase.ts`](netlify/functions/lib/supabase.ts). Every arrow between
+  two modules is a real import, and every import from a function into a module
+  drawn has its arrow.
+
 ### How a trial runs
 
 - Four representatives run concurrently — they don't depend on each other.
@@ -543,6 +628,10 @@ stub DOM — except
     endpoints' order of checks, the rate limit, the anti-abuse layers, the case
     text, the logged fields and the verdict vocabulary, so changing one without
     the other fails the suite.
+  - [The architecture diagram](#what-talks-to-what) is read as nodes and arrows
+    and held to the code: every function drawn, every arrow between two modules
+    a real import and every import from a function into a module drawn an
+    arrow, the database's tables, and each claim listed beneath it.
   - It also holds every Markdown file but [`CLAUDE.md`](CLAUDE.md) to [HARD RULE
     4](CLAUDE.md#4-in-every-markdown-file-but-claudemd-a-reference-is-a-link):
     every link lands, and the first mention in each paragraph of a file, a

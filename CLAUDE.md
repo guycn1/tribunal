@@ -4478,6 +4478,57 @@ now has 204 lines and 14 headings.
   unlinked were each caught by the check meant for it; and the vocabulary's
   bold wrapped across two lines, and a paragraph rewrapped, both passed.
 
+### 2026-10-06: README's architecture diagram
+
+**README's Architecture section gained a diagram, "What talks to what"
+(2026-10-06, on the user's request, after the one in another project's
+README).** It is a Mermaid flowchart, which GitHub draws in place of the code
+block:
+
+- the browser, with one arrow, to the `/api/*` routes in `netlify.toml`;
+- the six functions in three nodes - the two that only read, the two that
+  create, list and abort trials, and the two agent functions, whose arrow
+  carries the per-IP limit;
+- the library modules they reach: `db.ts` and `chargeSheet.ts`, `siteGate.ts`,
+  `prompts.ts`, `openrouter.ts`, and `supabase.ts` below the first;
+- OpenRouter, reached from `openrouter.ts` alone, and the database with its
+  six tables, from `supabase.ts` alone.
+
+Beneath it, "What the picture claims" states what the drawing asserts: the page
+asks nothing of any host but its own `/api/` routes; each secret is read in one
+module; only the agent functions reach OpenRouter; every database access goes
+through `db.ts` or `chargeSheet.ts`; which functions check the site gate; and
+where the per-IP limit sits. A last bullet lists the library modules not drawn.
+
+- Laid out by rendering it with Mermaid 11 in headless Edge: six function nodes
+  in a row, the first layout, came out about 1,350px wide with tangled arrows,
+  and grouping the functions by what they import brought it to about 1,050px
+  with few crossings.
+- `tests/docs.test.js` reads the diagram as nodes and arrows, 24 checks: every
+  file and directory it names exists; every function is drawn once; every arrow
+  between two modules is an import from every file of the first, and every
+  import from a function into a module drawn has its arrow; every library
+  module is drawn or listed as not drawn; the routes reach every function node,
+  with the per-IP limit on the arrows to exactly the rate-limited functions;
+  the database node lists the schema's tables in order; one arrow each goes
+  into OpenRouter, from `openrouter.ts`, and into the database, from
+  `supabase.ts`; and the claims - `app.js` requests only `/api/` routes and
+  names no other host, `index.html` and `styles.css` load nothing from one,
+  `openrouter.ts` makes the backend's one request and reads its key alone,
+  `supabase.ts` makes the client and reads the Supabase variables alone, and
+  only the modules drawn into it import it. The code is read with its comments
+  removed by TypeScript's printer.
+- Proven both ways, every file restored byte for byte, in 37 cases: 19 breaks
+  to the diagram and 10 to the code were each caught by the check meant for
+  it; two controls (comments naming keys, hosts and calls, and the diagram's
+  arrows reordered) passed; and each of six parts of the checks, removed in
+  turn (the comment stripping, every-file soundness, the completeness check,
+  "not both", the table order, the agent-trigger calls), let its defect
+  through or raised an alarm on correct code.
+- Rendered through GitHub's markdown API, README is the same as before apart
+  from the new section and a bullet describing the checks;
+  `npm run check-render` passes, and `npm test` ran 659 checks.
+
 ## Operational notes
 
 ### Image and screenshot volume in long sessions

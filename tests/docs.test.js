@@ -13,6 +13,14 @@
  * behaviour, it is checked by running the real code (the backend compiled
  * from its TypeScript, app.js against a stub DOM), not by reading its text.
  *
+ * README's architecture diagram is read as nodes and arrows and held to
+ * the code: every function drawn, every arrow between two modules a real
+ * import, every import from a function into a module drawn an arrow, the
+ * per-IP limit on the arrows to the rate-limited functions, the database's
+ * tables, and the claims beneath it - that the page requests only /api/
+ * routes, and that one module each reaches OpenRouter and the database and
+ * reads the secrets they need.
+ *
  * It also holds every Markdown file but CLAUDE.md to HARD RULE 4: references
  * are links, and every link lands (see checkReferencesAreLinks()).
  *
@@ -1104,6 +1112,108 @@ async function main() {
   // routes to agent functions in netlify.toml.
   const routeClaims = statedCounts(README, 'routes');
   check(`every "N routes" in README uses ${agentRoutes.length}, the routes to agent functions`, routeClaims.length > 0 && routeClaims.every((w) => countOf(w) === agentRoutes.length), routeClaims.join(', ') || 'not stated');
+
+  // ======================================================== README: the diagram
+  console.log('\n=== README: the architecture diagram draws what the code does ===');
+  // The Mermaid diagram under "What talks to what", read as nodes (an id,
+  // its shape and its label) and arrows (from, to and any label). A node
+  // stands for the files its label names; an arrow between two such nodes
+  // claims that every file of the first imports a file of the second.
+  const talks = section(README, '### What talks to what');
+  const mermaid = (talks.match(/```mermaid\n([\s\S]*?)```/) || [])[1] || '';
+  const nodes = new Map([...mermaid.matchAll(/^\s*(\w+)(\["|\[\("|\(\[")(.*?)("\]|"\)\]|"\]\))\s*$/gm)]
+    .map((m) => [m[1], { shape: m[2], label: m[3] }]));
+  const arrows = [...mermaid.matchAll(/^\s*(\w+)\s*(?:-->|-\.->)\s*(?:\|"([^"]*)"\|\s*)?(\w+)\s*$/gm)]
+    .map((m) => ({ from: m[1], to: m[3], label: m[2] || '' }));
+  check('README draws the architecture as a Mermaid diagram', nodes.size > 0 && arrows.length > 0, `${nodes.size} nodes, ${arrows.length} arrows`);
+  check('every arrow joins two nodes the diagram declares', arrows.every((a) => nodes.has(a.from) && nodes.has(a.to)), arrows.filter((a) => !nodes.has(a.from) || !nodes.has(a.to)).map((a) => `${a.from} -> ${a.to}`).join(', '));
+  // A file under netlify/functions/ by its name alone, as a label gives it.
+  const tsByName = new Map(FUNCTION_SOURCES.map(([rel, src]) => [path.posix.basename(rel), { rel, src }]));
+  /** The files a node's label names. */
+  const filesOf = (id) => [...((nodes.get(id) || { label: '' }).label.matchAll(/[\w-]+\.(?:ts|toml)\b/g))].map((m) => m[0]);
+  const named = [...nodes.keys()].flatMap(filesOf);
+  const unknown = named.filter((f) => !(tsByName.has(f) || (REPO_FILES || []).includes(f)));
+  check('every file the diagram names is in the repository', named.length > 0 && unknown.length === 0, unknown.join(', '));
+  const dirsNamed = [...nodes.values()].flatMap((n) => [...n.label.matchAll(/(?:^|<br\/>)([\w-]+\/)/g)].map((m) => m[1]));
+  check('every directory the diagram names is in the repository', dirsNamed.every((d) => (REPO_FILES || []).some((f) => f.startsWith(d))), dirsNamed.join(', '));
+  const fnFiles = FUNCTION_SOURCES.filter(([rel]) => path.posix.dirname(rel) === 'netlify/functions').map(([rel]) => path.posix.basename(rel));
+  const libFiles = FUNCTION_SOURCES.filter(([rel]) => path.posix.dirname(rel) === 'netlify/functions/lib').map(([rel]) => path.posix.basename(rel));
+  const drawnOnce = (f) => [...nodes.keys()].filter((id) => filesOf(id).includes(f)).length === 1;
+  check('every function is drawn, once', fnFiles.length > 0 && fnFiles.every(drawnOnce), fnFiles.filter((f) => !drawnOnce(f)).join(', '));
+  /** The files under netlify/functions/ that `file` imports, by name. */
+  const importsOf = (file) => [...((tsByName.get(file) || { src: '' }).src.matchAll(/from '\.\/(?:lib\/)?([\w-]+)'/g))].map((m) => `${m[1]}.ts`);
+  const fileNodes = [...nodes.keys()].filter((id) => filesOf(id).some((f) => f.endsWith('.ts')));
+  /** The files of node `from` that import a file of node `to`. */
+  const nodeImports = (from, to) => filesOf(from).filter((f) => importsOf(f).some((i) => filesOf(to).includes(i)));
+  const unsound = arrows.filter((a) => fileNodes.includes(a.from) && fileNodes.includes(a.to) && nodeImports(a.from, a.to).length !== filesOf(a.from).length);
+  check('every arrow between two modules is a real import, from every file of the first', unsound.length === 0, unsound.map((a) => `${a.from} -> ${a.to}`).join(', '));
+  const fnNodes = fileNodes.filter((id) => filesOf(id).every((f) => fnFiles.includes(f)));
+  const libNodes = fileNodes.filter((id) => filesOf(id).every((f) => libFiles.includes(f)));
+  check('every node holds functions or library modules, not both', fileNodes.every((id) => fnNodes.includes(id) || libNodes.includes(id)), fileNodes.filter((id) => !fnNodes.includes(id) && !libNodes.includes(id)).join(', '));
+  const undrawn = fnNodes.flatMap((from) => libNodes.filter((to) => nodeImports(from, to).length > 0 && !arrows.some((a) => a.from === from && a.to === to)).map((to) => `${from} -> ${to}`));
+  check('every import from a function into a module drawn has its arrow', undrawn.length === 0, undrawn.join(', '));
+  // The modules left out are named as such, so a new one has to be drawn or
+  // listed.
+  const notDrawnBullet = (talks.match(/^- \*\*Not drawn:\*\*.*$/m) || [''])[0].split(/, and the imports/)[0];
+  const notDrawn = [...notDrawnBullet.matchAll(/`([\w-]+\.ts)`/g)].map((m) => m[1]);
+  const libDrawn = libFiles.filter((f) => named.includes(f));
+  const neither = minus(libFiles, [...libDrawn, ...notDrawn]);
+  const wrongly = notDrawn.filter((f) => !libFiles.includes(f) || libDrawn.includes(f));
+  check('every library module is drawn or listed as not drawn, not both', notDrawn.length > 0 && neither.length === 0 && wrongly.length === 0, `neither: ${neither}; listed but drawn or unknown: ${wrongly}`);
+
+  // The code the claims below the diagram rest on, with its comments
+  // removed by TypeScript's own printer, so that a comment naming a key or a
+  // host counts for nothing.
+  const ts = require('typescript');
+  const codeOf = (file, text) => ts.createPrinter({ removeComments: true }).printFile(ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true));
+  const backendCode = FUNCTION_SOURCES.map(([rel, src]) => [path.posix.basename(rel), codeOf(rel, src)]);
+  const appCode = codeOf('app.js', read('public', 'app.js'));
+  const nodeOf = (file) => [...nodes.keys()].find((id) => filesOf(id).includes(file));
+  const into = (id) => arrows.filter((a) => a.to === id).map((a) => a.from);
+
+  // The browser: its one arrow goes to the routes, and the page asks nothing
+  // of any other host.
+  const browser = [...nodes.keys()].find((id) => /^Browser\b/.test(nodes.get(id).label));
+  const routesNode = nodeOf('netlify.toml');
+  const fromBrowser = arrows.filter((a) => a.from === browser);
+  check('the browser\'s one arrow goes to netlify.toml\'s routes', Boolean(browser) && Boolean(routesNode) && fromBrowser.length === 1 && fromBrowser[0].to === routesNode, fromBrowser.map((a) => a.to).join(', '));
+  // triggerAgent() passes its url parameter on to fetch(); every caller of it
+  // gives a literal.
+  const fetchArgs = [...appCode.matchAll(/\bfetch\(\s*([^,)]+)/g)].map((m) => m[1].trim());
+  const triggerArgs = [...appCode.matchAll(/\btriggerAgent\(\s*([^,)]+)/g)].map((m) => m[1].trim()).filter((a) => a !== 'url');
+  const toApi = (arg) => /^['"`]\/api\//.test(arg);
+  check('app.js requests only routes under /api/', fetchArgs.length > 0 && fetchArgs.every((a) => toApi(a) || a === 'url') && triggerArgs.length > 0 && triggerArgs.every(toApi), [...fetchArgs, ...triggerArgs].filter((a) => !toApi(a) && a !== 'url').join(', '));
+  check('app.js names no other host', !/:\/\//.test(appCode), (appCode.match(/\S*:\/\/\S*/) || [''])[0]);
+  const loads = [...read('public', 'index.html').matchAll(/<(?:script|img|iframe)\b[^>]*\bsrc="([^"]*)"|<link\b[^>]*\bhref="([^"]*)"/g)].map((m) => m[1] || m[2]);
+  check('index.html loads nothing from another host', loads.length > 0 && loads.every((u) => /^\/(?!\/)/.test(u)), loads.join(', '));
+  check('styles.css loads nothing from another host', !/:\/\/|@import/.test(read('public', 'styles.css').replace(/\/\*[\s\S]*?\*\//g, '')));
+
+  // The routes: one arrow to each function node, and the per-IP limit on the
+  // arrows to exactly the functions whose routes carry it.
+  const fromRoutes = arrows.filter((a) => a.from === routesNode);
+  check('netlify.toml\'s routes reach every function node, and only those', fnNodes.length > 0 && fnNodes.every((id) => fromRoutes.some((a) => a.to === id)) && fromRoutes.every((a) => fnNodes.includes(a.to)), fromRoutes.map((a) => a.to).join(', '));
+  const limitDrawn = fromRoutes.filter((a) => /per-IP limit/.test(a.label)).flatMap((a) => filesOf(a.to)).map((f) => path.basename(f, '.ts'));
+  check('the per-IP limit is drawn on the arrows to exactly the rate-limited functions', limitDrawn.length > 0 && minus(limitDrawn, limitedFns).length === 0 && minus(limitedFns, limitDrawn).length === 0, `drawn: ${limitDrawn}; netlify.toml: ${limitedFns}`);
+
+  // OpenRouter and the database: one arrow into each, from the one module
+  // that reaches it, and the secrets each needs read there alone.
+  const outside = (shape) => [...nodes.keys()].find((id) => nodes.get(id).shape === shape);
+  const openRouterNode = outside('(["');
+  const databaseNode = outside('[("');
+  const readsVar = (name) => backendCode.filter(([, code]) => code.includes(`process.env.${name}`)).map(([f]) => f);
+  const codeMatching = (re) => backendCode.filter(([, code]) => re.test(code)).map(([f]) => f);
+  const onlyIn = (files, file) => files.length === 1 && files[0] === file;
+  check('the one arrow into OpenRouter comes from openrouter.ts', Boolean(openRouterNode) && into(openRouterNode).length === 1 && filesOf(into(openRouterNode)[0]).join() === 'openrouter.ts', into(openRouterNode || '').join(', '));
+  check('openrouter.ts makes the backend\'s one outgoing request', onlyIn(codeMatching(/\bfetch\(/), 'openrouter.ts') && onlyIn(codeMatching(/openrouter\.ai/), 'openrouter.ts'), `fetch: ${codeMatching(/\bfetch\(/)}; openrouter.ai: ${codeMatching(/openrouter\.ai/)}`);
+  check('the OpenRouter key is read in openrouter.ts alone', onlyIn(readsVar('OPENROUTER_API_KEY'), 'openrouter.ts'), readsVar('OPENROUTER_API_KEY').join(', '));
+  check('the one arrow into the database comes from supabase.ts', Boolean(databaseNode) && into(databaseNode).length === 1 && filesOf(into(databaseNode)[0]).join() === 'supabase.ts', into(databaseNode || '').join(', '));
+  check('the Supabase client is made in supabase.ts alone', onlyIn(codeMatching(/\bcreateClient\(/), 'supabase.ts'), codeMatching(/\bcreateClient\(/).join(', '));
+  check('the Supabase URL and key are read in supabase.ts alone', onlyIn(readsVar('SUPABASE_URL'), 'supabase.ts') && onlyIn(readsVar('SUPABASE_SERVICE_ROLE_KEY'), 'supabase.ts'), `${readsVar('SUPABASE_URL')} | ${readsVar('SUPABASE_SERVICE_ROLE_KEY')}`);
+  const supabaseImporters = [...tsByName.keys()].filter((f) => importsOf(f).includes('supabase.ts'));
+  const drawnIntoSupabase = into(nodeOf('supabase.ts') || '').flatMap(filesOf);
+  check('the arrows into supabase.ts come from exactly the modules that import it', supabaseImporters.length > 0 && minus(supabaseImporters, drawnIntoSupabase).length === 0 && minus(drawnIntoSupabase, supabaseImporters).length === 0, `import it: ${supabaseImporters}; drawn: ${drawnIntoSupabase}`);
+  const databaseTables = (nodes.get(databaseNode || '') || { label: '' }).label.split('<br/>').slice(1);
+  check('the database node lists every table, in schema order', JSON.stringify(databaseTables) === JSON.stringify(Object.keys(TABLES)), databaseTables.join(', '));
 
   // ======================================================== paths named anywhere
   console.log('\n=== README, SPEC.md and CLAUDE.md\'s requirement parts: every file and route they name exists ===');
