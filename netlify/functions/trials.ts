@@ -24,9 +24,8 @@ const rawHandler: Handler = async (event) => {
   }
 
   // Trial creation itself never calls OpenRouter - the global call cap in
-  // db.ts doesn't apply here - but gating it too costs nothing and means
-  // a bot can't even get as far as holding a trial id to attack the
-  // representative/judge endpoints with.
+  // db.ts doesn't apply here - but gating it too costs nothing and keeps a
+  // caller without the header from creating trials of its own.
   if (!isSiteGateOk(event.headers)) {
     return json(401, { error: 'Missing or invalid site gate header.' });
   }

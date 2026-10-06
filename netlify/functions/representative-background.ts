@@ -1,7 +1,7 @@
 import type { Handler } from '@netlify/functions';
 import { safeHandler } from './lib/safeHandler';
 import { json } from './lib/response';
-import { extractParams } from './lib/extractParams';
+import { extractParams, cameThroughApiRoute } from './lib/extractParams';
 import { getChargeSheet } from './lib/chargeSheet';
 import { REPRESENTATIVES } from './lib/representatives';
 import { buildRepresentativeMessages } from './lib/prompts';
@@ -28,6 +28,17 @@ const MAX_TOKENS = AGENT_MAX_TOKENS;
  * unless the call failed or the trial was aborted meanwhile.
  */
 const rawHandler: Handler = async (event) => {
+  // Netlify serves this function at its own address,
+  // /.netlify/functions/representative-background/..., as well as through
+  // its route in netlify.toml, and the per-IP rate limit is set on the
+  // route. So the first check refuses any request that did not come through
+  // the route, before anything else is read or written: every request this
+  // handler acts on has passed the limit. Not logged, like the method and
+  // role checks below - refusing costs nothing.
+  if (!cameThroughApiRoute(event)) {
+    return json(403, { error: 'Only accepted through /api/trials/:id/representatives/:role' });
+  }
+
   if (event.httpMethod !== 'POST') {
     return json(405, { error: 'Method not allowed' });
   }
@@ -59,8 +70,8 @@ const rawHandler: Handler = async (event) => {
   // here would undercut for exactly the traffic it's meant to filter; the
   // call-cap check has its own, separate, already-documented reason never
   // to log its own trip (self-perpetuation - see isGlobalCallCapExceeded).
-  // console.warn keeps both visible in Netlify's function logs, just not
-  // in the poll-driven UI - a real, disclosed trade-off, not an oversight.
+  // console.warn keeps both visible in Netlify's function logs; the page
+  // does not see them, by design.
   if (!isSiteGateOk(event.headers)) {
     console.warn(`representative:${repRole}: rejected - missing or invalid site gate header.`);
     return json(401, { role: repRole, status: 'failed', error: 'Missing or invalid site gate header.' });
@@ -72,7 +83,7 @@ const rawHandler: Handler = async (event) => {
     return json(429, {
       role: repRole,
       status: 'failed',
-      error: `Site-wide call cap reached (${cap.count}/${GLOBAL_CALL_CAP} calls in the last 24h). Refusing to spend further API budget - try again later.`,
+      error: `Site-wide call cap reached (${cap.count}/${GLOBAL_CALL_CAP} call-log rows in the last 24h). Refusing to spend further API budget - try again later.`,
     });
   }
 
@@ -206,17 +217,19 @@ export const handler = safeHandler(rawHandler);
 // This runs as a Netlify Background Function because of its filename: the
 // "-background" suffix is how Netlify declares one for a function written,
 // like every function in this project, with a named `handler` export.
-// Locally, netlify dev reads the same suffix and gives it the 900-second
-// background timeout rather than the 30-second synchronous one. The same
-// goes for judge-background.ts.
+// Locally, netlify dev reads the same suffix and gives it the much longer
+// background timeout rather than the synchronous one - as read in the
+// netlify-cli source installed on 2026-08-29; package.json allows later
+// 17.x releases, which could change it. The same goes for
+// judge-background.ts.
 //
-// Why a Background Function at all: Netlify's free-tier synchronous limit
-// is 10 seconds (the budget here was first built around a mistaken ~30s),
-// while every real OpenRouter call measured on this project at the time
-// took 8-18s+ per attempt. No retry or timeout tuning inside
-// callOpenRouter() could close that gap; Background Functions get up to 15
-// minutes. The trade-off: the client never receives this handler's return
-// value, since Netlify answers 202 at once, so the frontend learns the
+// Why a Background Function at all: the synchronous limit on Netlify's
+// free plan, as documented when checked on 2026-08-28, was far shorter
+// (the budget here was first built around a mistaken, longer one) than
+// real calls on the default model at the time routinely took per attempt.
+// No retry or timeout tuning inside callOpenRouter() could close that gap;
+// Background Functions get far longer. The trade-off: the client never
+// receives this handler's return value, since Netlify answers 202 at once, so the frontend learns the
 // outcome by polling GET /api/trials/:id - see the comment above the
 // site-gate and call-cap checks for what that means for their rejections.
 // Confirmed in production on 2026-09-21: all 28 trigger POSTs across four
@@ -226,12 +239,14 @@ export const handler = safeHandler(rawHandler);
 // No `config` export, on purpose. Netlify's bundler reads one only from a
 // function written with a default export; for a named `handler` export
 // like this one it ignores everything in it (parseSource in
-// @netlify/zip-it-and-ship-it, read on 2026-10-02). An exported config here
+// @netlify/zip-it-and-ship-it 9.42.1, the version inside the installed
+// netlify-cli, read on 2026-10-02; a later version could differ). An exported config here
 // once declared background: true, a custom path and a per-IP rate limit,
 // and none of the three ever took effect: the 202s come from the filename,
 // routing comes from netlify.toml, and the rate limit was never applied -
 // 75 requests in 80 seconds from one IP on 2026-10-02 all got through. The
-// per-IP rate limit is on this function's redirect in netlify.toml.
+// per-IP rate limit is on this function's redirect in netlify.toml, and the
+// handler's first check accepts only requests that came that way.
 //
 // The filename and the redirect target in netlify.toml must name the same
 // function. When this file was renamed from representative.ts, every call

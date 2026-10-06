@@ -38,7 +38,7 @@ function makeElement(tag = 'div') {
     // and the Abort button are all shown and hidden through classes, and a
     // no-op here once let a check pass with the overlay stuck on screen.
     // className stays a separate plain string, unlike a real DOM - no check
-    // reads a class that was set through className.
+    // asks classList about a class that was set through className.
     classList: {
       add: (...names) => names.forEach((name) => classes.add(name)),
       remove: (...names) => names.forEach((name) => classes.delete(name)),

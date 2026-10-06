@@ -65,7 +65,7 @@ body {
      load-bearing, not cosmetic - shrinking the sidebar is real width the
      table gets to work with instead.
      The 220px ceiling this used to have was itself the problem on wide
-     viewports: .main is capped at its own max-width (below) and centered
+     viewports: .main is capped at its own max-width (below) and centred
      within whatever's left over, so once the sidebar stopped growing,
      every extra pixel of a wide window just became empty margin around
      .main instead of going anywhere useful - real, measured waste (over
@@ -91,7 +91,7 @@ body {
      .layout, sharing width with .main exactly as before - fixed would
      take it out of flow entirely and need its own hand-maintained
      width/offset math duplicating the clamp() above. align-self:
-     flex-start stops .layout's default stretch behavior from fighting
+     flex-start stops .layout's default stretch behaviour from fighting
      the explicit height below. Capped at 100vh (never taller than the
      viewport) with overflow hidden - the fix for the sidebar previously
      growing past .main's height and dragging the whole page down with
@@ -147,21 +147,21 @@ body {
         drop-shadows, same blur radii - so only the colour changes.
      2. The colour must come from color-mix() here too, not the plainer
         `transparent`. color-mix() resolves to a modern color(srgb ...)
-        value, and this engine interpolates a modern colour against a
-        legacy one (`transparent`, or the implied colour of `none`) by
-        producing rgba(1, 0, 0, ...) - a near-black - for the entire
-        transition, snapping to the real colour only at the very end.
-        Measured, not theorised: at the midpoint, from `none` and from
-        `transparent` both give rgba(1, 0, 0, ...) - a near-black - while
-        this gives oklab(0.9389 ...), the correct near-white, and holds
-        that lightness at every step while only the alpha climbs.
+        value, and Edge interpolates a modern colour against a legacy one
+        (`transparent`, or the implied colour of `none`) by producing
+        rgba(1, 0, 0, ...) - a near-black - throughout the transition.
+        Measured in Edge 154 on 2026-10-03, at 25%, 50% and 75% of the
+        way: from `none` and from `transparent` alike, rgba(1, 0, 0, ...)
+        with only the alpha climbing; from this, oklab(0.9389 ...), the
+        correct near-white, at every step. WebKit 26.6 gives the
+        near-white from all three.
         Worth knowing before "simplifying" this: `var(--text) 0%` does
-        not keep the colour - this resolves to color(srgb 0 0 0 / 0),
-        transparent black, same as `transparent` would look. What it
-        keeps is the colour TYPE, and that alone is what makes the
-        interpolation work. Being transparent black costs nothing,
-        because interpolation is premultiplied, so an endpoint at alpha
-        0 contributes no hue to the steps between.
+        not keep the colour - both engines compute it as
+        color(srgb 0 0 0 / 0), transparent black, same as `transparent`
+        would look. What it keeps is the colour TYPE, and that alone is
+        what makes the interpolation work. Being transparent black costs
+        nothing: an endpoint at alpha 0 contributes no hue to the steps
+        between, as the samples above show.
 
      The visible symptom of getting either wrong is a glow that appears to
      do nothing for the length of the transition and then snap in at the
@@ -200,12 +200,12 @@ body {
      The inner layer's alpha was cut harder than the outer one's (60 -> 38
      against 35 -> 22): the complaint that addressed was the mark reading
      too hot, not the surround being too wide. Both radii were later
-     doubled, from 5px and 13px, at unchanged alpha - the same light spread
-     wider, so it reads as a soft aura rather than a bright rim. The resting
+     widened, from 5px and 13px to the 10px and 20px below, at unchanged
+     alpha - the same light spread wider, so it reads as a soft aura rather than a bright rim. The resting
      filter above uses the same radii, so only the alpha animates.
      The 20px layer reaches 3px past the sidebar's edge (.sidebar is
      overflow: hidden and the icon sits 17px in) and is clipped there. That
-     was checked and is invisible - it is the last few percent of the
+     was checked and is invisible - it is the last few per cent of the
      falloff - but it is worth knowing before widening either layer. */
   filter: drop-shadow(0 0 10px color-mix(in srgb, var(--text) 38%, transparent))
     drop-shadow(0 0 20px color-mix(in srgb, var(--text) 22%, transparent));
@@ -233,8 +233,10 @@ body {
      overrides flex's default min-height: auto, which would otherwise let
      this list's real content size push .sidebar taller than 100vh
      instead of actually scrolling within the space it's given. This is
-     the one thing inside .sidebar that scrolls; everything above it
-     stays fixed in place regardless of history length or page scroll. */
+     the one thing inside .sidebar that scrolls; above 900px, everything
+     above it stays fixed in place regardless of history length or page
+     scroll. Below 900px the sidebar stacks above .main and scrolls away
+     with the page (see the 900px block at the end). */
   flex: 1 1 auto;
   min-height: 0;
 }
@@ -249,11 +251,11 @@ body {
   transition: border-color 0.2s ease;
 }
 
-/* White rather than the theme's gold accent (item 2 of CLAUDE.md's
-   sidebar/scrollbar/card polish backlog) - .active (below) has two
-   classes vs. this rule's one, so it naturally wins on
-   specificity alone when an entry is both the active one and currently
-   hovered, without needing a combined :hover.active selector. */
+/* White rather than the theme's gold accent. This rule and .active (below)
+   have equal specificity - a class and a pseudo-class against two classes -
+   so .active wins by coming later in the file, which keeps an entry that is
+   both the active one and currently hovered at the active brightness
+   without a combined :hover.active selector. Keep .active below this rule. */
 .history-item:hover {
   border-color: color-mix(in srgb, var(--text) 45%, transparent);
 }
@@ -394,10 +396,7 @@ body {
 }
 
 /* :active/:focus included, not just :hover, so a press or keyboard-focus
-   without a preceding mouse hover still gets the same treatment - the
-   shared .btn:hover:not(:disabled) rule (border-color) has the same gap,
-   but that's left alone here since only this button's own hover styling
-   was asked to extend, not every button's shared hover rule. */
+   without a preceding mouse hover still gets the same treatment. */
 .btn-primary:hover:not(:disabled),
 .btn-primary:active:not(:disabled),
 .btn-primary:focus:not(:disabled) {
@@ -544,9 +543,9 @@ body {
 
 /* Shown only when fewer than 4 representative arguments were available to
    the judges (see updateJudgesCaveat in app.js) - deliberately styled as a
-   caveat, not an error: the ruling itself succeeded, this just
-   contextualizes what it was reasoned from. --warn rather than --fail for
-   that reason. */
+   note, not an error: it says what the rulings were reasoned from, and
+   each judge's own card shows how its call went. --warn rather than --fail
+   for that reason. */
 .judges-caveat {
   color: var(--warn);
   font-size: 0.85rem;
@@ -635,23 +634,18 @@ body {
   position: relative;
 }
 
-/* A real, reported Firefox-only rendering glitch (2026-09-04): the
+/* A reported Firefox-only rendering glitch (2026-09-04): the
    bottom-fade gradient below composited on top of scrolling card text
    came out jagged/"torn" per line instead of a smooth blend (not
-   reproduced in Chrome). Two attempted fixes, both transform:
-   translateZ(0) (a real, standard mitigation for exactly this class of
-   text-under-overlay compositing issue in principle) - first directly
-   on .card-body-scroll, then on this wrapper instead once that broke
-   its scrollbar-color styling - were both reverted (2026-09-04): the
-   user reported zero improvement to the jaggedness from either, AND
-   the second attempt's scrollbar regression turned out to extend to
-   .history-list too, an element with no DOM/CSS relationship to
-   .card-body-scroll-wrap at all - a result that contradicts the actual
-   mechanism this fix was supposed to rely on, meaning the diagnosis
-   itself was likely wrong, not just its placement. The fade stays as it
-   is in every browser: it does its job in Firefox too, and the finish of
-   its edge there is a matter of how that engine composites text, which
-   no change here was shown to improve. */
+   reproduced in Chrome). transform: translateZ(0), a standard mitigation
+   for text-under-overlay compositing, was tried first on
+   .card-body-scroll and then on this wrapper, made no difference to the
+   jaggedness in either place, and was reverted (2026-09-04). A change to
+   the scrollbars seen in Firefox during those attempts, on .history-list
+   as well as here, came from the browser updating to Firefox 155 at the
+   same time (see the fallback block further down), not from the
+   transform. The fade stays as it is in every browser: it does its job in
+   Firefox too. */
 
 /* Hidden by default (opacity 0, see .has-more-below below) - only shown
    once app.js confirms there's real hidden content, and hidden again
@@ -680,7 +674,7 @@ body {
 /* Only the actual argument/ruling text (buildRepresentativeCard/
    buildJudgeCard in app.js) gets this, not the short status/dim text
    buildAgentStatusBody renders while a call is loading or failed - real
-   arguments/rulings run long enough (up to ~600 words) to make card heights
+   arguments/rulings run long enough to make card heights
    wildly inconsistent across a grid otherwise, forcing a lot of scrolling
    just to reach the call log below. A capped height with its own scrollbar
    keeps every card a predictable size while still showing a real, readable
@@ -696,9 +690,9 @@ body {
    same white-opacity tiers for both. .history-list
    previously had NO scrollbar styling at all, which is exactly why
    Chrome/Edge fell back to their bulky native default there (wide enough
-   to visually collide with a history card's own border - a real,
-   reported bug) while .card-body-scroll looked fine - it already had
-   this treatment, .history-list simply never got it.
+   to visually collide with a history card's own border) while
+   .card-body-scroll looked fine - it already had this treatment,
+   .history-list simply never got it.
 
    Three tiers, per exact spec: very transparent white at rest; more
    opaque once the *container* (the card, or the history list) is
@@ -708,31 +702,27 @@ body {
    The rest<->hover tiers are driven by --scrollbar-thumb-opacity, a CSS
    custom property written every animation frame by attachScrollbarFade()
    in app.js - NOT a bare CSS :hover selector, and NOT a CSS
-   transition/animation on the color itself (real browsers don't support
-   animating ::-webkit-scrollbar-thumb or Firefox's scrollbar-color at
-   all - a transition here would be silently ignored in exactly the
-   browsers, Chrome/Edge, this whole treatment was built to fix). Each
-   individual frame is just an ordinary instant custom-property change,
-   which every browser already handles fine - repeated every frame for
-   ~SCROLLBAR_FADE_MS, that produces a real smooth fade despite no
-   browser ever animating anything itself. The 15% literal below is only
+   transition or animation on the colour itself. Each individual frame is
+   just an ordinary instant custom-property change, which every browser
+   already handles fine - repeated every frame for ~SCROLLBAR_FADE_MS,
+   that produces a real smooth fade with no CSS animation involved. The 15% literal below is only
    the fallback for the (practically unreachable) case the custom
    property was never set - the real values live in app.js's
-   SCROLLBAR_REST_OPACITY/SCROLLBAR_HOVER_OPACITY, and this one must be
-   kept in sync with the rest value by hand, since CSS can't read a JS
-   constant.
+   SCROLLBAR_REST_OPACITY/SCROLLBAR_HOVER_OPACITY, and this one must match
+   the rest value. CSS can't read a JS constant, so
+   tests/shared-constants.test.js compares the two.
 
    The dragging tier is unrelated to any of the above: a
    ::-webkit-scrollbar-thumb:active rule (see the fallback block further
    down), snapping instantly rather than fading - direct feedback to a
    physical mouse press, deliberately not softened the way the ambient
-   hover cue is. In practice it does not render in any current browser
-   this was checked in. Firefox does not apply styling from a
-   ::-webkit-scrollbar-* rule at all, and current Chrome and Edge ignore
-   every such rule on an element that also sets the standard
-   scrollbar-width, as both elements here do - see the fallback block
-   below. So what actually shows everywhere tested is two tiers, rest and
-   hover.
+   hover cue is. In practice, browser support for it was measured to be
+   limited: as measured in September and October 2026 (see the fallback
+   block below for versions and dates), Firefox did not apply styling from
+   a ::-webkit-scrollbar-* rule at all, and Chrome, Edge and WebKit
+   (Safari's engine) ignored every such rule on an element that also sets
+   the standard scrollbar-width, as both elements here do. So Chrome, Edge
+   and Firefox showed two tiers, rest and hover.
 
    The custom-property fade mechanism above (--scrollbar-thumb-opacity)
    is unrelated to any of this and unaffected by it - Firefox
@@ -741,11 +731,11 @@ body {
    fallback (a real improvement over the older class-swap design: :hover
    was skipped in Firefox there entirely since scrollbar-color has no
    pseudo-classes, but writing a plain custom property recalculates a
-   rule that reads it exactly the same way in every browser, so Firefox
+   rule that reads it the same way in Firefox as in Chromium, so Firefox
    gets the full fade too, not just an instant two-state jump) - at
    least on Firefox versions/settings where scrollbar-color is actually
-   honored at all; see the fallback block below for the current, real
-   caveat to that on Firefox specifically. It is also what Chrome and Edge
+   honoured at all; see the fallback block below for the notes about
+   Firefox's behaviour. It is also what Chrome and Edge
    render: the thin width and the thumb colour come from these two
    standard properties, not from the fallback block. */
 .history-list,
@@ -760,52 +750,32 @@ body {
    element that sets scrollbar-width, Chromium ignores every
    ::-webkit-scrollbar rule for it (a 30px webkit width measured 10px, the
    same as scrollbar-width: thin on its own). Both elements here set it, so
-   in current Chrome and Edge nothing in this block applies - not the 8px
-   width, not the thumb colour, not the :active tier. Safari was not
-   tested. History, worth reading before touching this again
-   (2026-09-04): a non-zero width here was found to have an
-   undocumented-to-us side effect in Firefox 153/154 - per Firefox's own 153 release notes, "rules with
-   non-zero width/height disable overlay scrollbars for the affected
-   container" - which had been silently forcing Firefox into classic,
-   always-visible scrollbar rendering this whole time, unbeknownst to
-   this project. Firefox 155 restricted that recognition to Mozilla's
-   own internal allowlist of sites, closing it off for ordinary sites
-   including this one - confirmed for real, not guessed, with an
-   isolated two-box test page in the user's own Firefox 155: even the
-   RAW rule below, completely unconditional, with zero scrollbar-color
-   involved at all, still showed Firefox's native hidden-until-hover
-   overlay behavior. A same-day attempt to "fix" this by gating the
-   whole block behind @supports not (scrollbar-width: thin) was ALSO
-   reverted, once that same test proved the gate could not possibly be
-   helping Firefox either way (Firefox shows identical behavior gated
-   or not) while, it was then believed, risking modern Chrome/Edge's
-   explicit 8px sizing and :active/dragging tier (they support
-   scrollbar-width too, so the gate excluded them as well). That risk
-   never existed - per the 2026-09-26 measurement above, Chromium ignores
-   this block anyway wherever scrollbar-width is set - but the revert
-   stands on the first ground alone. Restored to plain and unconditional,
-   exactly as it was before any of that; the user confirmed that version
-   renders correctly in both Chrome and Edge.
-
-   Bottom line: there is no CSS available to this project (or any
-   website) that restores Firefox's classic scrollbar rendering here -
-   confirmed via Firefox's own release notes, a Mozilla engineer's
-   direct statement on bugzilla.mozilla.org ("no built-in CSS property
-   to globally disable overlay scrollbars; this is controlled by the
-   operating system"), and the user's own isolated test. Firefox 155 on
-   Windows renders its own native overlay scrollbar for this page
-   instead - hidden at rest, a thin indicator on hover, expanding
-   further when the pointer moves onto the scrollbar itself - still
-   tinted with the color from scrollbar-color above (confirmed
-   respected even in that mode), just not matching Chrome/Edge's
-   always-visible weight/timing. Two real, user-machine-level (not
-   website-level) ways to get classic rendering back on a specific
-   Windows install: the Windows 11 Settings -> Accessibility -> Visual
-   effects -> "Always show scrollbars" toggle, or the Firefox-internal
-   about:config preference widget.non-native-theme.scrollbar.style set to
-   4 - neither is something this site can turn on for an arbitrary
-   visitor. This is how Firefox draws scrollbars, a documented
-   cross-browser platform difference, not a bug in this codebase. */
+   in those versions of Chrome and Edge nothing in this block applied - not
+   the 8px width, not the thumb colour, not the :active tier. Measured 2026-10-02
+   in WebKit 26.6 (Safari's engine, run through Playwright's Windows
+   build), the same holds: with scrollbar-width set, an 8px or a 30px
+   webkit width laid out at 0px, against 8px and 30px on an element
+   without it. WebKit also supports scrollbar-width but not
+   scrollbar-color, so there the thumb keeps WebKit's own colour.
+   In Firefox (as of 2026-09-04): versions 153 and 154 treated a non-zero
+   width here as a request for classic, always-visible scrollbars (their
+   release notes: "rules with non-zero width/height disable overlay
+   scrollbars for the affected container"). Firefox 155 limited that to a
+   small list of sites, kept in its layout.css.fake-webkit-scrollbar.
+   enabled-domains preference (MDN's Firefox 155 notes, read 2026-10-05:
+   https://developer.mozilla.org/en-US/docs/Mozilla/Firefox/Releases/155),
+   which this site was not on; a test page in Firefox 155 confirmed it on
+   2026-09-04, and showed the same with or without an @supports gate on
+   this block, so it has none. Firefox on Windows drew
+   its own overlay scrollbar - hidden at rest, a thin indicator on hover,
+   wider with the pointer on it - in the colour scrollbar-color sets, and
+   no CSS property turned that off (a Mozilla engineer on
+   bugzilla.mozilla.org: "no built-in CSS property to globally disable
+   overlay scrollbars; this is controlled by the operating system"). A
+   visitor can bring classic scrollbars back with Windows 11's "Always
+   show scrollbars" setting (Settings -> Accessibility -> Visual effects),
+   or by setting the about:config preference
+   widget.non-native-theme.scrollbar.style to 4. */
 .history-list::-webkit-scrollbar,
 .card-body-scroll::-webkit-scrollbar {
   width: 8px;
@@ -830,8 +800,8 @@ body {
 .badge {
   display: inline-block;
   border-radius: 999px;
-  /* Fallback only - see the @supports block below, which every current
-     browser takes. Symmetric padding centres the line box, not the text,
+  /* Fallback only - see the @supports block below, which the current
+     release of every common browser took as of 2026-09-27. Symmetric padding centres the line box, not the text,
      and where the text lands in that box depends on the font: the page
      uses the system font stack, so Windows draws badges in Segoe UI (tall
      ascent, text sits 1-2px low) and Android in Roboto (balanced, text
@@ -843,7 +813,7 @@ body {
      pill's height; without the trim it also sets that height, about 1.1em
      plus the 6px of padding. */
   line-height: 1.1;
-  /* white-space: normal lets a multi-word badge (e.g. "no response yet")
+  /* white-space: normal lets a multi-word badge (e.g. "abort requested")
      wrap between words when its column is narrow. Deliberately no
      word-break: break-word here, unlike earlier - that broke single-word
      badges like "degenerated" mid-character ("degenerat" / "ed") the
@@ -859,20 +829,23 @@ body {
    baseline and the top of a capital letter, so the padding is measured
    from the letters themselves rather than from the font's own (and
    font-specific) ascent and descent. Rendered in Edge, Firefox and WebKit
-   (Safari's engine), every call-log and sidebar label sits within 0.25px
+   (Safari's engine) on 2026-09-27, every call-log and sidebar label sat within 0.25px
    of the same place in Segoe UI (Windows) as in Roboto (Android).
    The bottom padding is 0.1em - 0.4px larger than the top: 0.1em sets the
    pill's centre halfway between the middle of a capital letter and the
    middle of a lowercase one, and the 0.4px, split across top and bottom,
    lowers the text 0.2px from there, which looked better centred on
-   screen. Every badge label is lowercase, some with an ascender and no
-   descender ("truncated", "failed", "aborted") and the rest with a
-   descender ("degenerated") or neither ("success"). Measured by their ink
-   in Edge, the first family sits ~0.5-0.6px above the pill's centre and
-   the second ~0.6px below it, a descender pulling the ink box down
-   further than the letters' bodies; "no response", with a descender and
-   no ascender to balance it, measures ~1.8px low. Rendering snaps to the
-   screen's pixel grid, so sub-pixel changes here show only approximately.
+   screen. Every badge label is lowercase. Some have an ascender and no
+   descender ("truncated", "failed", "aborted"); the rest have a descender,
+   with or without an ascender ("degenerated"), or neither ("success").
+   Measured by their ink in Edge on 2026-09-27, the first family sat
+   slightly above the pill's centre and the second slightly below it, a
+   descender pulling the ink box down further than the letters' bodies;
+   "no response", with a descender and no ascender to balance it, measured
+   lowest. Measured instead by where the ink's weight sits, it sat as close
+   to centre as every other label: its thin descender stretches the ink's
+   box far more than it moves the letters' visual centre. Rendering snaps
+   to the screen's pixel grid, so sub-pixel changes here show only approximately.
    The total, 0.8em + 6px plus a capital's height (~0.7em), makes a
    one-line pill about 1.5em + 6px tall (22px at the default text size)
    whatever the line-height. */
@@ -908,8 +881,7 @@ body {
   color: var(--aborted);
 }
 
-/* Item 8 of CLAUDE.md's sidebar/scrollbar/card polish backlog: a
-   soft-edged separator above the "Model: ..."/"Answered by: ..." line -
+/* A soft-edged separator above the "Model: ..."/"Answered by: ..." line -
    .model-chain is the shared class for both (the still-loading model line
    in buildAgentStatusBody() and the post-success "Answered by:" line in
    buildRepresentativeCard()/buildJudgeCard()), so one rule covers both
@@ -961,9 +933,10 @@ body {
   border-top-color: var(--accent);
   border-radius: 50%;
   /* Duration must match SPINNER_ANIMATION_MS in app.js (asserted by
-     tests/shared-constants.test.js) — that value is
-     what keeps a freshly re-created spinner element visually in sync with
-     ones already on screen, via a computed negative animation-delay. */
+     tests/shared-constants.test.js). With the reduced-motion duration
+     below, it is what keeps a freshly re-created spinner element visually
+     in sync with ones already on screen, via a computed negative
+     animation-delay - see spinnerHtml() in app.js. */
   animation: spin 0.8s linear infinite;
 }
 
@@ -984,6 +957,9 @@ body {
   }
 }
 
+/* Must match SPINNER_REDUCED_MOTION_MS in app.js, and stay a whole multiple
+   of the 0.8s above (both asserted by tests/shared-constants.test.js) - see
+   spinnerHtml() in app.js. */
 @media (prefers-reduced-motion: reduce) {
   .spinner {
     animation-duration: 2.4s;
@@ -1012,17 +988,16 @@ table.call-log {
      never exceeds its container no matter how narrow, so .table-scroll's
      overflow-x: auto never actually has anything to scroll. A horizontal
      scrollbar is explicitly not wanted here even as a fallback; wrapped
-     text, however imperfect, is the accepted outcome on a narrow viewport
-     instead.
+     text is the accepted outcome on a narrow viewport instead.
      This size (and the padding below) used to be the >1000px-viewport
      default, with a smaller size only kicking in below that - but this
      table's real rendered width is capped by .main's max-width (1040px)
      regardless of viewport, so even a very wide window gives this table
      only ~974px to work with, measured. A viewport media query alone can't
      see that, so a "wide" viewport still looked cramped. Compact is now
-     just the permanent default; see the narrow-phone breakpoint further
-     down for the one case (real viewport under ~480px, sidebar already
-     stacked) that still benefits from shrinking further. */
+     just the permanent default; see the breakpoints further down for the
+     cases that still shrink it further (a viewport under 1150px, and a
+     phone under ~480px, where the sidebar is already stacked). */
   width: 100%;
   border-collapse: collapse;
   table-layout: fixed;
@@ -1084,12 +1059,12 @@ table.call-log tfoot tr.call-log-total-row td {
    deliberately - there every cell is its own full-width block, so there is
    no span to sit in the middle of, and a heading reads better flush left. */
 
-/* A discarded attempt that was recovered by a retry or escalation. Three
-   kinds qualify, all matched in renderCallLog() in app.js: truncated or
+/* A discarded attempt, followed by a retry or an escalation. Three kinds
+   qualify, all matched in renderCallLog() in app.js: truncated or
    degenerate content (DEGENERATE_RETRIED_*_MARKER), a plain HTTP failure
    that escalated to the next tier (HTTP_ERROR_ESCALATED_MARKER), and a
-   transient failure that was retried (TRANSIENT_RETRIED_MARKER). Dimmed to
-   signal the failure wasn't fatal, distinct from a [degenerate-final] row
+   transient failure that was retried or escalated (TRANSIENT_RETRIED_MARKER).
+   Dimmed to signal the failure did not end the call, distinct from a [degenerate-final] row
    (nothing left to try - the last tier failing too, or no time budget for
    another), which deliberately stays at full opacity since that outcome
    genuinely is fatal.
@@ -1122,7 +1097,7 @@ table.call-log .col-full {
   margin-top: 2px;
 }
 
-/* Deterministic centering for a cell that stacks two elements vertically
+/* Deterministic centring for a cell that stacks two elements vertically
    (a bold total over a dim breakdown in the Tokens column; a badge over
    a status-caption in the Status column) - text-align: center on the
    <td> alone left room for doubt here: an inline badge/strong followed
@@ -1130,9 +1105,9 @@ table.call-log .col-full {
    leading inline content in its own anonymous block box, and depending
    on exactly how surrounding template-literal whitespace collapses,
    that anonymous box is not guaranteed to end up the same width as the
-   explicit block below it. flex + align-items: center centers each
+   explicit block below it. flex + align-items: center centres each
    child by its own actual box, sidestepping that question entirely
-   rather than trusting the anonymous-box behavior to work out. */
+   rather than trusting the anonymous-box behaviour to work out. */
 .cell-stack {
   display: flex;
   flex-direction: column;
@@ -1147,11 +1122,11 @@ table.call-log .col-full {
    960px, .main is only left with ~700px after the sidebar and its own
    padding - well under what the base sizing above assumes. Content
    overflowing a column at this width is what produced a "skewed,
-   cropped" look reported at 960px (text-align: center still centers the
-   content, but a neighboring cell's background then paints over
+   cropped" look reported at 960px (text-align: center still centres the
+   content, but a neighbouring cell's background then paints over
    whichever side overflows past the column's real boundary) - the actual
    fix is making sure nothing overflows in the first place, not the
-   centering rule itself.
+   centring rule itself.
    Placed before the narrower 480px breakpoint below, not after - both
    match at a sub-480px viewport, and CSS resolves that tie by source
    order (equal specificity, last one wins), so the more aggressive
@@ -1372,7 +1347,7 @@ table.call-log .col-full {
      both a thicker and a brighter border than the ordinary cards - in the
      table view that separation comes from a heavy top rule and a raised
      background, neither of which reads as a divider once every row is its
-     own box. Mixed toward --text-dim rather than set to a flat lighter
+     own box. Mixed towards --text-dim rather than set to a flat lighter
      grey so it still belongs to the same palette as --border. */
   table.call-log tfoot tr.call-log-total-row {
     border-width: 2px;

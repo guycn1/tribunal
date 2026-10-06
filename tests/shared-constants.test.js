@@ -1,5 +1,6 @@
 /**
- * @file Asserts that values deliberately duplicated across files still agree.
+ * @file Asserts that values deliberately duplicated across files still agree,
+ * and that the page's timeouts outlast the server's time budget.
  *
  * Run with `npm test`. No framework, no network, no build: every check
  * reads the real source files as text and compares what it finds.
@@ -17,9 +18,7 @@
  * that exists on the backend but is missing or misspelled in app.js falls
  * straight past isRetriedMarkerLog()'s guard in deriveRoleStates() and lands
  * in the terminal-failure branch, so an agent card reads "call failed" while
- * its escalation chain is still running and about to succeed. That is the
- * exact bug 197609b and c1155f3 were written to fix, it fails silently, and
- * it only shows on the escalation path - the path a developer sees least.
+ * its escalation chain is still running and about to succeed.
  */
 
 const fs = require('node:fs');
@@ -161,6 +160,24 @@ check(
   `app.js ${spinnerMs}ms vs styles.css ${spinSeconds}s - a mismatch makes the spinner visibly jump on every re-render`
 );
 
+// Under prefers-reduced-motion the rotation slows, and spinnerHtml() takes
+// the wall clock modulo that longer duration. One delay then suits both
+// speeds only while the longer is a whole multiple of the shorter.
+const reducedMs = Number((appJs.match(/const\s+SPINNER_REDUCED_MOTION_MS\s*=\s*(\d+)/) || [])[1]);
+const reducedSeconds = Number((css.match(/prefers-reduced-motion:\s*reduce\)\s*\{\s*\.spinner\s*\{\s*animation-duration:\s*([\d.]+)s/) || [])[1]);
+check('SPINNER_REDUCED_MOTION_MS found in app.js', Number.isFinite(reducedMs), String(reducedMs));
+check('reduced-motion spinner duration found in styles.css', Number.isFinite(reducedSeconds), String(reducedSeconds));
+check(
+  'the two reduced-motion durations agree',
+  reducedMs === Math.round(reducedSeconds * 1000),
+  `app.js ${reducedMs}ms vs styles.css ${reducedSeconds}s - a mismatch makes the spinner jump on every re-render under reduced motion`
+);
+check(
+  'the reduced-motion duration is a whole multiple of the normal one',
+  Number.isFinite(reducedMs) && Number.isFinite(spinnerMs) && spinnerMs > 0 && reducedMs % spinnerMs === 0,
+  `${reducedMs} is not a multiple of ${spinnerMs} - one animation-delay can no longer suit both speeds`
+);
+
 // --- 4. Sidebar width: .sidebar <-> .main-loading-overlay ----------------
 console.log('\n=== The loading overlay starts where the sidebar ends ===');
 
@@ -189,6 +206,129 @@ check(
   Boolean(dimClass) && new RegExp(`tr\\.${dimClass}\\s*\\{[^}]*opacity`).test(css),
   `app.js adds '${dimClass}', but no 'tr.${dimClass} { opacity ... }' rule was found in styles.css`
 );
+
+// --- 6. The roles: the backend's definitions <-> everywhere they recur ----
+console.log('\n=== Every copy of the roles names the same roles ===');
+
+// representatives.ts and judges.ts define the roles. app.js lists them to
+// draw a card per role and to know which phase a row belongs to, the schema
+// rejects any other role, and types.ts and prompts.ts name them again. A
+// role missing from one copy shows up only when that role runs.
+const representativesTs = read('netlify', 'functions', 'lib', 'representatives.ts');
+const judgesTs = read('netlify', 'functions', 'lib', 'judges.ts');
+const typesTs = read('netlify', 'functions', 'lib', 'types.ts');
+const promptsTs = read('netlify', 'functions', 'lib', 'prompts.ts');
+const schema = read('supabase', 'schema.sql');
+/**
+ * Every quoted string in a stretch of source, in order.
+ * @param {string} text
+ * @returns {string[]}
+ */
+const quoted = (text) => [...String(text || '').matchAll(/'([^']*)'/g)].map((m) => m[1]);
+/**
+ * Whether two lists hold the same values, in any order.
+ * @param {string[]} a
+ * @param {string[]} b
+ * @returns {boolean}
+ */
+const sameSet = (a, b) => a.length === b.length && new Set(a).size === a.length && a.every((x) => b.includes(x));
+
+const backendReps = [...representativesTs.matchAll(/^ {2}(\w+): \{\r?\n {4}role: '(\w+)',\r?\n {4}name: '([^']+)',\r?\n {4}seat: '(\w+)'/gm)].map((m) => ({ key: m[1], role: m[2], name: m[3], seat: m[4] }));
+const backendJudges = [...judgesTs.matchAll(/^ {2}(\w+): \{\r?\n {4}role: '(\w+)',\r?\n {4}name: '([^']+)',/gm)].map((m) => ({ key: m[1], role: m[2], name: m[3] }));
+check('found the representatives in representatives.ts', backendReps.length > 0, String(backendReps.length));
+check('found the judges in judges.ts', backendJudges.length > 0, String(backendJudges.length));
+check('each definition is keyed by its own role', [...backendReps, ...backendJudges].every((d) => d.key === d.role), JSON.stringify([...backendReps, ...backendJudges].filter((d) => d.key !== d.role)));
+const repRoles = backendReps.map((d) => d.role);
+const judgeRoles = backendJudges.map((d) => d.role);
+
+const copies = {
+  representatives: [
+    ["app.js's REPRESENTATIVE_ROLES", quoted((appJs.match(/const REPRESENTATIVE_ROLES = \[([^\]]*)\]/) || [])[1])],
+    ["app.js's REPRESENTATIVE_META", [...((appJs.match(/const REPRESENTATIVE_META = \{([\s\S]*?)\};/) || [])[1] || '').matchAll(/^ {2}(\w+):/gm)].map((m) => m[1])],
+    ["prompts.ts's REPRESENTATIVE_ORDER", quoted((promptsTs.match(/const REPRESENTATIVE_ORDER: RepresentativeRole\[\] = \[([^\]]*)\]/) || [])[1])],
+    ["types.ts's RepresentativeRole", quoted((typesTs.match(/export type RepresentativeRole = ([^;]*);/) || [])[1])],
+    ["schema.sql's representative_arguments", quoted((schema.match(/create table if not exists representative_arguments[\s\S]*?role text not null check \(role in \(([^)]*)\)\)/) || [])[1])],
+  ],
+  judges: [
+    ["app.js's JUDGE_ROLES", quoted((appJs.match(/const JUDGE_ROLES = \[([^\]]*)\]/) || [])[1])],
+    ["app.js's JUDGE_META", [...((appJs.match(/const JUDGE_META = \{([\s\S]*?)\};/) || [])[1] || '').matchAll(/^ {2}(\w+):/gm)].map((m) => m[1])],
+    ["types.ts's JudgeRole", quoted((typesTs.match(/export type JudgeRole = ([^;]*);/) || [])[1])],
+    ["schema.sql's judge_rulings", quoted((schema.match(/create table if not exists judge_rulings[\s\S]*?role text not null check \(role in \(([^)]*)\)\)/) || [])[1])],
+  ],
+};
+for (const [kind, list] of Object.entries(copies)) {
+  const roles = kind === 'representatives' ? repRoles : judgeRoles;
+  for (const [where, found] of list) {
+    check(`${where} names the same ${kind}`, roles.length > 0 && sameSet(found, roles), `${where}: ${found.join(', ')} | backend: ${roles.join(', ')}`);
+  }
+}
+
+// models.ts maps every role, of both kinds, to its model override variable.
+const roleEnvVarRoles = [...((read('netlify', 'functions', 'lib', 'models.ts').match(/const ROLE_ENV_VAR: Record<string, string> = \{([\s\S]*?)\};/) || [])[1] || '').matchAll(/^ {2}(\w+):/gm)].map((m) => m[1]);
+check("models.ts's ROLE_ENV_VAR names every role, and only those", repRoles.length > 0 && sameSet(roleEnvVarRoles, [...repRoles, ...judgeRoles]), roleEnvVarRoles.join(', '));
+
+// Each card shows its representative's name and seat from app.js's own copy.
+const metaBlock = (appJs.match(/const REPRESENTATIVE_META = \{([\s\S]*?)\};/) || [])[1] || '';
+const frontendMeta = Object.fromEntries([...metaBlock.matchAll(/^ {2}(\w+): \{ name: '([^']+)', seat: '(\w+)' \}/gm)].map((m) => [m[1], { name: m[2], seat: m[3] }]));
+for (const d of backendReps) {
+  const f = frontendMeta[d.role];
+  check(`${d.role}: app.js shows the same name and seat`, Boolean(f) && f.name === d.name && f.seat === d.seat, f ? `${f.name}/${f.seat} vs ${d.name}/${d.seat}` : 'missing from REPRESENTATIVE_META');
+}
+
+// Each judge's card heading, likewise.
+const judgeMetaBlock = (appJs.match(/const JUDGE_META = \{([\s\S]*?)\};/) || [])[1] || '';
+const frontendJudgeNames = Object.fromEntries([...judgeMetaBlock.matchAll(/^ {2}(\w+): \{ name: '([^']+)' \}/gm)].map((m) => [m[1], m[2]]));
+for (const d of backendJudges) {
+  check(`${d.role}: app.js shows the same name`, frontendJudgeNames[d.role] === d.name, `${frontendJudgeNames[d.role] ?? 'missing from JUDGE_META'} vs ${d.name}`);
+}
+
+// --- 7. The page's timeouts outlast the server's budget ------------------
+console.log('\n=== The page waits longer than a call can run ===');
+
+// Polling gives up after POLL_TIMEOUT_MS. Were it shorter than the server's
+// budget, a call could succeed after the page had stopped waiting; this
+// happened once, when the budget was raised and this constant was not. The
+// sidebar's "interrupted" label needs more still: the representatives
+// phase can last as long as the page polls for it, and the judges phase
+// then runs its own budget.
+/**
+ * A numeric constant's value from source, products such as 40 * 60 * 1000
+ * included.
+ * @param {string} source
+ * @param {string} name
+ * @returns {number}
+ */
+const numericConst = (source, name) => {
+  const expr = (source.match(new RegExp(`const ${name} = ([\\d\\s*]+);`)) || [])[1];
+  return expr ? expr.split('*').reduce((product, n) => product * Number(n.trim()), 1) : NaN;
+};
+const budgetMs = numericConst(openrouter, 'TOTAL_BUDGET_MS');
+const pollMs = numericConst(appJs, 'POLL_TIMEOUT_MS');
+const interruptedMs = numericConst(appJs, 'INTERRUPTED_THRESHOLD_MS');
+check('TOTAL_BUDGET_MS found in openrouter.ts', Number.isFinite(budgetMs) && budgetMs > 0, String(budgetMs));
+check('POLL_TIMEOUT_MS is above it', Number.isFinite(pollMs) && pollMs > budgetMs, `${pollMs} vs ${budgetMs}`);
+check('INTERRUPTED_THRESHOLD_MS is above POLL_TIMEOUT_MS plus it', Number.isFinite(interruptedMs) && interruptedMs > pollMs + budgetMs, `${interruptedMs} vs ${pollMs + budgetMs}`);
+
+// --- 8. The scrollbar's resting opacity: app.js <-> styles.css -----------
+console.log('\n=== The scrollbar rests at the same opacity in JS and CSS ===');
+
+// styles.css falls back to its own copy when the custom property is unset.
+const restOpacity = Number((appJs.match(/const SCROLLBAR_REST_OPACITY = (\d+);/) || [])[1]);
+const cssFallbacks = [...css.matchAll(/var\(--scrollbar-thumb-opacity, (\d+)%\)/g)].map((m) => Number(m[1]));
+check('SCROLLBAR_REST_OPACITY found in app.js', Number.isFinite(restOpacity), String(restOpacity));
+check('styles.css has a fallback for it', cssFallbacks.length > 0, String(cssFallbacks.length));
+check('every fallback is the resting opacity', cssFallbacks.length > 0 && cssFallbacks.every((n) => n === restOpacity), `app.js ${restOpacity}, styles.css ${cssFallbacks.join(', ')}`);
+
+// --- 9. The phrase that tells a truncation from a degeneration -----------
+console.log('\n=== The call log reads a truncation by the phrase the backend writes ===');
+
+// Both reach the call log under the same marker; renderCallLog() picks the
+// badge by looking for this phrase in the message.
+const capPhrase = (appJs.match(/const hitTokenCap = err\.includes\('([^']+)'\)/) || [])[1];
+const truncationReason = (openrouter.match(/TRUNCATED[^\n]*\r?\n\s*reason = '([^']+)'/) || [])[1];
+check('app.js keys on a phrase', Boolean(capPhrase), String(capPhrase));
+check('found the truncation reason in openrouter.ts', Boolean(truncationReason), String(truncationReason));
+check('the truncation reason contains that phrase', Boolean(capPhrase) && Boolean(truncationReason) && truncationReason.includes(capPhrase), `'${capPhrase}' in '${truncationReason}'`);
 
 console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} check(s) failed.`);
 process.exit(failures === 0 ? 0 : 1);

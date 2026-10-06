@@ -9,9 +9,9 @@ const CASE_CODE = 'T-001';
  *
  * The case record lives in the database (case_definitions), not as a code
  * constant, so there is exactly one copy of it at runtime — the seed row
- * written by supabase/schema.sql. Every prompt-builder and every API
- * response reads through this function rather than duplicating the text,
- * and no code constant anywhere restates it.
+ * written by supabase/schema.sql. Every prompt-builder, and every API
+ * response that carries the case, reads it through this function, and no
+ * code constant holds a copy of it.
  *
  * The repository does hold the same text twice more, deliberately and in a
  * different role: CLAUDE.md Part 1 is the brief the seed was written from,

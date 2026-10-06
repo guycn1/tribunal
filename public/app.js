@@ -3,12 +3,18 @@
  * charge sheet, runs a trial - triggering the seven agent calls as Netlify
  * Background Functions and polling for their results - and displays each
  * argument and ruling, the per-call log, and the run history. The three
- * judges' rulings are always shown side by side and are never combined.
+ * judges' rulings are shown independently, each on its own card, and are
+ * never combined.
  *
  * This file is served as-is: no build step and no modules. It cannot import
- * from the Netlify Functions, so the few values both sides must agree on are
- * duplicated here and checked by tests/shared-constants.test.js. The types
- * below mirror netlify/functions/lib/types.ts for the same reason. They
+ * from the Netlify Functions, so the values both sides must agree on are
+ * duplicated here, and tests/shared-constants.test.js checks them: the
+ * markers, the fixed messages and the phrase that marks a truncation, the
+ * roles with their names and seats, and POLL_TIMEOUT_MS and
+ * INTERRUPTED_THRESHOLD_MS against the server's time budget. It also checks
+ * the values this file shares with styles.css: the scrollbar's resting
+ * opacity, which styles.css repeats as a fallback, the spinner's two
+ * durations, and the class that dims a call-log row. The types below mirror netlify/functions/lib/types.ts for the same reason. They
  * document the JSON this page receives, for readers and editors - nothing
  * type-checks this file (tsconfig.json covers netlify/functions only).
  */
@@ -50,8 +56,8 @@
  *   *_MARKER prefixes below.
  * @property {string} timestamp ISO 8601.
  * @property {number | null} durationMs Null on a row that timed no attempt
- *   (the abort endpoint's rows, and a call that stopped on an abort before
- *   its next attempt) and on rows logged before the column existed.
+ *   (the abort endpoint's rows, and a call that ended before starting an
+ *   attempt) and on rows logged before the column existed.
  */
 
 /**
@@ -83,9 +89,10 @@
  * @property {'created' | 'completed'} status
  * @property {string} createdAt
  * @property {string} updatedAt
- * @property {boolean} hadFailures Whether any attempt was ever logged as
- *   failed, recovered or not. Deliberately not what the sidebar label is
- *   based on - see TOTAL_EXPECTED_RESULTS.
+ * @property {boolean} hadFailures Whether any of the trial's call-log rows
+ *   is stored as failed: a failed attempt, recovered or not, or a row an
+ *   abort wrote. Deliberately not what the sidebar label is based on - see
+ *   TOTAL_EXPECTED_RESULTS.
  * @property {boolean} wasAborted
  * @property {number} resultCount How many of the seven expected results
  *   were saved.
@@ -106,6 +113,8 @@
  * @property {string} [modelUsed] The model that produced the kept result.
  * @property {{prompt: number, completion: number, total: number}} [tokens]
  *   Backfilled from the call log for a success - see isTruncated().
+ * @property {string} [loggedAt] When a success's call-log row was written
+ *   (ISO 8601), backfilled with its tokens - see isTruncated().
  * @property {string} [error] The message shown on a failed, aborted or
  *   timed-out card, with any marker prefix already stripped.
  * @property {AttemptProgress} [currentAttempt] While loading, the attempt in
@@ -179,7 +188,7 @@ const JUDGE_ROLES = ['barak', 'elon', 'shamgar'];
 /**
  * Must match ABORTED_BY_USER_MESSAGE in netlify/functions/lib/db.ts exactly
  * (asserted by tests/shared-constants.test.js)
- * - used to recognize an aborted call's log row (see deriveRoleStates), so
+ * - used to recognise an aborted call's log row (see deriveRoleStates), so
  * it renders with the distinct "aborted" badge instead of the generic
  * "call failed" one.
  */
@@ -231,7 +240,8 @@ const DEGENERATE_FINAL_MARKER = '[degenerate-final]';
  */
 const HTTP_ERROR_ESCALATED_MARKER = '[http-error-escalated]';
 /**
- * A transient failure (timeout, 429, 5xx, empty-content 200) that was
+ * A transient failure (a timeout or network error, a 408, a 429, a 5xx, a
+ * 200 with no content or with a reply an upstream error cut short) that was
  * retried or escalated. Before these were logged at all, a call that kept
  * timing out left the card frozen with nothing in the log to explain it.
  */
@@ -250,8 +260,7 @@ const ABORTED_MID_CALL_MARKER = '[aborted-mid-call]';
  * netlify/functions/lib/siteGate.ts). This is NOT a real secret and isn't
  * meant to be one - it's shipped in this public, unauthenticated file, so
  * anyone who looks can read it. Its only job is to reject automated
- * traffic that never loaded this page at all; a caller who did look
- * defeats it trivially. Must match the SITE_GATE_TOKEN environment
+ * traffic that never loaded this page at all. Must match the SITE_GATE_TOKEN environment
  * variable configured on the Netlify Functions side exactly, or every
  * gated request is rejected (creating a trial with a 401; an agent call
  * silently, visible only in Netlify's function logs) - if that env var is
@@ -315,9 +324,9 @@ const state = {
 };
 
 /**
- * Every DOM element this script reads or writes, looked up once at load.
- * All are static elements in index.html - only their contents are ever
- * rebuilt.
+ * Every static DOM element this script reads or writes, looked up once at
+ * load. All are in index.html, and none is ever replaced - only their
+ * contents, classes and state change.
  */
 const el = {
   sidebar: document.getElementById('sidebar'),
@@ -410,17 +419,17 @@ function formatDateTimeHtml(dateInput) {
  * All three are dropped for the same reason: none of them tell a reader of
  * this log anything the rest of the id doesn't. "instruct" distinguishes an
  * instruction-tuned model from its base variant, and every model this app
- * can use is instruction-tuned - it is as content-free here as the vendor
+ * runs on is instruction-tuned, so here it is as content-free as the vendor
  * prefix. The date stamp ("-2501") is deliberately kept: it is the only
  * thing separating two pinned snapshots of the same model, which is exactly
  * what this column exists to report.
  *
  * These are generic rules rather than a per-model lookup table on purpose.
  * Every tier's model id is env-var-configurable (see models.ts), so a table
- * could never be relied on to cover whatever is actually running - it would
- * silently miss the one case it was added for. If some future id still reads
+ * covers only the ids written into it, while the rules apply to any id that
+ * is configured. If some future id still reads
  * badly after these rules, an exceptions table consulted ahead of them is
- * the escape hatch, but there is no point building one for a set of one.
+ * the fallback.
  *
  * @param {string | null | undefined} modelId A full model id.
  * @returns {string} The shortened id, or 'unknown model' when there is none.
@@ -482,7 +491,7 @@ const ORDINAL_WORDS = ['zeroth', 'first', 'second', 'third', 'fourth', 'fifth'];
  * Used for the "(first attempt)"/"(second attempt)" suffix on a
  * still-loading card's model line (see buildAgentStatusBody) - only ever
  * needs to cover however many attempts buildRetryTiers() in openrouter.ts
- * gives any one tier (currently max 2), but written to degrade to a plain
+ * gives any one tier (2 at most, as of 2026-10-05), but written to degrade to a plain
  * ordinal number rather than throw if that ever changes.
  *
  * @param {number} n A one-based attempt number.
@@ -520,40 +529,58 @@ function formatCallTypeHtml(callType) {
 }
 
 /**
- * True when a successful call's completion hit the shared token cap
- * (state.maxTokens, from /api/case) rather than finishing naturally - the
- * server already logs this distinctly via finish_reason (see openrouter.ts),
- * but that's only visible in the terminal. This used to be what surfaced
- * it in the UI; it no longer is, for anything newly generated - the server
- * now fails such a call outright, so it reaches the card as a real failure
- * rather than as a badge on a success. See the paragraph below: what
- * remains here is a reader for historical rows. It reads a live entry and
- * one reopened from history alike, since both are built by
- * deriveRoleStates(), which backfills tokens.completion from the matching
- * api_call_logs row for exactly this purpose.
+ * When a reply still truncated at the end of the chain stopped being saved
+ * as a success and became a failure (298d2fa, 2026-08-29 13:19:36 UTC). A
+ * success row logged after this can never be a truncated one: from then on
+ * the server fails such a call outright, so it reaches the card as a real
+ * failure. As of 2026-10-03, every success row at a multiple of the cap in
+ * the call log had been logged before it, the last at 13:04 UTC that day.
+ */
+const TRUNCATION_BECAME_FAILURE_AT = Date.parse('2026-08-29T13:19:36Z');
+
+/**
+ * True when a success logged at `loggedAt` with this many completion tokens
+ * is one of the replies saved truncated under the 1,400-token cap before
+ * TRUNCATION_BECAME_FAILURE_AT: logged before then, with a completion that is
+ * a whole multiple of the shared token cap (state.maxTokens, from /api/case),
+ * which carries that 1,400 - see the comment on AGENT_MAX_TOKENS in
+ * models.ts.
  *
- * A response still truncated after every attempt the escalation chain
- * allows (four tiers, up to seven attempts - see buildRetryTiers in
- * openrouter.ts) is now returned by the server as a real failure, not a
- * "success" for this function to badge - so this can no longer fire for
- * any newly-generated result. It's kept, and checks a *multiple* of
- * state.maxTokens rather than an exact match, specifically for trials
- * recorded before that change: some real historical rows have a
+ * A multiple rather than an exact match, because some of those rows have a
  * completion of exactly 2 x maxTokens (both the original attempt and the
- * retry hit the cap, and the older code still saved that as a success) -
- * an exact `===` check would silently miss those on reopen.
+ * retry hit the cap, and the code of the time saved that as a success). The
+ * date is what keeps a newer success out: the later tiers have larger caps,
+ * so a reply there can finish on its own at exactly 1,400 or 2,800 tokens.
+ *
+ * @param {number} completionTokens
+ * @param {string | undefined} loggedAt ISO 8601, from the call-log row.
+ * @returns {boolean}
+ */
+function isLegacyTruncation(completionTokens, loggedAt) {
+  return Boolean(
+    state.maxTokens &&
+      completionTokens > 0 &&
+      completionTokens % state.maxTokens === 0 &&
+      loggedAt &&
+      Date.parse(loggedAt) < TRUNCATION_BECAME_FAILURE_AT
+  );
+}
+
+/**
+ * True for a successful entry that is one of the truncated replies saved
+ * before TRUNCATION_BECAME_FAILURE_AT - see isLegacyTruncation(). The server
+ * logs a capped reply distinctly via finish_reason (see openrouter.ts), and
+ * fails it outright today; this reads the rows saved before that. It reads
+ * a live entry and one reopened from history alike, since both are built by
+ * deriveRoleStates(), which backfills tokens.completion and loggedAt from
+ * the matching api_call_logs row for exactly this purpose.
  *
  * @param {AgentEntry | undefined} entry
  * @returns {boolean}
  */
 function isTruncated(entry) {
   return Boolean(
-    entry &&
-      entry.status === 'success' &&
-      state.maxTokens &&
-      entry.tokens &&
-      entry.tokens.completion > 0 &&
-      entry.tokens.completion % state.maxTokens === 0
+    entry && entry.status === 'success' && entry.tokens && isLegacyTruncation(entry.tokens.completion, entry.loggedAt)
   );
 }
 
@@ -714,17 +741,13 @@ async function abortCurrentTrial() {
   if (!state.abortController || !state.trialId) return;
 
   // Same loading cue as the other two flows (opening a trial from history,
-  // beginning a new one) - a real, observed 2-3s gap between clicking
-  // Abort and the page actually settling (the Abort button disappearing,
-  // "Begin new trial" re-enabling), even though the card state below
-  // updates synchronously and immediately. That gap comes from whatever
-  // beginTrial()'s own in-flight chain is doing when the abort signal
-  // fires - e.g. pollForRoles()'s GET isn't itself signal-aware, so an
-  // already-in-flight poll only notices the abort on its *next* loop
-  // check, not instantly - not something worth chasing down and fixing
-  // request-by-request when a loading overlay already covers exactly
-  // this kind of "a few real seconds, cause not worth pinning down
-  // precisely" gap elsewhere in this app.
+  // beginning a new one) - the card state below updates synchronously and
+  // immediately, but the page settles (the Abort button disappearing,
+  // "Begin new trial" re-enabling) only after a few network round trips,
+  // 2-3s in all: the abort POST below, and beginTrial()'s own unwinding,
+  // which ends any poll in flight (a GET already sent finishes first), then
+  // refreshes the call log and the run history before its finally block
+  // runs. The overlay covers that.
   el.mainLoadingOverlay.classList.remove('hidden');
   el.sidebar.classList.add('loading-locked');
 
@@ -785,15 +808,15 @@ async function abortCurrentTrial() {
 // alone (kickoffs 400ms apart) did not fix it in a later run either: three
 // of four still failed, two of them with a genuine no-response timeout
 // rather than a fast 429. A few hundred ms of head start barely matters
-// when each call's real generation takes 15-20s. The same run's judges
+// when each call's real generation takes many seconds. The same run's judges
 // phase - 3 calls, same stagger - all succeeded on attempt 1, which read at
 // the time as "this account takes 3 simultaneous calls cleanly but not 4,"
 // so a worker pool was added to cap how many were ever in flight at once.
 //
 // That cap no longer does that job, and hasn't since the agent endpoints
 // became Background Functions. runWithConcurrencyLimit wraps triggerAgent,
-// which returns the moment Netlify's automatic 202 arrives (~0.3-0.5s)
-// rather than when the generation finishes - so a slot frees almost
+// which returns the moment Netlify's automatic 202 arrives rather than
+// when the generation finishes - so a slot frees almost
 // immediately and all 4 representatives end up genuinely in flight
 // together. Measured, not assumed: as of 2026-09-21, across the 41 trials
 // in this project's own api_call_logs that carry real duration data, 36 ran
@@ -801,18 +824,19 @@ async function abortCurrentTrial() {
 // its timestamp minus duration_ms) - including every one of the four trials
 // run against the live deployed site, each of which ran 4 of 4
 // representatives and 3 of 3 judges at once. What these constants
-// actually bound now is how many trigger POSTs overlap - which matters only
-// against Netlify's per-IP rate limiter, not OpenRouter's account-level
-// concurrency.
+// actually bound now is how many trigger POSTs overlap - not OpenRouter's
+// account-level concurrency, and not Netlify's per-IP rate limit either,
+// which counts requests in a window however they overlap.
 //
 // Kept rather than removed or "restored," deliberately. The original
 // 3-vs-4 reading came from two runs on 2026-08-28 - on the current default
 // model, but while the agent calls were still synchronous functions - and
-// has since been overtaken by evidence: every clean run behind this
-// project's reliability record was actually made at 4 concurrent, not 3,
-// so there is no demonstrated problem left to solve. A bounded dispatch
-// plus the stagger is still a sensible thing to keep pointed at the per-IP
-// limiter.
+// has since been overtaken by evidence: since the move, full trials have
+// run with all 4 representatives in flight together (36 of the 41 measured
+// above, and all four production trials of 2026-09-21), so there is no
+// demonstrated problem left to solve. Removing the pool
+// would gain nothing either: a bounded, staggered dispatch costs about a
+// second per phase.
 /**
  * Stagger between trigger POSTs within one phase: the role at index N is
  * triggered N times this many ms after the phase starts, at the earliest.
@@ -901,18 +925,18 @@ function sleep(ms, signal) {
  *
  * The agent endpoints now run as Netlify Background Functions (declared
  * by their -background filenames) - the fix for a verified, load-bearing
- * problem: Netlify's real free-tier synchronous function limit is 10
- * seconds, while every real OpenRouter call measured on this project at
- * the time had taken 8-18s+ per attempt, before any retry. A standard
- * invocation could not reliably survive that gap no matter how the
- * internal retry/timeout budget was tuned. Background Functions get up to
- * 15 minutes instead - but the platform responds 202 immediately and runs the handler
- * asynchronously, so its real return value never reaches this fetch()
+ * problem: real calls on the default model at the time routinely took
+ * longer per attempt, before any retry, than the synchronous function limit
+ * on Netlify's free plan (as documented when checked on 2026-08-28). A
+ * standard invocation could not reliably survive that gap no matter how the
+ * internal retry/timeout budget was tuned. Background Functions get far
+ * longer instead - but the platform responds 202 immediately and runs the
+ * handler asynchronously, so its real return value never reaches this fetch()
  * call the way a normal synchronous function's did. Calling a role now
  * has two separate steps: triggerAgent() fires the request and reports
  * only what's knowable synchronously (a network failure, or a
  * platform-level rejection like Netlify's own per-IP rate limit); the
- * real, eventual outcome is discovered afterward by polling
+ * real, eventual outcome is discovered afterwards by polling
  * GET /api/trials/:id (see pollForRoles() and deriveRoleStates() below).
  *
  * @param {string} url The role's endpoint, e.g.
@@ -941,16 +965,16 @@ async function triggerAgent(url, signal) {
     return { accepted: true };
   }
 
-  // A non-2xx this early can only be a platform-level rejection rather
-  // than anything from this app's own handler code, since a Background
-  // Function's own application-level outcome never reaches this response
-  // at all. Two causes: Netlify's per-IP rate limiter (the rate_limit on
-  // the two agent routes in netlify.toml), and a routing failure - an
-  // immediate 404 on every call, seen
-  // on this project when the function files were renamed and netlify.toml's
-  // redirect targets still pointed at the old names. The second looks
-  // nothing like the first, so don't read every non-2xx here as rate
-  // limiting.
+  // A non-2xx this early comes from the platform rather than from this
+  // app's own handler code, since a Background Function's own
+  // application-level outcome never reaches this response at all. Two
+  // causes have been seen on this project: Netlify's per-IP rate limiter
+  // (the rate_limit on the two agent routes in netlify.toml), which answers
+  // 429 with an empty body, and a routing failure - an immediate 404 on
+  // every call, when the function files were renamed and netlify.toml's
+  // redirect targets still pointed at the old names. Any other platform
+  // error (a 5xx, say) lands in the same branch. They look nothing alike,
+  // so don't read every non-2xx here as rate limiting.
   let message;
   try {
     const data = await res.json();
@@ -984,6 +1008,20 @@ function isRetriedMarkerLog(log) {
       log.errorMessage.startsWith(HTTP_ERROR_ESCALATED_MARKER) ||
       log.errorMessage.startsWith(TRANSIENT_RETRIED_MARKER))
   );
+}
+
+/**
+ * True for a discarded attempt's message that records an escalation to the
+ * next tier's model rather than a retry of the same one. openrouter.ts
+ * ends every such message with one or the other: "- escalated to
+ * <model id>." or "- re-tried with the same model", the fast-failure form
+ * followed by a parenthesis. Same literal-string coupling as the markers.
+ *
+ * @param {string} message
+ * @returns {boolean}
+ */
+function isEscalationMessage(message) {
+  return / - escalated to \S+\.$/.test(message);
 }
 
 /**
@@ -1088,10 +1126,11 @@ function deriveRoleStates(data) {
           ? { status: 'aborted', error: stripMarkerPrefix(log.errorMessage) }
           : { status: 'failed', error: stripMarkerPrefix(log.errorMessage) || 'Unknown failure' };
     } else if (store[log.agentRole] && store[log.agentRole].status === 'success') {
-      // representative_arguments/judge_rulings don't store token counts
-      // (only api_call_logs does) - without this, isTruncated() would have
-      // nothing to compare against.
+      // representative_arguments/judge_rulings don't store token counts or
+      // the call's time (only api_call_logs does) - without these,
+      // isTruncated() would have nothing to compare against.
       store[log.agentRole].tokens = { prompt: log.promptTokens, completion: log.completionTokens, total: log.totalTokens };
+      store[log.agentRole].loggedAt = log.timestamp;
     }
   }
 
@@ -1104,17 +1143,16 @@ function deriveRoleStates(data) {
  * Comfortably above openrouter.ts's own TOTAL_BUDGET_MS (650s, sized for
  * the full 4-tier escalation chain - see openrouter.ts) plus real margin
  * for polling/network overhead. This drifted out of sync once before: the
- * server budget was raised from 120s to 650s to fit the escalation chain,
- * but this constant stayed at its old value (150s) - a real, observed
+ * server budget was raised twice, for a fallback model and then for the
+ * escalation chain, while this constant stayed at its old value - an observed
  * consequence was a role that genuinely succeeded server-side (verified
  * directly in the DB) still showing as unresolved on the client because
- * polling gave up first. A role that still hasn't resolved by this
- * timeout either genuinely failed in a way this page can't see (the
- * disclosed site-gate/call-cap gap documented in
- * representative-background.ts/judge-background.ts - a rejection there is
- * no longer visible to the poller, only in Netlify's function logs) or is
- * a real anomaly worth surfacing honestly rather than silently waiting
- * past.
+ * polling gave up first; tests/shared-constants.test.js keeps it above
+ * TOTAL_BUDGET_MS. A role that still hasn't resolved by this
+ * timeout was either turned away by the site gate or the call cap, whose
+ * rejections show only in Netlify's function logs (see
+ * representative-background.ts), or ran into something unexpected; either
+ * way its card says the page stopped waiting, rather than spinning on.
  */
 const POLL_TIMEOUT_MS = 700000;
 /** Time between polls of GET /api/trials/:id, in ms. */
@@ -1194,7 +1232,7 @@ async function pollForRoles(pendingRoles, bucket, render, signal) {
     for (const role of remaining) {
       bucket[role] = {
         status: 'timeout',
-        error: `No result after ${Math.round(POLL_TIMEOUT_MS / 1000)}s of polling. The background call may still finish server-side and become visible if you reopen this trial from history later.`,
+        error: `No outcome was recorded for this role in the ${Math.round(POLL_TIMEOUT_MS / 1000)}s the page waits, which is longer than a call is allowed to run. Reopening this trial from history shows everything recorded for it.`,
       };
     }
     render();
@@ -1344,14 +1382,12 @@ function renderHistoryPlaceholder(message, showSpinner) {
 
 // This endpoint only touches Supabase, no OpenRouter/Netlify quota at
 // stake, so a few quick retries on a transient failure are cheap and
-// worthwhile - a fetch failure here is much more likely to be a passing
-// blip (a real one was observed: this exact local dev setup is documented
-// to occasionally contend when many requests hit the same long-running
-// process, e.g. a manual test call landing at the same moment as a page
-// load) than a persistent problem, so it deserves the same "self-heal
-// before showing an alarming error" treatment representative/judge calls
-// already get - just on a much shorter, lighter budget suited to a small
-// metadata fetch rather than a real generation.
+// worthwhile - a brief failure here can clear a moment later (one was seen
+// in local testing, with a manual test call landing on the dev server at
+// the same moment as a page load), so it gets the same "self-heal before showing an alarming error"
+// treatment representative/judge calls already get - just on a much
+// shorter, lighter budget suited to a small metadata fetch rather than a
+// real generation.
 /** How many times to try GET /api/trials before showing an error. */
 const HISTORY_RETRY_ATTEMPTS = 3;
 /** Pause after a failed attempt, in ms, multiplied by the attempt number. */
@@ -1367,9 +1403,10 @@ const HISTORY_RETRY_BACKOFF_MS = 700;
  */
 async function refreshHistory() {
   // Only show the big "fetching" placeholder when there's genuinely
-  // nothing to look at yet - this is what was looking frozen on a slow
-  // fetch (observed up to ~10s, likely Supabase round-trip time, see the
-  // query-shape note on listTrials in db.ts). A refresh of an
+  // nothing to look at yet - this is what used to look frozen on a slow
+  // fetch (observed taking up to ~10s on 2026-08-27, while listTrials in
+  // db.ts still made its queries one after another - see the note there).
+  // A refresh of an
   // already-populated list leaves the existing items on screen rather than
   // flickering them out while fresh data loads.
   if (state.history.length === 0) {
@@ -1512,6 +1549,13 @@ function renderCaseSheet() {
  */
 const SPINNER_ANIMATION_MS = 800;
 /**
+ * Duration of one spinner rotation under prefers-reduced-motion, in ms. Must
+ * match the reduced-motion `animation-duration` in styles.css, and be a
+ * whole multiple of SPINNER_ANIMATION_MS - see spinnerHtml() for why, and
+ * tests/shared-constants.test.js, which asserts both.
+ */
+const SPINNER_REDUCED_MOTION_MS = 2400;
+/**
  * Returns the markup for a spinner that looks continuous across
  * re-renders.
  *
@@ -1526,13 +1570,19 @@ const SPINNER_ANIMATION_MS = 800;
  * a negative animation-delay keyed to the real wall clock tells the
  * browser "this animation has already been running for X ms," so a freshly
  * created element starts at exactly the angle a continuously running one
- * would already be at. SPINNER_ANIMATION_MS must match the animation's
- * duration in styles.css (currently 0.8s / 800ms).
+ * would already be at.
+ *
+ * The rotation takes SPINNER_ANIMATION_MS normally and
+ * SPINNER_REDUCED_MOTION_MS under prefers-reduced-motion, and the delay is
+ * the wall clock taken modulo the longer of the two. Because that is a
+ * whole multiple of the shorter one, the same delay lands on the
+ * continuously-running angle at either speed, so the page never needs to
+ * know which one the browser is using.
  *
  * @returns {string} HTML for one spinner element.
  */
 function spinnerHtml() {
-  const offset = -(Date.now() % SPINNER_ANIMATION_MS);
+  const offset = -(Date.now() % SPINNER_REDUCED_MOTION_MS);
   return `<span class="spinner" style="animation-delay: ${offset}ms"></span>`;
 }
 
@@ -1554,15 +1604,19 @@ function buildAgentStatusBody(entry, role, verb) {
 
   // No entry at all is NOT "hasn't started yet" - a live run always seeds
   // state.representatives/judges[role] with {status: 'loading'} the moment
-  // it begins (see beginTrial), before this ever renders. The only way
-  // this function sees a missing entry is loadTrial() viewing a completed,
-  // historical trial whose call log has nothing to show for this role at
-  // all (no logged attempt of any kind - deriveRoleStates() backfills a
-  // proper 'failed' entry from the call log whenever one exists). Showing
-  // the spinner here would claim this dead trial is still working.
+  // it begins (see beginTrial), before this ever renders. A missing entry
+  // means loadTrial() opened the trial from history and the role had no
+  // final outcome in its record: deriveRoleStates() backfills a 'failed' or
+  // 'aborted' entry only from a role's final row, so a role whose only
+  // rows are discarded attempts has none either. That covers a trial that
+  // ended without this role finishing, and one opened while it is still
+  // running (from a second tab, or after reloading the page mid-run),
+  // where the role may still be working. A trial opened from history is
+  // shown as recorded at that moment and not polled, so the text below
+  // holds in both cases, and no spinner is shown.
   if (!entry) {
     body.className = 'card-body dim';
-    body.textContent = 'No result recorded for this role - nothing was logged for it in this trial.';
+    body.textContent = 'No result recorded for this role.';
     return body;
   }
 
@@ -1581,10 +1635,10 @@ function buildAgentStatusBody(entry, role, verb) {
       const suffix = attempt.tierMaxAttempts > 1 ? ` (${ordinalWord(attempt.attemptInTier)} attempt)` : '';
       modelLine = `<div class="model-chain">Model: <span class="model-name">${shortModelName(attempt.model)}${suffix}</span></div>`;
     } else {
-      // No agent_progress row has landed yet - a brief window right at the
-      // very start of the call, before the first attempt's write reaches
-      // the DB. Falls back to the starting default rather than showing
-      // nothing.
+      // No agent_progress row yet: the call's first attempt has not started
+      // or its write has not reached the database - and a call that ends
+      // before any attempt (turned away by the site gate or the call cap,
+      // say, or stopped by an abort) never writes one. Falls back to the starting model rather than showing nothing.
       const modelId = state.modelInfo && state.modelInfo[role];
       modelLine = modelId ? `<div class="model-chain">Model: <span class="model-name">${shortModelName(modelId)}</span></div>` : '';
     }
@@ -1618,17 +1672,17 @@ function buildAgentStatusBody(entry, role, verb) {
     return wrap;
   }
 
-  // Distinct from 'failed': this role's background call may genuinely
-  // still be running server-side (Background Functions get up to 15
-  // minutes) - polling just stopped waiting on this page. Worded to say
-  // that honestly rather than implying the call itself is known to have
-  // failed, since it may not have. See pollForRoles() for what actually
-  // produces this status.
+  // Distinct from 'failed': the page stopped waiting without any outcome
+  // being recorded for this role. Polling waits POLL_TIMEOUT_MS, longer
+  // than a call's whole time budget, so by then a call that ran has ended,
+  // and one with nothing recorded most likely never started - turned away
+  // by the site gate or the call cap (see POLL_TIMEOUT_MS). See
+  // pollForRoles() for what produces this status.
   if (entry.status === 'timeout') {
     const wrap = document.createElement('div');
     const badge = document.createElement('span');
     badge.className = 'badge badge-fail';
-    badge.textContent = 'no response yet';
+    badge.textContent = 'no result';
     wrap.appendChild(badge);
     const err = document.createElement('p');
     err.className = 'card-body dim';
@@ -1707,10 +1761,7 @@ const SCROLLBAR_FADE_MS = 220;
  * Fades a scrollbar thumb brighter while the pointer is over its
  * container, and back to rest when it leaves.
  *
- * Real browsers don't support a CSS transition/animation on
- * ::-webkit-scrollbar-thumb or Firefox's scrollbar-color at all - a
- * transition on either is silently ignored, which is why an earlier
- * version of this used a fixed hover-intent delay instead (wait, then
+ * An earlier version of this used a fixed hover-intent delay (wait, then
  * snap) to keep an incidental pointer pass from flashing the scrollbar
  * bright. That read as sluggish on a deliberate hover (real user
  * report, 2026-09-04): motion didn't start until the delay had already
@@ -1721,10 +1772,9 @@ const SCROLLBAR_FADE_MS = 220;
  * instant custom-property change, which every browser already handles
  * fine (that's exactly the mechanism the old .scrollbar-hover class swap
  * used) - repeating it ~13 times over SCROLLBAR_FADE_MS produces a real
- * smooth fade without needing the browser to animate the scrollbar
- * itself. This incidentally fixes the original flash problem better
+ * smooth fade with no CSS transition or animation involved. This incidentally fixes the original flash problem better
  * than the delay did, with no artificial dead time: a quick pass only
- * reaches a small partial brightening before reversing back toward
+ * reaches a small partial brightening before reversing back towards
  * rest, rather than either waiting through a delay or snapping to full
  * brightness instantly. animateTo() reverses smoothly from wherever the
  * fade currently is if the target flips mid-animation (e.g. the pointer
@@ -1738,8 +1788,9 @@ const SCROLLBAR_FADE_MS = 220;
  * identically there. The dragging tier is separate and untouched by any of
  * this - a ::-webkit-scrollbar-thumb:active rule, snapping instantly, since
  * direct-manipulation feedback to a physical mouse press arguably should
- * stay instant, not fade in. It does not render in current Chrome, Edge or
- * Firefox, though - see the scrollbar comments in styles.css.
+ * stay instant, not fade in. It did not render in Chrome, Edge or Firefox
+ * as measured in September 2026 (Chrome 154, Edge 153, Firefox 155),
+ * though - see the scrollbar comments in styles.css.
  *
  * @param {HTMLElement} el The element to watch for the pointer. The opacity
  *   is written to its --scrollbar-thumb-opacity custom property, which a
@@ -1764,7 +1815,7 @@ function attachScrollbarFade(el) {
   paint(current);
 
   /**
-   * One animation frame: moves linearly from fadeFrom toward target, and
+   * One animation frame: moves linearly from fadeFrom towards target, and
    * schedules the next frame until the fade is complete.
    * @param {DOMHighResTimeStamp} now
    */
@@ -1776,7 +1827,7 @@ function attachScrollbarFade(el) {
   }
 
   /**
-   * Starts a fade toward newTarget from wherever the current one has got to,
+   * Starts a fade towards newTarget from wherever the current one has got to,
    * so a reversal mid-fade doesn't jump. A no-op if that is already the
    * target.
    * @param {number} newTarget A percentage.
@@ -1802,7 +1853,7 @@ function attachScrollbarFade(el) {
 // calling attachScrollbarFade() from any earlier point in the script
 // (this used to sit right after the button listeners near the top)
 // throws a real ReferenceError reading those consts before they're
-// initialized. Real bug, caught live (2026-09-04): the page failed to
+// initialised. Real bug, caught live (2026-09-04): the page failed to
 // load at all, not just a visual glitch.
 attachScrollbarFade(el.historyList);
 
@@ -1957,18 +2008,26 @@ function renderRepresentatives() {
  * Shows the banner above the judges' cards when any representative
  * argument is missing, naming which, and hides it otherwise.
  *
- * All three judges in a given trial always see the exact same set of
- * available/unavailable representative arguments - runJudgesPhase() only
- * ever starts after runRepresentativesPhase() has fully resolved every
- * role (success, failure, or abort), so there's no scenario where one
- * judge ruled with 3/4 arguments and another ruled with 4/4 in the same
- * run. That's what makes a single banner above all three cards correct,
- * rather than needing a per-judge-card note or any new stored data - this
- * reads directly off state.representatives, which by the time judges are
- * ever shown (live or historical) already reflects exactly what every
- * judge's own prompt contained (see buildJudgeMessages in prompts.ts,
+ * runJudgesPhase() starts only once runRepresentativesPhase() has an
+ * outcome for every role - success, failure, abort, or 'timeout', the page
+ * giving up waiting - and each judge's prompt carries the arguments saved
+ * by the time that judge starts (see buildJudgeMessages in prompts.ts,
  * which marks a missing seat "[argument unavailable]" rather than
- * fabricating or silently omitting it).
+ * fabricating or silently omitting it). A representative call that runs
+ * has finished, and saved any argument, before the page stops waiting on
+ * it: polling waits POLL_TIMEOUT_MS (700s), longer than the 650s budget a
+ * call runs within. So all three judges in a run see the same set of
+ * arguments, the set state.representatives records, live or historical.
+ * One rare edge case is the exception: a trigger whose fetch() fails after
+ * the server has already accepted it. During that live run the card shows
+ * the failure while the call itself goes on and can save an argument the
+ * judges then read; reopened from history, the trial shows it.
+ * That's what makes a single banner above all three cards correct, rather
+ * than a per-judge-card note or any new stored data.
+ *
+ * "Missing" means no saved argument, whatever the reason: a call that
+ * failed (a reply rejected as truncated or degenerate included), was
+ * aborted, or never ran.
  */
 function updateJudgesCaveat() {
   const missing = REPRESENTATIVE_ROLES.filter(
@@ -1983,7 +2042,7 @@ function updateJudgesCaveat() {
 
   const available = REPRESENTATIVE_ROLES.length - missing.length;
   const names = missing.map((role) => REPRESENTATIVE_META[role].name).join(', ');
-  el.judgesCaveat.textContent = `Reached with ${available} of ${REPRESENTATIVE_ROLES.length} representative arguments available (${names} did not respond) - see Representatives above.`;
+  el.judgesCaveat.textContent = `Reached with ${available} of ${REPRESENTATIVE_ROLES.length} representative arguments available (none from ${names}) - see Representatives above.`;
   el.judgesCaveat.classList.remove('hidden');
 }
 
@@ -2069,7 +2128,7 @@ function formatCost(cost) {
  *
  * "Grey Worm" instead of "grey_worm" - REPRESENTATIVE_META already has the
  * proper display name for the four representatives; judges are single
- * words, so plain capitalization gives "Barak"/"Elon"/"Shamgar" directly
+ * words, so plain capitalisation gives "Barak"/"Elon"/"Shamgar" directly
  * (deliberately not JUDGE_META's name, which is "Judge — Barak method" -
  * too long for this column and redundant with the Type column showing
  * "J" already). Also means text wraps at the space in a name like
@@ -2088,7 +2147,7 @@ function formatAgentName(role) {
  * Formats a duration as "12,345 ms", or a dash when none was recorded.
  *
  * null on a row that timed no attempt - the abort endpoint's rows, and a
- * call that stopped on an abort before its next attempt - and on rows
+ * call that ended before starting an attempt - and on rows
  * logged before the duration_ms column existed (see ApiCallLogRecord in
  * types.ts). Shown as a plain dash rather than a fabricated 0, which would
  * misleadingly read as an instant response.
@@ -2117,9 +2176,9 @@ function renderCallLog() {
   for (const entry of state.callLog) {
     const tr = document.createElement('tr');
     const err = entry.errorMessage || '';
-    // A discarded attempt (truncated/degenerated, then retried at the
-    // same tier or escalated to the next one) gets its own row, tagged
-    // with one of the two "retried" markers - see the DEGENERATE_*_MARKER
+    // A truncated or degenerate attempt that was discarded (then retried
+    // at the same tier or escalated to the next one) gets its own row,
+    // tagged with one of the two "retried" markers - see the DEGENERATE_*_MARKER
     // comment above. A row tagged with the "final" marker instead means
     // the chain had nothing left to try - the last tier, or no time budget
     // for another - and this attempt was *also* truncated/degenerate: a
@@ -2137,10 +2196,11 @@ function renderCallLog() {
     // the degenerate/truncation case), since retrying the exact same
     // broken model id has no plausible upside.
     const isHttpErrorEscalated = err.startsWith(HTTP_ERROR_ESCALATED_MARKER);
-    // A transient failure (timeout/429/5xx/empty response) that was retried
-    // or escalated. These are the rows that did not exist at all before
+    // A transient failure (timeout or network error/408/429/5xx/empty or
+    // cut-short reply)
+    // that was retried or escalated. These are the rows that did not exist at all before
     // 2026-09-20 - the retry branches used to loop silently, which is
-    // exactly why a six-minute stall left nothing to read here afterward.
+    // exactly why a six-minute stall left nothing to read here afterwards.
     const isTransientRetried = err.startsWith(TRANSIENT_RETRIED_MARKER);
     const isAbortedMidCall = err.startsWith(ABORTED_MID_CALL_MARKER);
     // The row the abort endpoint writes for each role still pending when
@@ -2149,9 +2209,9 @@ function renderCallLog() {
     // sidebar's aborted badge, rather than as a red failure.
     const isAbortRequest = entry.errorMessage === ABORTED_BY_USER_MESSAGE;
     // The content-quality markers cover two different ways an attempt
-    // ends, and calling both of them "degenerated" was simply inaccurate:
-    // one ran into the token cap, the other stopped on its own and a
-    // detector flagged it. (The capped kind is usually a repetition loop
+    // ends, and calling both of them "degenerated" was inaccurate:
+    // one ran into the token cap, the other did not and a detector flagged
+    // it. (The capped kind is usually a repetition loop
     // too - see the NAMING note in openrouter.ts - but the cap, not a
     // detector, is what stopped it.) openrouter.ts writes this exact phrase
     // for the cap case (and quotes the offending text instead for the two
@@ -2167,21 +2227,17 @@ function renderCallLog() {
     }
 
     // A response still truncated after every attempt the escalation chain
-    // allows is now a real failure (openrouter.ts), correctly shown via
-    // the status column below - this badge only still fires for historical
-    // rows recorded before that change, where the log genuinely says
-    // 'success' with a completion that's an exact multiple of the cap (1x
-    // from an older, single-attempt truncation, or 2x from a retry that also truncated
-    // before this fix existed). Same reasoning and formula as isTruncated().
-    const wasTruncated =
-      entry.status === 'success' &&
-      state.maxTokens &&
-      entry.completionTokens > 0 &&
-      entry.completionTokens % state.maxTokens === 0;
-    // Total is what actually matters at a glance (it's what the cap and
-    // cost are driven by); prompt/completion break it down underneath in
-    // the same dim, secondary-line treatment status-caption already uses
-    // for "why" text, rather than three equally-weighted numbers.
+    // allows is a real failure (openrouter.ts), shown via the status column
+    // below. This badge marks the success rows logged before that change
+    // whose completion is a whole multiple of the cap (1x from a
+    // single-attempt truncation, or 2x from a retry that also truncated) -
+    // see isLegacyTruncation().
+    const wasTruncated = entry.status === 'success' && isLegacyTruncation(entry.completionTokens, entry.timestamp);
+    // Total leads, as the one figure to read at a glance; prompt/completion
+    // break it down underneath - the split that cost (priced separately for
+    // each) and the token cap (on completion tokens only) turn on - in the
+    // same dim, secondary-line treatment status-caption already uses for
+    // "why" text, rather than three equally-weighted numbers.
     const tokens = `
       <div class="cell-stack">
         <strong>${entry.totalTokens.toLocaleString()}</strong>
@@ -2208,10 +2264,13 @@ function renderCallLog() {
         </div>
       `;
     } else if (isTransientRetried) {
+      // One marker covers both moves here, unlike the content-quality pair
+      // above, so the caption reads which one it was from the message's end.
+      const caption = isEscalationMessage(err) ? 'escalated to a different model' : 'retried with the same model';
       statusCellHtml = `
         <div class="cell-stack">
           <span class="badge badge-warn">no response</span>
-          <div class="status-caption">(timed out or refused, retried)</div>
+          <div class="status-caption">(${caption})</div>
         </div>
       `;
     } else if (isAbortedMidCall) {
@@ -2229,10 +2288,9 @@ function renderCallLog() {
     } else if (isDegenerateFinal) {
       // Red, not yellow - the chain has nothing left to fall back to: the
       // last tier failed too, or the time budget ran out before another
-      // tier could be tried. As fatal as a 404/429/500. (Last, not
-      // priciest: tier 4 is actually cheaper per call than tier 3 - see
-      // the pricing note in openrouter.ts. What makes this red is that the
-      // chain is out of options, not what the attempt cost.)
+      // tier could be tried. As with any failure that ends a call, what makes
+      // this red is that the chain is out of options, not what the attempt
+      // cost.
       statusCellHtml = `<span class="badge badge-fail">${hitTokenCap ? 'truncated' : 'degenerated'}</span>`;
     } else {
       const statusBadge = entry.status === 'success' ? 'badge-ok' : 'badge-fail';
@@ -2324,19 +2382,18 @@ function renderCallLogTotals() {
  * it "interrupted" rather than "in progress".
  *
  * This once assumed TOTAL_BUDGET_MS (openrouter.ts) was ~26s, and so that a
- * whole trial finishes in a few minutes. TOTAL_BUDGET_MS is 650000ms now -
- * real margin for the full 4-tier escalation chain - so the genuine worst
- * case is the representatives phase running its budget out in full, then
- * the judges phase running out its own: ~1300s, roughly 22 minutes end to
- * end. Both phases run all of their roles concurrently - the
- * representatives are not a 3-slot pool that makes the 4th wait for a free
- * slot, which would push the worst case to ~32.5 min (see the comment on
- * MAX_CONCURRENT_CALLS above). Kept at 40 minutes: real margin above that
- * (not just enough to scrape by, consistent with every other budget in
- * this app), so a trial
- * that's actually still working - however slowly - doesn't get mislabeled
- * "interrupted" in the history sidebar before it's had a real chance to
- * finish.
+ * whole trial finishes in a few minutes. TOTAL_BUDGET_MS is now sized for
+ * the full 4-tier escalation chain, so the genuine worst case is the
+ * representatives phase lasting as long as the page polls for it
+ * (POLL_TIMEOUT_MS, a little longer than the budget), then the judges phase
+ * running out its own budget in full. Both phases run all of their roles
+ * concurrently - the representatives are not a 3-slot pool that makes the
+ * 4th wait for a free slot (see the comment on MAX_CONCURRENT_CALLS above).
+ * Kept at 40 minutes: real margin above that, so a trial that's actually
+ * still working - however slowly - doesn't get mislabelled "interrupted" in
+ * the history sidebar before it's had a real chance to finish.
+ * tests/shared-constants.test.js keeps it above POLL_TIMEOUT_MS plus
+ * TOTAL_BUDGET_MS.
  */
 const INTERRUPTED_THRESHOLD_MS = 40 * 60 * 1000;
 

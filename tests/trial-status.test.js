@@ -23,13 +23,18 @@
  *   3. Every model reply is kept in the call log's response_text, discarded
  *      ones included, so they can be audited in full - and the trial
  *      endpoint never sends that text to the page. A database the column
- *      has not reached yet still gets every row, without the text.
+ *      has not reached still gets every row, without the text.
  *   4. An aborted trial gains nothing: a ruling or argument that finishes
  *      after the abort is logged once, as aborted, and never saved; the
  *      trial is not marked completed; and a call aborted before it starts
  *      logs a row with no duration.
  *   5. The abort endpoint's rows do not count against the site-wide call
  *      cap, while real calls still reach it.
+ *   6. The run history's hadFailures counts what README says it counts:
+ *      any call-log row stored as failed, an abort's included.
+ *   7. The abort endpoint replies with the roles whose rows it wrote, and
+ *      only those: a role it does not recognise, or whose row the
+ *      database rejects, is left out.
  */
 
 const { compileBackend } = require('./support/compile-backend');
@@ -53,9 +58,9 @@ function check(name, condition, detail) {
   }
 }
 
-const backend = compileBackend(['lib/db.ts', 'lib/openrouter.ts', 'judge-background.ts', 'representative-background.ts', 'trial.ts']);
+const backend = compileBackend(['lib/db.ts', 'lib/openrouter.ts', 'judge-background.ts', 'representative-background.ts', 'trial.ts', 'abort.ts']);
 useFakeSupabase(backend.outDir);
-const { markTrialCompletedIfJudgingDone, ABORTED_BY_USER_MESSAGE, isGlobalCallCapExceeded, GLOBAL_CALL_CAP, NO_MODEL_USED } = backend.load('lib/db.js');
+const { markTrialCompletedIfJudgingDone, ABORTED_BY_USER_MESSAGE, isGlobalCallCapExceeded, GLOBAL_CALL_CAP, NO_MODEL_USED, listTrials } = backend.load('lib/db.js');
 const markers = backend.load('lib/openrouter.js');
 
 /**
@@ -168,7 +173,7 @@ async function runJudge({ reply, aborted = false, abortDuringCall = false, missi
     };
   };
   const response = await quietly(() => judgeHandler({
-    httpMethod: 'POST', path: `/.netlify/functions/judge-background/${TRIAL_ID}/barak`, headers: {}, queryStringParameters: {},
+    httpMethod: 'POST', path: `/api/trials/${TRIAL_ID}/judges/barak`, headers: {}, queryStringParameters: {},
   }, {}));
   return { status: response.statusCode, tables: fake.tables, writes: fake.writes };
 }
@@ -180,6 +185,7 @@ process.env.NETLIFY_DEV = 'true';
 const { handler: judgeHandler } = backend.load('judge-background.js');
 const { handler: trialHandler } = backend.load('trial.js');
 const { handler: representativeHandler } = backend.load('representative-background.js');
+const { handler: abortHandler } = backend.load('abort.js');
 // A judge reply the repetition check discards: one sentence twice in a row.
 const LOOPED_RULING = 'VERDICT: justified\n\nThe bells had rung before the fire. He had no lawful authority to strike her down. He had no lawful authority to strike her down.';
 
@@ -189,7 +195,8 @@ const LOOPED_RULING = 'VERDICT: justified\n\nThe bells had rung before the fire.
  */
 async function main() {
   say('\n=== One judge with retries does not complete the trial on its own ===');
-  // The exact shape of the bug: three judge rows, all belonging to barak.
+  // The exact shape of the since-fixed bug in item 1 of the header: three
+  // judge rows, all belonging to barak.
   let r = await quietly(() => runCompletion([
     judgeRow('barak', retried(TRANSIENT_RETRIED_MARKER)),
     judgeRow('barak', retried(DEGENERATE_RETRIED_SAME_MODEL_MARKER)),
@@ -204,6 +211,11 @@ async function main() {
     judgeRow('shamgar', retried(HTTP_ERROR_ESCALATED_MARKER)),
   ]));
   check('a judge still retrying keeps the trial open', !r.completed, JSON.stringify(r.updates));
+
+  // A judge whose call never ran - its trigger rejected, or turned away by
+  // the site gate or the call cap - logs nothing, so the trial stays open.
+  r = await quietly(() => runCompletion([judgeRow('barak', null), judgeRow('elon', null)]));
+  check('a judge with no row at all keeps the trial open', !r.completed, JSON.stringify(r.updates));
 
   say('\n=== Every judge with a final outcome completes it ===');
   r = await quietly(() => runCompletion([
@@ -275,6 +287,23 @@ async function main() {
     check('real calls still reach it', at.exceeded && at.count === GLOBAL_CALL_CAP, JSON.stringify(at));
   }
 
+  say('\n=== hadFailures reads any row stored as failed, an abort\'s included ===');
+  {
+    /**
+     * listTrials()'s hadFailures for one trial holding the given rows.
+     * @param {object[]} rows
+     * @returns {Promise<boolean>}
+     */
+    const hadFailuresWith = async (rows) => {
+      global.fakeSupabase = fakeSupabase({ trials: [{ id: 't1', status: 'created', created_at: '1' }], api_call_logs: rows, representative_arguments: [], judge_rulings: [] }).client;
+      const [summary] = await quietly(() => listTrials());
+      return summary.hadFailures;
+    };
+    check('all successes: false', !(await hadFailuresWith([judgeRow('barak', null), judgeRow('elon', null)])));
+    check('a discarded attempt the chain recovered from: true', await hadFailuresWith([judgeRow('barak', retried(TRANSIENT_RETRIED_MARKER)), judgeRow('barak', null)]));
+    check('only the abort endpoint\'s row: true', await hadFailuresWith([judgeRow('barak', null), judgeRow('elon', ABORTED_BY_USER_MESSAGE)]));
+  }
+
   say('\n=== The judge endpoint: ruling saved first, then the trial completed ===');
   let j = await runJudge({ reply: GOOD_RULING });
   const rulingAt = j.writes.findIndex((w) => w.table === 'judge_rulings');
@@ -328,7 +357,7 @@ async function main() {
       };
     };
     await quietly(() => representativeHandler({
-      httpMethod: 'POST', path: `/.netlify/functions/representative-background/${TRIAL_ID}/grey_worm`, headers: {}, queryStringParameters: {},
+      httpMethod: 'POST', path: `/api/trials/${TRIAL_ID}/representatives/grey_worm`, headers: {}, queryStringParameters: {},
     }, {}));
     const rows = fake.tables.api_call_logs.filter((row) => row.agent_role === 'grey_worm' && row.error_message !== ABORTED_BY_USER_MESSAGE);
     check('it is logged once, as aborted rather than success', rows.length === 1 && rows[0].status === 'failed' && /^\[aborted-mid-call\] Finished after the user aborted this trial/.test(rows[0].error_message), JSON.stringify(rows.map((r) => [r.status, r.error_message])));
@@ -367,6 +396,30 @@ async function main() {
   check("both of barak's rows are still written", unmigrated.length === 2 && unmigrated.some((row) => row.status === 'failed') && unmigrated.some((row) => row.status === 'success'), JSON.stringify(unmigrated.map((row) => row.status)));
   check('without the text', unmigrated.every((row) => !('response_text' in row)));
   check('and the ruling is still saved', j.tables.judge_rulings.length === 1);
+
+  say('\n=== The abort endpoint reports the rows it wrote, and only those ===');
+  /**
+   * Calls the real abort handler against an in-memory database holding
+   * one trial, where an api_call_logs row for any other trial id breaks
+   * the foreign key, as in the real schema.
+   * @param {string} trialId
+   * @param {string[]} roles
+   * @returns {Promise<{status: number, logged: string[], rows: object[]}>}
+   */
+  const abortWith = async (trialId, roles) => {
+    const fake = fakeSupabase({ trials: [{ id: TRIAL_ID, case_code: 'T-001', status: 'created' }], api_call_logs: [] }, {
+      rejectInsert: (table, row) => (table === 'api_call_logs' && row.trial_id !== TRIAL_ID ? 'insert or update on table "api_call_logs" violates foreign key constraint "api_call_logs_trial_id_fkey"' : undefined),
+    });
+    global.fakeSupabase = fake.client;
+    const response = await quietly(() => abortHandler({
+      httpMethod: 'POST', path: `/api/trials/${trialId}/abort`, headers: {}, queryStringParameters: {}, body: JSON.stringify({ roles }),
+    }, {}));
+    return { status: response.statusCode, logged: JSON.parse(response.body).logged, rows: fake.tables.api_call_logs };
+  };
+  const known = await abortWith(TRIAL_ID, ['barak', 'jon_snow', 'nobody']);
+  check('every row written is reported', known.status === 200 && JSON.stringify(known.logged) === JSON.stringify(['barak', 'jon_snow']) && known.rows.length === 2, JSON.stringify(known));
+  const unknown = await abortWith('9e8d7c6b-5a4f-4e3d-8c2b-1a0f9e8d7c6b', ['barak', 'jon_snow']);
+  check('a row the database rejects is not reported', unknown.status === 200 && unknown.logged.length === 0 && unknown.rows.length === 0, JSON.stringify(unknown));
 }
 
 main().then(

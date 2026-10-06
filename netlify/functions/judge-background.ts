@@ -1,7 +1,7 @@
 import type { Handler } from '@netlify/functions';
 import { safeHandler } from './lib/safeHandler';
 import { json } from './lib/response';
-import { extractParams } from './lib/extractParams';
+import { extractParams, cameThroughApiRoute } from './lib/extractParams';
 import { getChargeSheet } from './lib/chargeSheet';
 import { JUDGES } from './lib/judges';
 import { buildJudgeMessages, parseJudgeOutput } from './lib/prompts';
@@ -21,19 +21,16 @@ import { isSiteGateOk } from './lib/siteGate';
 import type { JudgeRole, RepresentativeRole } from './lib/types';
 
 // Judges are asked for the longest output in this system - a fuller opinion
-// plus the leading VERDICT line, against a ~450-600 word target where a
-// representative gets 300-500 (roughly 600-800 tokens either way). Sized
-// with headroom above that target rather than a tight fit against it,
-// since a cap hit exactly mid-sentence reads far worse than a shorter
-// completion under it.
+// plus the leading VERDICT line, against a longer word target than a
+// representative's. Sized with headroom above that target rather than a
+// tight fit against it,
+// since a reply that reaches the cap is never kept: callOpenRouter()
+// retries or escalates it, which costs a further attempt.
 //
-// Asked for, not observed: in practice representatives are the ones that
-// overrun. Counted across every row in api_call_logs as of 2026-09-21,
-// judges had hit the cap 2 times in 363 calls (0.6%), representatives 67
-// times in 897 (7.5%) - representatives run out of room about thirteen
-// times as often as the
-// role with the longer word target. Whatever drives that, it is not the
-// stated targets, so do not reason about the cap from the targets alone.
+// Asked for, not what was observed: in api_call_logs as of 2026-09-21,
+// the representatives had run out of room several times as often as the
+// judges, the role with the longer word target. The stated targets did not
+// decide it, so do not reason about the cap from the targets alone.
 //
 // Shares AGENT_MAX_TOKENS with representative-background.ts - see the
 // comment on that constant in models.ts for why one shared value across
@@ -51,6 +48,13 @@ const MAX_TOKENS = AGENT_MAX_TOKENS;
  * completed once every judge has a final outcome.
  */
 const rawHandler: Handler = async (event) => {
+  // Only requests that came through this function's rate-limited route
+  // are accepted, never one sent to its own address - see the matching
+  // check in representative-background.ts.
+  if (!cameThroughApiRoute(event)) {
+    return json(403, { error: 'Only accepted through /api/trials/:id/judges/:role' });
+  }
+
   if (event.httpMethod !== 'POST') {
     return json(405, { error: 'Method not allowed' });
   }
@@ -69,8 +73,7 @@ const rawHandler: Handler = async (event) => {
   // run before any Supabase trial lookup or OpenRouter call, and (as this
   // runs as a Background Function - see the end of this file) neither
   // rejection reaches the polling frontend directly, only Netlify's
-  // function logs, for the same disclosed reasons as
-  // representative-background.ts.
+  // function logs, for the same reasons as representative-background.ts.
   if (!isSiteGateOk(event.headers)) {
     console.warn(`judge:${judgeRole}: rejected - missing or invalid site gate header.`);
     return json(401, { role: judgeRole, status: 'failed', error: 'Missing or invalid site gate header.' });
@@ -82,7 +85,7 @@ const rawHandler: Handler = async (event) => {
     return json(429, {
       role: judgeRole,
       status: 'failed',
-      error: `Site-wide call cap reached (${cap.count}/${GLOBAL_CALL_CAP} calls in the last 24h). Refusing to spend further API budget - try again later.`,
+      error: `Site-wide call cap reached (${cap.count}/${GLOBAL_CALL_CAP} call-log rows in the last 24h). Refusing to spend further API budget - try again later.`,
     });
   }
 
@@ -234,5 +237,6 @@ const rawHandler: Handler = async (event) => {
 export const handler = safeHandler(rawHandler);
 
 // A Background Function by its "-background" filename, with no `config`
-// export and its per-IP rate limit on its redirect in netlify.toml - see
-// the comment at the end of representative-background.ts for why.
+// export and its per-IP rate limit on its redirect in netlify.toml, the
+// only way its first check lets a request in - see the comment at the end
+// of representative-background.ts for why.

@@ -22,18 +22,27 @@
  *      opening one from history, and the call-log refresh after a run all
  *      used to let a network failure escape as an uncaught rejection, so a
  *      click appeared to do nothing and the error reached only the console.
+ *      A trigger Netlify's per-IP rate limit rejects - a bare 429 with an
+ *      empty body - shows on the agent's card as that limit.
  *   4. The call log must say what actually happened: a response the token
  *      cap stopped is "truncated" and one a detector flagged
- *      "degenerated"; an abort endpoint's row reads "abort requested",
+ *      "degenerated"; a "no response" row says whether it was retried or
+ *      escalated; the legacy "truncated" badge marks only rows saved
+ *      before truncation became a failure; a discarded attempt is dimmed
+ *      and the role's own aborted row is not; an abort endpoint's row reads "abort requested",
  *      dimmed and uncaptioned, with its model printed as "n/a" rather than
  *      shortened like a model id; every cell carries its column name for
- *      the narrow card layout; and a model id is shortened by rule without
- *      losing the date stamp.
+ *      the narrow card layout; the token breakdown can break only after
+ *      its slash; and a model id is shortened by rule without losing the
+ *      date stamp.
  *   5. Every badge label, on the agent cards as in the call log, reads in
  *      lowercase in the text itself.
+ *   6. The banner above the judges names each representative whose
+ *      argument is missing, and is hidden when none is.
  */
 
 const { installDom, loadApp } = require('./support/load-app');
+const { compileBackend } = require('./support/compile-backend');
 
 let failures = 0;
 /**
@@ -59,7 +68,7 @@ console.log('\n=== app.js executes cleanly (catches a TDZ-class load crash) ==='
 let app;
 try {
   // Hand back exactly the pieces under test from app.js's own top-level scope.
-  app = loadApp(['state', 'el', 'renderRepresentatives', 'renderJudges', 'renderCallLog', 'agentCardSignature', 'shortModelName', 'REPRESENTATIVE_ROLES', 'JUDGE_ROLES', 'beginTrial', 'loadTrial', 'buildAgentStatusBody', 'appendTruncationNotice']);
+  app = loadApp(['state', 'el', 'renderRepresentatives', 'renderJudges', 'renderCallLog', 'agentCardSignature', 'shortModelName', 'REPRESENTATIVE_ROLES', 'JUDGE_ROLES', 'beginTrial', 'loadTrial', 'buildAgentStatusBody', 'appendTruncationNotice', 'triggerAgent', 'deriveRoleStates', 'isTruncated']);
   check('top-level code ran with no error', true);
 } catch (error) {
   check('top-level code ran with no error', false, error.message);
@@ -131,9 +140,8 @@ check('no stale card survives a trial change', beforeTrial.every((c, i) => c !==
 
 console.log('\n=== Call log distinguishes a truncation from a degeneration ===');
 // Both come through the same content-quality marker, but they are different
-// failures: one ran into the token cap, the other stopped on its own and a
-// detector flagged it. Labelling a capped response "degenerated" was simply
-// inaccurate.
+// failures: one ran into the token cap, the other did not and a detector
+// flagged it. Labelling a capped response "degenerated" was inaccurate.
 const { renderCallLog } = app;
 /**
  * Renders a one-row call log for a representative whose only logged attempt
@@ -183,6 +191,55 @@ check('a final run-on failure is labelled "degenerated"', hasBadge(runOnHtml, 'd
 const finalCapHtml = statusTextFor('[degenerate-final] Every model tier was tried (4 in total, ending with google/gemini-2.5-pro) and none produced a usable response - the final attempt hit the max_tokens limit before finishing naturally. Nothing was saved.');
 check('a final capped failure is labelled "truncated"', hasBadge(finalCapHtml, 'truncated') && !hasBadge(finalCapHtml, 'degenerated'), finalCapHtml.slice(0, 160));
 
+console.log('\n=== The legacy "truncated" badge marks only rows saved before truncation became a failure ===');
+// Until 2026-08-29 13:19 UTC a reply still capped at the end was saved as a
+// success, at a completion of 1x or 2x the cap. Since then a success can
+// still land on 1,400 or 2,800 tokens at a later tier, whose cap is larger,
+// and finish on its own there - that one is not truncated.
+{
+  const { appendTruncationNotice } = app;
+  state.maxTokens = 1400;
+  /**
+   * Whether a one-row call log for a success of `completionTokens`, logged
+   * at `timestamp`, carries the legacy badge beside "success".
+   * @param {number} completionTokens
+   * @param {string} timestamp
+   * @returns {boolean}
+   */
+  const legacyBadge = (completionTokens, timestamp) => {
+    state.callLog = [{ agentRole: 'grey_worm', callType: 'representative', modelUsed: 'anthropic/claude-haiku-4.5', promptTokens: 1000, completionTokens, totalTokens: 1000 + completionTokens, cost: 0.001, status: 'success', errorMessage: null, durationMs: 9000, timestamp }];
+    renderCallLog();
+    const html = (el.callLogBody.children[0] || {}).innerHTML || '';
+    return hasBadge(html, 'success') && hasBadge(html, 'truncated');
+  };
+  /**
+   * Whether an agent card for such a success carries the truncation notice.
+   * @param {number} completion
+   * @param {string} loggedAt
+   * @returns {boolean}
+   */
+  const cardNotice = (completion, loggedAt) => {
+    const card = document.createElement('div');
+    appendTruncationNotice(card, { status: 'success', tokens: { completion }, loggedAt });
+    return card.children.some((c) => c.textContent === 'truncated');
+  };
+  check('a row saved at the cap before the change has it', legacyBadge(1400, '2026-08-28T20:35:06Z'));
+  check('and one saved at twice the cap', legacyBadge(2800, '2026-08-29T13:04:07Z'));
+  check('one minute before the change still has it', legacyBadge(1400, '2026-08-29T13:18:36Z'));
+  check('a success at 1,400 after the change does not', !legacyBadge(1400, '2026-08-29T13:20:36Z'));
+  check('nor a success at 2,800 today', !legacyBadge(2800, new Date().toISOString()));
+  check('the card shows the notice for a row saved before the change', cardNotice(1400, '2026-08-28T20:35:06Z'));
+  check('and not for a success at 1,400 today', !cardNotice(1400, new Date().toISOString()));
+  // The card reads the row's time from deriveRoleStates(), which backfills
+  // it from the call log alongside the token counts.
+  const derived = app.deriveRoleStates({
+    representativeArguments: [{ role: 'grey_worm', seat: 'prosecution', argumentText: 'Saved at the cap.', modelUsed: 'mistralai/mistral-small-24b-instruct-2501' }],
+    judgeRulings: [],
+    apiCallLogs: [{ agentRole: 'grey_worm', callType: 'representative', status: 'success', errorMessage: null, promptTokens: 1000, completionTokens: 1400, totalTokens: 2400, timestamp: '2026-08-28T20:35:06Z' }],
+  });
+  check('deriveRoleStates() carries the row\'s time to the card', app.isTruncated(derived.representatives.grey_worm), JSON.stringify(derived.representatives.grey_worm));
+}
+
 console.log('\n=== Agent-card badges read in lowercase, like the call log and sidebar ===');
 // Every badge in the app starts lowercase, so the three views read as one
 // set. Each card state that shows a badge is built and its text compared
@@ -199,16 +256,30 @@ console.log('\n=== Agent-card badges read in lowercase, like the call log and si
   const cases = [
     ['an aborted call', buildAgentStatusBody({ status: 'aborted' }, 'jon_snow', 'Arguing'), 'aborted'],
     ['a failed call', buildAgentStatusBody({ status: 'failed', error: 'HTTP 402' }, 'jon_snow', 'Arguing'), 'call failed'],
-    ['a call the page stopped waiting on', buildAgentStatusBody({ status: 'timeout', error: 'no reply' }, 'jon_snow', 'Arguing'), 'no response yet'],
+    ['a call the page stopped waiting on', buildAgentStatusBody({ status: 'timeout', error: 'no reply' }, 'jon_snow', 'Arguing'), 'no result'],
   ];
   state.maxTokens = 1400;
   const truncatedCard = document.createElement('div');
-  appendTruncationNotice(truncatedCard, { status: 'success', tokens: { completion: 1400 } });
+  appendTruncationNotice(truncatedCard, { status: 'success', tokens: { completion: 1400 }, loggedAt: '2026-08-28T20:35:06Z' });
   cases.push(['a historical truncated result', truncatedCard, 'truncated']);
   for (const [what, node, expected] of cases) {
     const texts = badgeTexts(node);
     check(`${what} shows the "${expected}" badge`, texts.length === 1 && texts[0] === expected, JSON.stringify(texts));
   }
+}
+
+console.log('\n=== The judges\' banner names each representative with no argument ===');
+// A representative is missing whatever the reason - its reply rejected as
+// degenerate, say - so the banner says whose argument is absent, not why.
+{
+  const saved = { status: 'success', argumentText: 'An argument.', modelUsed: 'mistralai/mistral-small-24b-instruct-2501', seat: 'defense' };
+  state.representatives = { jon_snow: saved, tyrion_lannister: saved, daenerys_targaryen: saved, grey_worm: { status: 'failed', error: 'Every model tier was tried.' } };
+  state.judges = {};
+  app.renderJudges();
+  check('shown when one is missing, naming it', !el.judgesCaveat.classList.contains('hidden') && el.judgesCaveat.textContent === 'Reached with 3 of 4 representative arguments available (none from Grey Worm) - see Representatives above.', el.judgesCaveat.textContent);
+  state.representatives.grey_worm = saved;
+  app.renderJudges();
+  check('hidden when all four are there', el.judgesCaveat.classList.contains('hidden'));
 }
 
 console.log('\n=== An abort row\'s model reads "n/a", not a shortened "a" ===');
@@ -306,10 +377,11 @@ const footLabelled = (footRow.match(/data-label=/g) || []).length;
 check('totals row labels its three real value cells', footLabelled === 3, String(footLabelled));
 
 console.log('\n=== Model ids shorten to something the table column can hold ===');
-// The Model column is 131px at the narrowest this table ever renders (655px
-// wide, at a 901px viewport - below that the sidebar stacks and the table
-// gets more room, not less). Measured there, the full id needed 161px and
-// wrapped; every id below now fits on one line. These assert the rules, not
+// The table is narrowest at a 901px viewport (below that the sidebar
+// stacks and the table gets more room, not less): 655px wide, with a 131px
+// Model column, or 640px and 128px once the page has a classic scrollbar.
+// Measured at 655px, the id with "-instruct" left in needed 161px and
+// wrapped; every id below now fits on one line, at 640px too. These assert the rules, not
 // the pixels: a vendor prefix goes, a ":free" suffix goes, a standalone
 // "-instruct" segment goes, and the date stamp stays - it is the only thing
 // telling two pinned snapshots of one model apart.
@@ -473,6 +545,70 @@ async function requestFailureChecks() {
   check('the run history is still refreshed after it', historyReads === 1, String(historyReads));
   check('every result from the run stays on screen', [...Object.values(state.representatives), ...Object.values(state.judges)].every((e) => e.status === 'success') && Object.keys(state.judges).length === JUDGE_ROLES.length);
   check('the controls, overlay and sidebar are restored', isIdle());
+
+  console.log('\n=== A trigger the per-IP rate limit rejects is reported as that ===');
+  // Netlify answers a rate-limited trigger with a bare 429 and an empty
+  // body, as measured on the live site, before the handler ever runs.
+  global.fetch = async () => ({ ok: false, status: 429, json: async () => { throw new SyntaxError('Unexpected end of JSON input'); } });
+  const limited = await app.triggerAgent('/api/trials/t/representatives/jon_snow', new AbortController().signal);
+  check('a rate-limited trigger is not accepted', limited.accepted === false && limited.result.status === 'failed', JSON.stringify(limited));
+  check("its card names Netlify's per-IP rate limit", /per-IP rate limit/.test((limited.result || {}).error || ''), (limited.result || {}).error);
+
+  console.log('\n=== A "no response" row says whether it was retried or escalated ===');
+  // One marker covers both, so the caption is read from the message's end.
+  // The messages come from the real chain, so a change to their wording
+  // that the caption stops reading fails here.
+  const backend = compileBackend(['lib/openrouter.ts']);
+  const { callOpenRouter } = backend.load('lib/openrouter.js');
+  const quiet = { log: console.log, warn: console.warn };
+  console.log = console.warn = () => {};
+  process.env.OPENROUTER_API_KEY = 'test-key';
+  const DEFAULT = 'mistralai/mistral-small-24b-instruct-2501';
+  /**
+   * The messages of the attempts a chain discards when the default model
+   * fails every request in the way `fail` describes, before tier 2 answers.
+   * @param {(skew: {ms: number}) => object} fail
+   * @returns {Promise<string[]>}
+   */
+  const discardedFor = async (fail) => {
+    const skew = { ms: 0 };
+    const realNowFn = Date.now;
+    Date.now = () => realNowFn() + skew.ms;
+    global.fetch = async (_u, o) => {
+      const model = JSON.parse(o.body).model;
+      if (model === DEFAULT) return fail(skew);
+      return { ok: true, status: 200, headers: new Map(), json: async () => ({ model, choices: [{ message: { content: 'The bells had rung. That is the fact.' }, finish_reason: 'stop' }], usage: { prompt_tokens: 10, completion_tokens: 10, total_tokens: 20 } }) };
+    };
+    try {
+      const r = await callOpenRouter(DEFAULT, [{ role: 'user', content: 'hi' }], 1400, 'rep:test');
+      return (r.discardedAttempts || []).map((d) => d.errorMessage);
+    } finally {
+      Date.now = realNowFn;
+    }
+  };
+  // Two slow timeouts: the first is retried on the same model, the second
+  // spends tier 1's last attempt and escalates.
+  const slow = await discardedFor((skew) => { skew.ms += 45000; const e = new Error('timeout'); e.name = 'TimeoutError'; throw e; });
+  // A fast 429 is retried on the same model without spending an attempt.
+  let bounces = 0;
+  const fast = await discardedFor(() => (++bounces === 1 ? { ok: false, status: 429, headers: new Map(), text: async () => '{}' } : { ok: true, status: 200, headers: new Map(), json: async () => ({ model: DEFAULT, choices: [{ message: { content: 'The bells had rung. That is the fact.' }, finish_reason: 'stop' }], usage: { prompt_tokens: 10, completion_tokens: 10, total_tokens: 20 } }) }));
+  Object.assign(console, quiet);
+  backend.cleanup();
+  /**
+   * The caption under a one-row call log's "no response" badge.
+   * @param {string} errorMessage
+   * @returns {string}
+   */
+  const captionFor = (errorMessage) => {
+    state.callLog = [{ agentRole: 'jon_snow', callType: 'representative', modelUsed: DEFAULT, promptTokens: 0, completionTokens: 0, totalTokens: 0, cost: 0, status: 'failed', errorMessage, durationMs: 45000, timestamp: new Date().toISOString() }];
+    renderCallLog();
+    const html = (el.callLogBody.children[0] || {}).innerHTML || '';
+    return hasBadge(html, 'no response') ? (html.match(/<div class="status-caption">\(([^)]*)\)<\/div>/) || [])[1] : 'no "no response" badge';
+  };
+  check('the chain logged a slow retry and an escalation', slow.length === 2, JSON.stringify(slow));
+  check('a slow failure retried on the same model says so', captionFor(slow[0]) === 'retried with the same model', `${captionFor(slow[0])} :: ${slow[0]}`);
+  check('one that spent the tier says it escalated', captionFor(slow[1]) === 'escalated to a different model', `${captionFor(slow[1])} :: ${slow[1]}`);
+  check('a fast failure retried for free says retried', fast.length === 1 && captionFor(fast[0]) === 'retried with the same model', `${fast.length} :: ${fast[0]}`);
 }
 
 requestFailureChecks().then(

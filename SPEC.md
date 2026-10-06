@@ -1,14 +1,14 @@
 # Tribunal — Specification
 
-**Case T-001: The Realm v. Jon Snow.** A fixed, canonical trial — not a general-purpose "submit any charge" tool — argued and ruled on by seven independent AI agents: four representatives (two defense, two prosecution) and three judges, each modeled on a distinct real judicial reasoning method. This is the ASE course's shared "running project": every submission implements the same fixed specification, graded on directing discipline shown, not on the artifact alone.
+**Case T-001: The Realm v. Jon Snow.** A fixed, canonical trial — not a general-purpose "submit any charge" tool — argued and ruled on by seven independent AI agents: four representatives (two defense, two prosecution) and three judges, each modelled on a distinct real judicial reasoning method. This is the ASE course's shared "running project": every submission implements the same fixed specification, graded on directing discipline shown, not on the artefact alone.
 
-This document is the functional/requirements spec, sourced from the ASE Book "Case Design Dossier." For how this particular submission implements it (architecture, live deployment, setup) see `README.md`; for the full build history and every engineering decision behind it, see `CLAUDE.md`.
+This document is the functional/requirements spec, sourced from the ASE Book "Case Design Dossier." For how this particular submission implements it (architecture, live deployment, setup) see [`README.md`](README.md); for the build history and the engineering decisions behind it, see [`CLAUDE.md`](CLAUDE.md).
 
 ## 1. The charge sheet
 
 **Accused:** Jon Snow · **Deceased:** Daenerys Targaryen · **Act alleged:** Jon intentionally killed Daenerys by stabbing her during a private meeting in the throne room after the fall of King's Landing.
 
-This section is the case exactly as the app serves it — word for word the record seeded into the database by `supabase/schema.sql`. The stipulated facts in particular are quoted, not paraphrased: they are what both sides accept, and a restatement can shift what was agreed.
+This section is the case exactly as the app serves it — word for word the record seeded into the database by [`supabase/schema.sql`](supabase/schema.sql). The stipulated facts in particular are quoted, not paraphrased: they are what both sides accept, and a restatement can shift what was agreed.
 
 **Background.**
 
@@ -19,6 +19,7 @@ Daenerys Targaryen is the exiled heir of the dynasty that once ruled Westeros. S
 Daenerys attacks King's Landing. The city surrenders, but Daenerys burns streets and civilians from her dragon, Drogon. Jon witnesses the destruction. Grey Worm, her commander, joins the killing on the ground. Daenerys promises further campaigns of "liberation." Tyrion Lannister, her chief adviser, resigns in protest and is imprisoned, warning Jon that Daenerys will kill anyone who threatens her rule, including Jon's sisters. Jon asks Daenerys to show mercy and share moral judgment with others. She refuses. During an embrace, he stabs her to death. Her soldiers arrest him.
 
 **Stipulated facts (both sides accept these):**
+
 - King's Landing had surrendered: bells rang, organized resistance had ceased. Daenerys then used Drogon against streets and civilians, causing destruction on a vast scale.
 - After the victory, Daenerys told her assembled forces the campaign of "liberation" would continue beyond King's Landing. Jon had seen the city and heard the speech.
 - Tyrion Lannister renounced his office as Hand and was imprisoned. He warned Jon that Daenerys would treat Jon's sisters, and anyone else she regarded as an obstacle, as enemies.
@@ -31,18 +32,20 @@ Daenerys attacks King's Landing. The city surrenders, but Daenerys burns streets
 
 ## 2. The seven agents
 
-**Non-negotiable rule:** a seat (defense/prosecution, or a named judicial model) fixes only procedural role — never an opinion, a factual inference, or a final position. No agent is instructed to argue toward a predetermined conclusion; each reasons from its own character/method and may land anywhere, including against "its side." Full prompt text (real depth, not a one-line trait) lives in `netlify/functions/lib/representatives.ts` and `judges.ts` — this section states identity and required reasoning approach, not the prompts themselves.
+**Non-negotiable rule:** a representative's seat (defense or prosecution) fixes only procedural role — never an opinion, a factual inference, or a final position. A judge's named model fixes the reasoning method it applies, never the verdict. No agent is instructed to argue toward a predetermined conclusion; each reasons from its own character/method and may land anywhere, including against "its side." Each agent's full system prompt (real depth, not a one-line trait) lives in [`netlify/functions/lib/representatives.ts`](netlify/functions/lib/representatives.ts) or [`judges.ts`](netlify/functions/lib/judges.ts), and [`prompts.ts`](netlify/functions/lib/prompts.ts) pairs it with the case record (for a judge, with the representatives' arguments too) — this section states identity and required reasoning approach, not the prompts themselves.
 
 **Representatives:**
+
 - **Jon Snow** (defense) — plain-spoken, duty- and protection-driven; accepts blame readily; changes position when honor or evidence requires it.
 - **Tyrion Lannister** (defense) — quick, ironic, skeptical of purity and inherited power; favors persuasion and outcomes that leave people alive.
 - **Daenerys Targaryen** (prosecution) — commanding, morally intense; prizes liberation and loyalty; reacts sharply to betrayal but can be reached by genuine respect; interprets the record herself, including evidence against her.
 - **Grey Worm** (prosecution) — terse, disciplined; weighs witnessed conduct and sequence of events over rhetoric or speculation.
 
-**Judges** (each modeled on a real jurist's documented reasoning method, not a persona):
-- **Judge 1 — the Aharon Barak model.** Systematic and rights-centered; purposive interpretation (text read against a rule's function, structure, and democratic values); tests a rights claim through lawful authority, proper purpose, rational fit, least-harmful means, and proportionality; builds an explicit doctrinal structure before resolving the dispute.
+**Judges** (each modelled on a real jurist's documented reasoning method, not a persona):
+
+- **Judge 1 — the Aharon Barak model.** Systematic and rights-centered; purposive interpretation (text read against a rule's function, structure, and democratic values); tests a rights claim through lawful authority, proper purpose, rational fit, less harmful means, and proportionality; builds an explicit doctrinal structure before resolving the dispute.
 - **Judge 2 — the Menachem Elon model.** Tradition-minded; treats Jewish law as a working legal source alongside comparative and historical material; insists courts have limited authority — identifying illegality is not license to supervise every political or social choice; comfortable dissenting on the merits.
-- **Judge 3 — the Meir Shamgar model.** Institutional and fact-heavy; identifies offices, powers, and remedies before moral intuition; treats constitutional development as reasoned legal development from text, precedent, and institutional structure rather than proclamation; returns consistently to the claimant, the right, and the remedy.
+- **Judge 3 — the Meir Shamgar model.** Institutional and fact-heavy; identifies offices, powers, duties, and remedies before moral intuition; treats constitutional development as reasoned legal development from text, precedent, and institutional structure rather than proclamation; returns consistently to the claimant, the right, and the remedy.
 
 ## 3. Functional and technical requirements
 
@@ -51,7 +54,7 @@ Daenerys attacks King's Landing. The city surrenders, but Daenerys burns streets
 - All three judges are called only after the representative phase resolves; each receives the full charge sheet plus every representative argument actually available (a failed representative call is never backfilled with invented text).
 - Each judge returns one independent ruling — **justified** or **not justified** — with reasoning in its own voice/method.
 - **No sentence or penalty is ever imposed** — the Tribunal rules only on justified/not justified.
-- **The three rulings are never combined, aggregated, or reduced to a majority/consensus.** No vote count, no aggregate field, no single "outcome" — all three are shown independently, side by side. This is a hard requirement, not a default to optimize away under any framing.
+- **The three rulings are never combined, aggregated, or reduced to a majority/consensus.** No vote count, no aggregate field, no single "outcome" — all three are shown independently, each on its own card. This is a hard requirement, not a default to optimise away under any framing.
 - A representative's argument must reflect authentic in-character reasoning; an argument landing against its seat's usual side is a valid, expected outcome, not a defect.
 - Verdict vocabulary is **justified / not justified** everywhere an outcome is expressed — backend, frontend, and stored data alike — never guilty/not guilty.
 - A failed model call must surface as a visible failure, in the UI and the call log alike. It must never be silently dropped or replaced with a fabricated argument or ruling.
@@ -60,4 +63,4 @@ Daenerys attacks King's Landing. The city surrenders, but Daenerys burns streets
 
 ---
 
-How this repo actually satisfies the above — the specific model(s) used, cost/reliability engineering, anti-abuse measures, the database (defined in `supabase/schema.sql`, and mapped in `README.md`), and every decision behind them — is documented in `README.md` (current state) and `CLAUDE.md` (full running log), not repeated here.
+How this repo actually satisfies the above — the specific model(s) used, cost/reliability engineering, [anti-abuse measures](README.md#anti-abuse-and-cost-controls), the database (defined in [`supabase/schema.sql`](supabase/schema.sql), and mapped in [`README.md`](README.md#database)), and the decisions behind them — is documented in [`README.md`](README.md) (current state) and [`CLAUDE.md`](CLAUDE.md#status-log) (running log), not repeated here.

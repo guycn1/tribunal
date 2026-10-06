@@ -23,11 +23,13 @@ const path = require('node:path');
  * test can read the tables back afterwards to see what the backend wrote.
  *
  * @param {Record<string, object[]>} tables Initial rows, by table name.
- * @param {{failReads?: boolean, missingColumns?: Record<string, string[]>}} [options]
+ * @param {{failReads?: boolean, missingColumns?: Record<string, string[]>, rejectInsert?: (table: string, row: object) => (string | undefined)}} [options]
  *   failReads makes every select return an error, to exercise the backend's
  *   failure paths. missingColumns names columns a table does not have yet,
  *   as in a database a migration has not reached: a write naming one is
- *   rejected whole, with the error Supabase gives.
+ *   rejected whole, with the error Supabase gives. rejectInsert is asked
+ *   about each insert, and a message it returns rejects that insert with
+ *   that error - a foreign key the row breaks, say.
  * @returns {FakeSupabase}
  */
 function fakeSupabase(tables, options = {}) {
@@ -100,8 +102,11 @@ function fakeSupabase(tables, options = {}) {
         then(resolve, reject) {
           let result;
           const missing = op === 'insert' || op === 'upsert' ? unknownColumn() : undefined;
+          const rejected = op === 'insert' && options.rejectInsert ? options.rejectInsert(table, payload) : undefined;
           if (missing) {
             result = { data: null, error: { message: `Could not find the '${missing}' column of '${table}' in the schema cache` } };
+          } else if (rejected) {
+            result = { data: null, error: { message: rejected } };
           } else if (op === 'insert') {
             const stamp = String(++clock).padStart(8, '0');
             const row = { id: `00000000-0000-4000-8000-${String(++nextId).padStart(12, '0')}`, timestamp: stamp, created_at: stamp, updated_at: stamp, ...payload };
