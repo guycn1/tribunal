@@ -1,6 +1,7 @@
 /**
  * @file Asserts that values deliberately duplicated across files still agree,
- * and that the page's timeouts outlast the server's time budget.
+ * that the page's timeouts outlast the server's time budget, and that a
+ * card's text area ends between two lines.
  *
  * Run with `npm test`. No framework, no network, no build: every check
  * reads the real source files as text and compares what it finds.
@@ -98,7 +99,7 @@ for (const [name, value] of backendMarkers) {
   check(`${name} has the same value in both`, frontendMarkers.get(name) === value, `backend '${value}' vs frontend '${frontendMarkers.get(name)}'`);
 }
 
-// --- 1b. Which markers mean "discarded and retried": the same set on both sides
+// --- 1b. Which markers mean "discarded and retried": one set on both sides --
 console.log('\n=== Both sides agree which markers are retries, not outcomes ===');
 
 // A row carrying one of these is not a role's final outcome. The frontend
@@ -329,6 +330,33 @@ const truncationReason = (openrouter.match(/TRUNCATED[^\n]*\r?\n\s*reason = '([^
 check('app.js keys on a phrase', Boolean(capPhrase), String(capPhrase));
 check('found the truncation reason in openrouter.ts', Boolean(truncationReason), String(truncationReason));
 check('the truncation reason contains that phrase', Boolean(capPhrase) && Boolean(truncationReason) && truncationReason.includes(capPhrase), `'${capPhrase}' in '${truncationReason}'`);
+
+// --- 10. The card fade's scrollbar width: app.js <-> styles.css ----------
+console.log('\n=== The card fade ends at the width app.js measures ===');
+
+// attachScrollFade() measures each card's scrollbar into a custom property,
+// and the fade's right edge reads it; a rename on one side only would run
+// the fade back over the scrollbar, with nothing failing. The name must end
+// where the property does, so a name the other only starts with does not pass.
+const fadeVar = (appJs.match(/wrapEl\.style\.setProperty\('(--[\w-]+)'/) || [])[1];
+check('app.js sets a property for the scrollbar width', Boolean(fadeVar), String(fadeVar));
+check(
+  "the card fade's right edge reads that property",
+  Boolean(fadeVar) && new RegExp(`\\.card-body-scroll-wrap::after\\s*\\{[^}]*\\bright:\\s*var\\(${fadeVar}\\s*[,)]`).test(css),
+  `app.js sets '${fadeVar}', but no '.card-body-scroll-wrap::after { right: var(${fadeVar}...) }' was found in styles.css`
+);
+
+// --- 11. A card's text area ends between two lines ----------------------
+console.log("\n=== A card's text area is a whole number of lines tall ===");
+
+// A cap in pixels that is not a multiple of the line height cuts the last
+// visible line through its letters, a row of letter tops under the fade; in
+// lh, the element's own line height, it ends between two lines whatever the
+// font size. The px value before it is the fallback for a browser without lh.
+const cardScroll = (css.match(/\.card-body-scroll\s*\{([^}]*)\}/) || [])[1] || '';
+const caps = [...cardScroll.matchAll(/max-height:\s*([^;]+);/g)].map((m) => m[1].trim());
+check('the card text area has a height cap', caps.length > 0, cardScroll.trim().slice(0, 80));
+check('its cap is a whole number of lines (lh), set last', caps.length > 0 && /^[1-9]\d*lh$/.test(caps[caps.length - 1]), caps.join(', '));
 
 console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} check(s) failed.`);
 process.exit(failures === 0 ? 0 : 1);

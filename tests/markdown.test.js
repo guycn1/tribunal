@@ -9,10 +9,14 @@
  * included, so a failure names both.
  *
  * This half only knows the defects someone has already found. The other half,
- * `npm run check-render` (scripts/check-render.js), renders each file through
+ * `npm run check-render` (tests/check-render.js), renders each file through
  * GitHub itself and compares the page with the source, which is what catches
  * a defect nobody has thought of yet. It needs the network, so it is not part
  * of `npm test`.
+ *
+ * It also checks how the render check cuts a file too large for GitHub's API
+ * into pieces: the pieces must join back into the file, and each after the
+ * first must start at a heading outside a code block.
  */
 
 const fs = require('node:fs');
@@ -48,8 +52,25 @@ function markdownFiles() {
     .trim().split('\n').filter((f) => /\.md$/i.test(f) && fs.existsSync(path.join(ROOT, f)));
 }
 
-/** The tags written on purpose in prose, which GitHub keeps: README's endpoint list and badge tables. */
+/**
+ * The tags written on purpose in prose, which GitHub keeps: README's endpoint
+ * list and badge tables.
+ */
 const KEPT_TAGS = new Set(['code', 'b']);
+
+/**
+ * The one block written on purpose in HTML: README's live link, centred.
+ * GitHub keeps a div and its align attribute (rendered through its API on
+ * 2026-10-06), and only these two exact tags are allowed for it.
+ */
+const CENTRED_BLOCK = ['<div align="center">', '</div>'];
+
+/**
+ * A line break GitHub keeps (rendered through its API on 2026-10-06). Alone
+ * on its line it adds a line of space, as below README's live link, where a
+ * blank line adds none; within a line of text it breaks the line.
+ */
+const SPACER = '<br>';
 
 /**
  * Blanks every code span in a paragraph, delimiters included, keeping its
@@ -128,8 +149,11 @@ for (const file of markdownFiles()) {
   const paras = paragraphs(lines);
   const found = {
     tags: [], unclosed: [], escapes: [], setext: [], interrupts: [], ruleBeforeHeading: [], tableSeparator: [],
-    tableCells: [], pipeInCode: [], bold: [], intraword: [], links: [], trailing: [], indented: [], wiki: [],
+    tableCells: [], pipeInCode: [], bold: [], intraword: [], links: [], trailing: [], indented: [], wiki: [], imageSrc: [],
+    centred: [], spacer: [], plusStar: [],
   };
+  /** Every centred block's tag, in order, to find one left open. */
+  const centredTags = [];
   const at = (n, what) => `line ${n}: ${String(what).replace(/\s+/g, ' ').slice(0, 70)}`;
 
   for (const { text: para, line } of paras) {
@@ -141,8 +165,40 @@ for (const file of markdownFiles()) {
     // a literal angle bracket is written &lt; / &gt;. A backslash-escaped <
     // and an autolink such as <https://...> are not tag-shaped.
     for (const m of prose.matchAll(/(?<!\\)<\/?([A-Za-z][A-Za-z0-9-]*)(?:\s[^<>]*)?\/?>/g)) {
+      if (CENTRED_BLOCK.includes(m[0]) || m[0] === SPACER) continue;
       if (!KEPT_TAGS.has(m[1].toLowerCase()) || /\s/.test(m[0])) found.tags.push(at(lineOf(m.index), m[0]));
     }
+    // A centred block's tags must each be alone on their line, with a blank
+    // line after it (rendered through GitHub's API on 2026-10-06): with no
+    // blank line after <div align="center">, the heading inside is printed
+    // as typed, "### ..." and "**...**" included; with none after </div>, so
+    // is the paragraph after it; and text on a tag's own line is printed as
+    // typed too. A blank line before either tag is not needed.
+    prose.split('\n').forEach((proseLine, k, own) => {
+      for (const m of proseLine.matchAll(/<div align="center">|<\/div>/g)) {
+        const n = line + k;
+        // A <br> line directly under </div> is HTML too, and renders as one.
+        const brNext = m[0] === '</div>' && k + 1 < own.length && own[k + 1].trim() === SPACER;
+        if (proseLine.trim() !== m[0]) found.centred.push(at(n, `${m[0]} shares its line`));
+        else if (k !== own.length - 1 && !brNext) found.centred.push(at(n, `${m[0]} has no blank line after it`));
+        centredTags.push({ n, open: m[0] !== '</div>' });
+      }
+      // A <br> alone on its line adds a line of space (rendered through
+      // GitHub's API on 2026-10-06), but with no blank line after it the
+      // next line is printed as typed, "**...**" included, and directly
+      // under a line of text it joins that paragraph as a last line break,
+      // which adds no space. Under a heading, a </div> or a list item it
+      // stands on its own, as it does with text on its line, where it is an
+      // ordinary line break.
+      if (proseLine.trim() === SPACER) {
+        const n = line + k;
+        const above = k > 0 ? own[k - 1] : '';
+        if (k !== own.length - 1) found.spacer.push(at(n, '<br> has no blank line after it'));
+        if (above.trim() && !/^#{1,6}\s/.test(above) && above.trim() !== '</div>' && !LIST_ITEM.test(above)) {
+          found.spacer.push(at(n, '<br> sits directly under text, which it joins'));
+        }
+      }
+    });
     // A backtick run with no closing run of the same length in its paragraph
     // pairs with nothing, or with the wrong one: "a ` b `c` d" renders "b " as
     // code and prints the last backtick.
@@ -164,6 +220,10 @@ for (const file of markdownFiles()) {
     }
     // A wiki-style link prints its brackets: "[[note]]" stays "[[note]]".
     for (const m of prose.matchAll(/\[\[[^\]]*\]\]/g)) found.wiki.push(at(lineOf(m.index), m[0]));
+    // An image whose address GitHub does not allow loses it: "![alt](data:...)"
+    // and "![alt](javascript:...)" render as an <img> with no src, a broken
+    // image (rendered through GitHub's API on 2026-10-06).
+    for (const m of prose.matchAll(/!\[[^\]]*\]\(\s*(?:javascript|data):[^)]*\)/gi)) found.imageSrc.push(at(lineOf(m.index), m[0]));
   }
 
   let pipeRun = [];
@@ -194,12 +254,20 @@ for (const file of markdownFiles()) {
     // A line of only - or = under text makes that text a heading.
     if (/^\s*(-+|=+)\s*$/.test(lineText) && prevIsParagraph) found.setext.push(at(n, `"${prev.trim().slice(0, 40)}" becomes a heading`));
     // A list item, a "1." item, a heading or a quote can start in the middle
-    // of a paragraph: a line wrapped so it begins with "- ", "+ ", "1. ", "# "
-    // or ">" starts that block. A list here always follows a blank line, so
-    // one directly under an unindented paragraph line is a wrapped line.
+    // of a paragraph: a line wrapped so it begins with "- ", "* ", "+ ", "1. ",
+    // "1) ", "# " or ">" starts that block. A list here always follows a blank
+    // line, so one directly under an unindented paragraph line is a wrapped
+    // line.
     if (BLOCK_START.test(lineText) && prevIsParagraph && !/^\s/.test(prev) && !LIST_ITEM.test(prev) && !/^>/.test(prev)) {
       found.interrupts.push(at(n, lineText));
     }
+    // A line starting with "+ " or "* ", indented or not, is a list item:
+    // under a paragraph it starts a list, and inside a list item a nested one
+    // (rendered through GitHub's API on 2026-10-06: an item wrapped before
+    // "+ 93 = 517" put "93 = 517" in a list of its own). Every list in this
+    // repository is written with "- " or a number, so such a line is wrapped
+    // text. The rule above reads only unindented lines.
+    if (/^\s*[+*]\s/.test(lineText)) found.plusStar.push(at(n, lineText));
     // A thematic break right before a heading draws a second rule: GitHub
     // already rules every h1 and h2.
     if (THEMATIC_BREAK.test(lineText) && !prevIsParagraph) {
@@ -216,12 +284,23 @@ for (const file of markdownFiles()) {
     }
   });
   endTable();
+  // A centred block never closed centres everything after it: GitHub closes
+  // the div at the end of the file (rendered through its API on 2026-10-06).
+  let depth = 0;
+  let lastOpen = 0;
+  for (const tag of centredTags) {
+    if (tag.open) { depth++; lastOpen = tag.n; } else depth = Math.max(0, depth - 1);
+  }
+  if (depth) found.centred.push(at(lastOpen, '<div align="center"> never closed'));
 
-  check(`${file}: no HTML tag GitHub would drop (anything but <code> and <b>) outside a code span`, !found.tags.length, found.tags.join(' | '));
+  check(`${file}: no HTML tag GitHub would drop (anything but <code>, <b>, <br> and a centred block) outside a code span`, !found.tags.length, found.tags.join(' | '));
+  check(`${file}: every centred block is closed, and each of its tags is alone on its line with a blank line after it`, !found.centred.length, found.centred.join(' | '));
+  check(`${file}: every <br> alone on its line has a blank line after it and no text directly above`, !found.spacer.length, found.spacer.join(' | '));
   check(`${file}: every code span is closed in its paragraph`, !found.unclosed.length, found.unclosed.join(' | '));
   check(`${file}: no backslash escape inside a code span, where it is printed`, !found.escapes.length, found.escapes.join(' | '));
   check(`${file}: no line of - or = directly under text, which turns it into a heading`, !found.setext.length, found.setext.join(' | '));
   check(`${file}: no list item, heading or quote starts in the middle of a paragraph`, !found.interrupts.length, found.interrupts.join(' | '));
+  check(`${file}: no line starts with "+ " or "* ", which GitHub makes a list item`, !found.plusStar.length, found.plusStar.join(' | '));
   check(`${file}: no thematic break right before a heading`, !found.ruleBeforeHeading.length, found.ruleBeforeHeading.join(' | '));
   check(`${file}: every table has its |---| row`, !found.tableSeparator.length, found.tableSeparator.join(' | '));
   check(`${file}: every table row has as many cells as its header`, !found.tableCells.length, found.tableCells.join(' | '));
@@ -232,6 +311,32 @@ for (const file of markdownFiles()) {
   check(`${file}: no line ends in two spaces, an invisible line break`, !found.trailing.length, found.trailing.join(' | '));
   check(`${file}: no paragraph indented four spaces outside a list, which becomes a code block`, !found.indented.length, found.indented.join(' | '));
   check(`${file}: no [[wiki-style]] link, which GitHub prints with its brackets`, !found.wiki.length, found.wiki.join(' | '));
+  check(`${file}: no image at a data: or javascript: address, which GitHub strips`, !found.imageSrc.length, found.imageSrc.join(' | '));
+}
+
+// The render check sends a file too large for GitHub's API in pieces, each
+// cut just before a level-2 or level-3 heading outside a code block. Cut
+// small here, so every file is cut wherever it can be: the pieces must join
+// back into the file, and each piece after the first must start with such a
+// heading, or a piece would render differently from the same text inside the
+// whole file.
+const { pieces } = require('./check-render');
+console.log("\n=== The render check's pieces of a large file ===");
+// A heading-shaped line inside a code block is code, not a place to cut.
+const fencedSample = ['# Title', 'intro', '', '```text', '## not a heading', '```', 'after', '', '## Real', 'body'].join('\n');
+check('a "## " line inside a code block is not cut before', JSON.stringify(pieces(fencedSample, 1)) === JSON.stringify(['# Title\nintro\n\n```text\n## not a heading\n```\nafter\n', '## Real\nbody']), JSON.stringify(pieces(fencedSample, 1)));
+for (const file of markdownFiles()) {
+  const text = fs.readFileSync(path.join(ROOT, file), 'utf8').replace(/\r\n/g, '\n');
+  const cut = pieces(text, 2000);
+  let fence = false;
+  const headingsOutsideCode = new Set();
+  text.split('\n').forEach((line) => {
+    if (/^\s*(```|~~~)/.test(line)) fence = !fence;
+    else if (!fence && /^#{2,3} /.test(line)) headingsOutsideCode.add(line);
+  });
+  check(`${file}: cut into pieces, it joins back into the file`, cut.length > 1 && cut.join('\n') === text, `${cut.length} piece(s)`);
+  const badStarts = cut.slice(1).map((p) => p.split('\n')[0]).filter((first) => !headingsOutsideCode.has(first));
+  check(`${file}: every piece after the first starts at a heading outside a code block`, badStarts.length === 0, badStarts.join(' | '));
 }
 
 console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} check(s) failed.`);

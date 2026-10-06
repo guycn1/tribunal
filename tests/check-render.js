@@ -9,20 +9,21 @@
  * The offline half (tests/markdown.test.js, in `npm test`) only knows the
  * defects someone has already found. This one asks GitHub, so it also
  * catches one nobody has thought of yet - such as the `<date>` that HARD
- * RULE 3 printed for weeks as "until ," because GitHub drops a tag it does
+ * RULE 3 printed for nine days as "until ," because GitHub drops a tag it does
  * not know. For each file it asserts:
  *
  * - every word of the source reaches the page;
- * - no Markdown syntax is printed as text (**, __, a backtick, "](", "][", "[[",
- *   an HTML comment, a table left as a paragraph of pipes);
+ * - no Markdown syntax is printed as text (**, __, a backtick, "](", "][",
+ *   "[[", an HTML comment, a table left as a paragraph of pipes);
  * - the page has as many headings, tables, table cells, rules, code blocks,
- *   list items, quotes, line breaks, links and bold spans as the source asks
- *   for.
+ *   list items, quotes, line breaks, links, images and bold spans as the
+ *   source asks for.
  *
  * It needs the network, so it is not part of `npm test`: run it before every
  * commit that touches a Markdown file, and before every merge to main. It
  * uses GitHub's unauthenticated API (60 requests an hour), one request per
- * file, and spends no quota of this project's. Exits 1 on a defect, and 2
+ * file, or per piece of one over PIECE_LIMIT characters (see pieces()
+ * below), and spends no quota of this project's. Exits 1 on a defect, and 2
  * when GitHub could not be reached, so an unreachable API never passes.
  */
 
@@ -31,7 +32,10 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 
 const ROOT = path.join(__dirname, '..');
-const KEPT_TAGS = /<\/?(code|b)>/g;
+// The tags written on purpose, which GitHub keeps and which hold no words of
+// their own: <code> and <b> in README's endpoint list and badge tables, the
+// div that centres its live link, and the <br> below it.
+const KEPT_TAGS = /<\/?(code|b)>|<div align="center">|<\/div>|<br>/g;
 const THEMATIC_BREAK = /^\s*(-{3,}|\*{3,}|_{3,})\s*$/;
 const SEPARATOR_ROW = /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)*\|?\s*$/;
 const LIST_ITEM = /^\s*(?:[-*+]|\d+[.)])\s+\S/;
@@ -84,7 +88,7 @@ function splitCodeSpans(s) {
  */
 function expectFromSource(source) {
   const lines = source.replace(/\r\n/g, '\n').replace(/<!--[\s\S]*?-->/g, (m) => m.replace(/[^\n]/g, ' ')).split('\n');
-  const expected = { words: [], heading: 0, table: 0, cell: 0, hr: 0, pre: 0, li: 0, blockquote: 0, br: 0, link: 0, strong: 0 };
+  const expected = { words: [], heading: 0, table: 0, cell: 0, hr: 0, pre: 0, li: 0, blockquote: 0, br: 0, link: 0, image: 0, strong: 0 };
   let fence = false;
   const proseLines = [];
   lines.forEach((line, i) => {
@@ -123,10 +127,18 @@ function expectFromSource(source) {
     // and this count does not - an angle-bracket destination, a reference
     // link - is reported too: this repository writes every link as
     // [text](destination).
-    expected.link += (prose.match(/\]\([^)\s]*\)/g) || []).length;
+    // An image, ![alt](destination), is counted as an image rather than a
+    // link: GitHub wraps it in a link to the file, but one that starts with
+    // other attributes, which the page's link count below does not read.
+    const images = (prose.match(/!\[[^\]]*\]\([^)\s]*\)/g) || []).length;
+    expected.image += images;
+    expected.link += (prose.match(/\]\([^)\s]*\)/g) || []).length - images;
     // A bare URL is a link too - GitHub autolinks it, in parentheses or not.
     expected.link += (prose.replace(/\]\([^)\s]*\)/g, ']').match(/\bhttps?:\/\/[^\s)<>]+/g) || []).length;
     expected.strong += Math.floor((prose.match(/\*\*/g) || []).length / 2);
+    // A <br> written in the source is a line break on the page, alone on its
+    // line or within one.
+    expected.br += (prose.match(/<br>/g) || []).length;
     const visible = decode(prose.replace(/\]\([^)\s]*\)/g, ']').replace(/<(https?:\/\/[^>]+)>/g, '$1').replace(KEPT_TAGS, ' '));
     expected.words.push(...words(visible));
   }
@@ -147,12 +159,22 @@ function readRendered(html) {
   }
   // A table GitHub did not recognise is a paragraph that starts with a pipe.
   for (const m of html.matchAll(/<p>\s*\|([^<]{0,60})/g)) leaks.push(`a table printed as a paragraph of pipes: |${decode(m[1])}...`);
+  // An image's alt text is on the page as its alt attribute, which a reader
+  // of the page meets in place of the image (rendered through GitHub's API
+  // on 2026-10-06: ![text](file) becomes <img src="file" alt="text">, every
+  // word kept), so it counts among the page's words.
+  const withAlt = html.replace(/<img\b[^>]*\balt="([^"]*)"[^>]*>/g, ' $1 ');
   return {
-    words: words(decode(html.replace(/<[^>]+>/g, ' '))),
+    words: words(decode(withAlt.replace(/<[^>]+>/g, ' '))),
     leaks,
     heading: count(/<h[1-6][ >]/g), table: count(/<table[ >]/g), cell: count(/<t[hd][ >]/g), hr: count(/<hr[ >/]/g),
     pre: count(/<pre[ >]/g), li: count(/<li[ >]/g), blockquote: count(/<blockquote[ >]/g), br: count(/<br[ >/]/g),
     link: count(/<a href="(?!#)[^"]*"(?![^>]*class="anchor")/g) + count(/<a href="#[^"]*"(?![^>]*class="anchor")/g),
+    // Only an image that kept its address counts: GitHub strips one it does
+    // not allow (a javascript: or data: URL, rendered through its API on
+    // 2026-10-06) and leaves an <img> with no src, a broken image with all of
+    // its alt text still there.
+    image: count(/<img\b[^>]*\bsrc="[^"]+"/g),
     strong: count(/<strong[ >]/g),
   };
 }
@@ -176,7 +198,7 @@ function compare(source, html) {
   }
   if (lost.size) defects.push(`words of the source missing from the page: ${[...lost].map(([w, n]) => (n > 1 ? `${w} x${n}` : w)).join(', ')}`);
   for (const leak of got.leaks) defects.push(`Markdown printed as text, ${leak}`);
-  for (const key of ['heading', 'table', 'cell', 'hr', 'pre', 'li', 'blockquote', 'br', 'link', 'strong']) {
+  for (const key of ['heading', 'table', 'cell', 'hr', 'pre', 'li', 'blockquote', 'br', 'link', 'image', 'strong']) {
     if (want[key] !== got[key]) defects.push(`${key}: the source asks for ${want[key]}, the page has ${got[key]}`);
   }
   return defects;
@@ -198,24 +220,66 @@ async function render(text) {
   return res.text();
 }
 
+/**
+ * The most characters sent to GitHub in one request. Its Markdown API renders
+ * at most 400 KB of text - a larger file was refused on 2026-10-06 with a 403,
+ * "too_large" - and CLAUDE.md has grown past that.
+ */
+const PIECE_LIMIT = 200000;
+
+/**
+ * A file cut into pieces small enough to render, each ending just before a
+ * level-2 or level-3 heading outside a code block, so the pieces joined are
+ * the file. Nothing in this repository's Markdown carries across a heading -
+ * every link is written inline, and a heading ends any paragraph, list, table
+ * or quote - so each piece renders as it does inside the whole file, and is
+ * compared with its own source. A file within the limit is one piece.
+ * @param {string} source With LF line endings.
+ * @param {number} [limit]
+ * @returns {string[]}
+ */
+function pieces(source, limit = PIECE_LIMIT) {
+  const sections = [];
+  let current = [];
+  let fence = false;
+  for (const line of source.split('\n')) {
+    if (/^\s*(```|~~~)/.test(line)) fence = !fence;
+    if (!fence && /^#{2,3} /.test(line) && current.length) { sections.push(current.join('\n')); current = []; }
+    current.push(line);
+  }
+  sections.push(current.join('\n'));
+  const out = [];
+  for (const section of sections) {
+    if (out.length && out[out.length - 1].length + 1 + section.length <= limit) out[out.length - 1] += `\n${section}`;
+    else out.push(section);
+  }
+  return out;
+}
+
 async function main() {
   const args = process.argv.slice(2);
   const files = args.length ? args : execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard'], { cwd: ROOT, encoding: 'utf8' })
     .trim().split('\n').filter((f) => /\.md$/i.test(f));
   let defects = 0;
   for (const file of files) {
-    const source = fs.readFileSync(path.resolve(ROOT, file), 'utf8');
-    let html;
-    try {
-      html = await render(source);
-    } catch (error) {
-      console.error(`\ncheck-render: could not render ${file}: ${error.message}`);
-      // process.exitCode, not process.exit(): on Windows, exiting while a
-      // fetch is still closing its handle aborts Node with code 127.
-      process.exitCode = 2;
-      return;
+    // GitHub stores the file with LF line endings, whatever the working copy
+    // has, so that is what it renders.
+    const source = fs.readFileSync(path.resolve(ROOT, file), 'utf8').replace(/\r\n/g, '\n');
+    const parts = pieces(source);
+    const found = [];
+    for (const [i, part] of parts.entries()) {
+      let html;
+      try {
+        html = await render(part);
+      } catch (error) {
+        console.error(`\ncheck-render: could not render ${file}${parts.length > 1 ? ` (part ${i + 1} of ${parts.length})` : ''}: ${error.message}`);
+        // process.exitCode, not process.exit(): on Windows, exiting while a
+        // fetch is still closing its handle aborts Node with code 127.
+        process.exitCode = 2;
+        return;
+      }
+      found.push(...compare(part, html).map((d) => (parts.length > 1 ? `part ${i + 1} of ${parts.length}: ${d}` : d)));
     }
-    const found = compare(source, html);
     defects += found.length;
     console.log(found.length ? `\n${file}: ${found.length} defect(s)` : `${file}: renders as written`);
     for (const d of found) console.log(`  DEFECT  ${d}`);
@@ -229,4 +293,4 @@ async function main() {
 }
 
 if (require.main === module) main();
-module.exports = { compare, expectFromSource, readRendered };
+module.exports = { compare, expectFromSource, readRendered, pieces, PIECE_LIMIT };

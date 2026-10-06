@@ -1,19 +1,17 @@
 :root {
   /* 90% of the browser's own default, which is 14.4px on a default setup.
-     Deliberately a percentage rather than a px value: a px value here
-     would override the reader's browser font-size preference outright,
-     so someone who raised their default for readability would be silently
-     pushed back down to this size. A percentage scales that preference instead
-     of replacing it, and produces the identical result for everyone who
-     has not changed it.
-     Every font-size in this stylesheet is expressed in rem, so this is
-     the single control point for the app's whole type scale. One
-     deliberate exception: .model-name is 0.92em, so a model id shrinks
-     relative to whatever line it sits in rather than against the root -
-     it appears in contexts at different sizes and should stay
-     proportional to each. Lengths that should NOT track type size -
-     hairline borders, radii, fixed structural spacing, breakpoints - stay
-     in px on purpose. */
+     Deliberately a percentage rather than a px value: a px value here would
+     override the reader's browser font-size preference outright, so someone who
+     raised their default for readability would be silently pushed back down to
+     this size. A percentage scales that preference instead of replacing it, and
+     produces the identical result for everyone who has not changed it.
+     Every font-size in this stylesheet is expressed in rem, so this is the
+     single control point for the app's whole type scale. One deliberate
+     exception: .model-name is 0.92em, so a model id shrinks relative to
+     whatever line it sits in rather than against the root - it appears in
+     contexts at different sizes and should stay proportional to each. Lengths
+     that should NOT track type size - hairline borders, radii, fixed structural
+     spacing, breakpoints - stay in px on purpose. */
   font-size: 90%;
 
   --bg: #14171c;
@@ -198,15 +196,15 @@ body {
        20px - the diffuse surround. Reads as the glow around the mark and
               barely touches how bright the mark itself appears.
      The inner layer's alpha was cut harder than the outer one's (60 -> 38
-     against 35 -> 22): the complaint that addressed was the mark reading
-     too hot, not the surround being too wide. Both radii were later
-     widened, from 5px and 13px to the 10px and 20px below, at unchanged
-     alpha - the same light spread wider, so it reads as a soft aura rather than a bright rim. The resting
-     filter above uses the same radii, so only the alpha animates.
-     The 20px layer reaches 3px past the sidebar's edge (.sidebar is
-     overflow: hidden and the icon sits 17px in) and is clipped there. That
-     was checked and is invisible - it is the last few per cent of the
-     falloff - but it is worth knowing before widening either layer. */
+     against 35 -> 22): the complaint that addressed was the mark reading too
+     hot, not the surround being too wide. Both radii were later widened, from
+     5px and 13px to the 10px and 20px below, at unchanged alpha - the same
+     light spread wider, so it reads as a soft aura rather than a bright rim.
+     The resting filter above uses the same radii, so only the alpha animates.
+     The 20px layer reaches 3px past the sidebar's edge (.sidebar is overflow:
+     hidden and the icon sits 17px in) and is clipped there. That was checked
+     and is invisible - it is the last few per cent of the falloff - but it is
+     worth knowing before widening either layer. */
   filter: drop-shadow(0 0 10px color-mix(in srgb, var(--text) 38%, transparent))
     drop-shadow(0 0 20px color-mix(in srgb, var(--text) 22%, transparent));
 }
@@ -323,18 +321,18 @@ body {
   overflow-x: hidden;
 }
 
-/* Shown while a history entry's trial data is being fetched (loadTrial()
-   in app.js), while a new trial is being created (beginTrial()) and while
-   an abort settles (abortCurrentTrial()) - covers .main only, not the
-   sidebar, since the sidebar stays independently readable (though not
-   clickable - see pointer-events below) meanwhile. position:fixed rather than
-   absolute so it stays covering the visible viewport regardless of how
-   tall .main's own content is or how far the page is scrolled.
-   The `left` below is deliberately the exact same clamp() as .sidebar's
-   own width - position:fixed takes this out of flow, so it cannot inherit
-   that width and has to restate it. The two must stay in step: if one is
-   changed without the other, the overlay silently starts covering the
-   sidebar or leaving a strip of .main uncovered.
+/* Shown while a history entry's trial data is being fetched (loadTrial() in
+   app.js), while a new trial is being created (beginTrial()) and while an abort
+   settles (abortCurrentTrial()) - covers .main only, not the sidebar, since the
+   sidebar stays independently readable (though not clickable - see
+   pointer-events below) meanwhile. position:fixed rather than absolute so it
+   stays covering the visible viewport regardless of how tall .main's own
+   content is or how far the page is scrolled.
+   The `left` below is deliberately the exact same clamp() as .sidebar's own
+   width - position:fixed takes this out of flow, so it cannot inherit that
+   width and has to restate it. The two must stay in step: if one is changed
+   without the other, the overlay silently starts covering the sidebar or
+   leaving a strip of .main uncovered.
    tests/shared-constants.test.js compares them. */
 .main-loading-overlay {
   position: fixed;
@@ -653,12 +651,18 @@ body {
    text exists when there isn't any. pointer-events: none so it never
    blocks scrolling/selecting the text underneath it. The gradient's
    solid end matches .card's own background (--bg-card) so it blends
-   into the card rather than reading as its own separate block. */
+   into the card rather than reading as its own separate block.
+   It stops where the card's scrollbar begins, so the scrollbar's
+   bottom arrow stays fully visible rather than half faded into a stray
+   mark at the end of the last line. The scrollbar's width depends on
+   the browser and the OS (none at all where scrollbars overlay the
+   content), so attachScrollFade() in app.js measures it on each card
+   and sets --card-scrollbar-width; 0px is its value before that. */
 .card-body-scroll-wrap::after {
   content: '';
   position: absolute;
   left: 0;
-  right: 4px;
+  right: var(--card-scrollbar-width, 0px);
   bottom: 0;
   height: 42px;
   background: linear-gradient(to bottom, transparent, var(--bg-card));
@@ -678,9 +682,17 @@ body {
    wildly inconsistent across a grid otherwise, forcing a lot of scrolling
    just to reach the call log below. A capped height with its own scrollbar
    keeps every card a predictable size while still showing a real, readable
-   chunk of text before scrolling is needed. */
+   chunk of text before scrolling is needed.
+   The cap is a whole number of lines (lh is the element's own line height:
+   0.9rem at 1.5, 19.44px at the default root size), so the box ends between
+   two lines. A cap in pixels that is not a multiple of the line height, such
+   as 340px (17.49 lines), cuts the last visible line through its letters,
+   which shows under the fade as a row of letter tops. 18 lines is the whole
+   number nearest 340px that shows no less text. A browser without lh keeps
+   the 340px. */
 .card-body-scroll {
   max-height: 340px;
+  max-height: 18lh;
   overflow-y: auto;
   padding-right: 4px;
 }
@@ -699,17 +711,16 @@ body {
    hovered, for discoverability; most opaque while the thumb itself is
    actively being clicked and dragged.
 
-   The rest<->hover tiers are driven by --scrollbar-thumb-opacity, a CSS
-   custom property written every animation frame by attachScrollbarFade()
-   in app.js - NOT a bare CSS :hover selector, and NOT a CSS
-   transition or animation on the colour itself. Each individual frame is
-   just an ordinary instant custom-property change, which every browser
-   already handles fine - repeated every frame for ~SCROLLBAR_FADE_MS,
-   that produces a real smooth fade with no CSS animation involved. The 15% literal below is only
-   the fallback for the (practically unreachable) case the custom
-   property was never set - the real values live in app.js's
-   SCROLLBAR_REST_OPACITY/SCROLLBAR_HOVER_OPACITY, and this one must match
-   the rest value. CSS can't read a JS constant, so
+   The rest<->hover tiers are driven by --scrollbar-thumb-opacity, a CSS custom
+   property written every animation frame by attachScrollbarFade() in app.js -
+   NOT a bare CSS :hover selector, and NOT a CSS transition or animation on the
+   colour itself. Each individual frame is just an ordinary instant
+   custom-property change, which every browser already handles fine - repeated
+   every frame for ~SCROLLBAR_FADE_MS, that produces a real smooth fade with no
+   CSS animation involved. The 15% literal below is only the fallback for the
+   (practically unreachable) case the custom property was never set - the real
+   values live in app.js's SCROLLBAR_REST_OPACITY/SCROLLBAR_HOVER_OPACITY, and
+   this one must match the rest value. CSS can't read a JS constant, so
    tests/shared-constants.test.js compares the two.
 
    The dragging tier is unrelated to any of the above: a
@@ -744,18 +755,17 @@ body {
   scrollbar-color: color-mix(in srgb, var(--text) var(--scrollbar-thumb-opacity, 15%), transparent) transparent;
 }
 
-/* Fallback for browsers that support ::-webkit-scrollbar but not the
-   standard scrollbar-width/scrollbar-color properties above - and only
-   those. Measured 2026-09-26 in headless Edge 153 and Chrome 154: on an
-   element that sets scrollbar-width, Chromium ignores every
-   ::-webkit-scrollbar rule for it (a 30px webkit width measured 10px, the
-   same as scrollbar-width: thin on its own). Both elements here set it, so
-   in those versions of Chrome and Edge nothing in this block applied - not
-   the 8px width, not the thumb colour, not the :active tier. Measured 2026-10-02
-   in WebKit 26.6 (Safari's engine, run through Playwright's Windows
-   build), the same holds: with scrollbar-width set, an 8px or a 30px
-   webkit width laid out at 0px, against 8px and 30px on an element
-   without it. WebKit also supports scrollbar-width but not
+/* Fallback for browsers that support ::-webkit-scrollbar but not the standard
+   scrollbar-width/scrollbar-color properties above - and only those. Measured
+   2026-09-26 in headless Edge 153 and Chrome 154: on an element that sets
+   scrollbar-width, Chromium ignores every ::-webkit-scrollbar rule for it (a
+   30px webkit width measured 10px, the same as scrollbar-width: thin on its
+   own). Both elements here set it, so in those versions of Chrome and Edge
+   nothing in this block applied - not the 8px width, not the thumb colour, not
+   the :active tier. Measured 2026-10-02 in WebKit 26.6 (Safari's engine, run
+   through Playwright's Windows build), the same holds: with scrollbar-width
+   set, an 8px or a 30px webkit width laid out at 0px, against 8px and 30px on
+   an element without it. WebKit also supports scrollbar-width but not
    scrollbar-color, so there the thumb keeps WebKit's own colour.
    In Firefox (as of 2026-09-04): versions 153 and 154 treated a non-zero
    width here as a request for classic, always-visible scrollbars (their
@@ -800,11 +810,11 @@ body {
 .badge {
   display: inline-block;
   border-radius: 999px;
-  /* Fallback only - see the @supports block below, which the current
-     release of every common browser took as of 2026-09-27. Symmetric padding centres the line box, not the text,
-     and where the text lands in that box depends on the font: the page
-     uses the system font stack, so Windows draws badges in Segoe UI (tall
-     ascent, text sits 1-2px low) and Android in Roboto (balanced, text
+  /* Fallback only - see the @supports block below, which the current release of
+     every common browser took as of 2026-09-27. Symmetric padding centres the
+     line box, not the text, and where the text lands in that box depends on the
+     font: the page uses the system font stack, so Windows draws badges in Segoe
+     UI (tall ascent, text sits 1-2px low) and Android in Roboto (balanced, text
      roughly centred). No fixed padding is right for both. */
   padding: 3px 10px;
   font-size: 0.75rem;
@@ -825,27 +835,27 @@ body {
 }
 
 /* Centres badge text the same way whatever font the device draws it in.
-   text-box trims the badge's content down to the band between the
-   baseline and the top of a capital letter, so the padding is measured
-   from the letters themselves rather than from the font's own (and
-   font-specific) ascent and descent. Rendered in Edge, Firefox and WebKit
-   (Safari's engine) on 2026-09-27, every call-log and sidebar label sat within 0.25px
-   of the same place in Segoe UI (Windows) as in Roboto (Android).
+   text-box trims the badge's content down to the band between the baseline and
+   the top of a capital letter, so the padding is measured from the letters
+   themselves rather than from the font's own (and font-specific) ascent and
+   descent. Rendered in Edge, Firefox and WebKit (Safari's engine) on
+   2026-09-27, every call-log and sidebar label sat within 0.25px of the same
+   place in Segoe UI (Windows) as in Roboto (Android).
    The bottom padding is 0.1em - 0.4px larger than the top: 0.1em sets the
-   pill's centre halfway between the middle of a capital letter and the
-   middle of a lowercase one, and the 0.4px, split across top and bottom,
-   lowers the text 0.2px from there, which looked better centred on
-   screen. Every badge label is lowercase. Some have an ascender and no
-   descender ("truncated", "failed", "aborted"); the rest have a descender,
-   with or without an ascender ("degenerated"), or neither ("success").
-   Measured by their ink in Edge on 2026-09-27, the first family sat
-   slightly above the pill's centre and the second slightly below it, a
-   descender pulling the ink box down further than the letters' bodies;
-   "no response", with a descender and no ascender to balance it, measured
-   lowest. Measured instead by where the ink's weight sits, it sat as close
-   to centre as every other label: its thin descender stretches the ink's
-   box far more than it moves the letters' visual centre. Rendering snaps
-   to the screen's pixel grid, so sub-pixel changes here show only approximately.
+   pill's centre halfway between the middle of a capital letter and the middle
+   of a lowercase one, and the 0.4px, split across top and bottom, lowers the
+   text 0.2px from there, which looked better centred on screen. Every badge
+   label is lowercase. Some have an ascender and no descender ("truncated",
+   "failed", "aborted"); the rest have a descender, with or without an ascender
+   ("degenerated"), or neither ("success").
+   Measured by their ink in Edge on 2026-09-27, the first family sat slightly
+   above the pill's centre and the second slightly below it, a descender pulling
+   the ink box down further than the letters' bodies; "no response", with a
+   descender and no ascender to balance it, measured lowest. Measured instead by
+   where the ink's weight sits, it sat as close to centre as every other label:
+   its thin descender stretches the ink's box far more than it moves the
+   letters' visual centre. Rendering snaps to the screen's pixel grid, so
+   sub-pixel changes here show only approximately.
    The total, 0.8em + 6px plus a capital's height (~0.7em), makes a
    one-line pill about 1.5em + 6px tall (22px at the default text size)
    whatever the line-height. */
@@ -882,14 +892,14 @@ body {
 }
 
 /* A soft-edged separator above the "Model: ..."/"Answered by: ..." line -
-   .model-chain is the shared class for both (the still-loading model line
-   in buildAgentStatusBody() and the post-success "Answered by:" line in
-   buildRepresentativeCard()/buildJudgeCard()), so one rule covers both
-   cases. A plain border-top would read as a harsh, abrupt cutoff against
-   the surrounding prose - ::before with a gradient background instead
-   tapers to transparent at both ends, positioned in the gap padding-top opens up
-   above the text (position: relative on .model-chain gives ::before's
-   absolute positioning something to anchor to). */
+   .model-chain is the shared class for both (the still-loading model line in
+   buildAgentStatusBody() and the post-success "Answered by:" line in
+   buildRepresentativeCard()/buildJudgeCard()), so one rule covers both cases. A
+   plain border-top would read as a harsh, abrupt cutoff against the surrounding
+   prose - ::before with a gradient background instead tapers to transparent at
+   both ends, positioned in the gap padding-top opens up above the text
+   (position: relative on .model-chain gives ::before's absolute positioning
+   something to anchor to). */
 .model-chain {
   color: var(--text-dim);
   font-size: 0.78rem;
@@ -1060,14 +1070,13 @@ table.call-log tfoot tr.call-log-total-row td {
    no span to sit in the middle of, and a heading reads better flush left. */
 
 /* A discarded attempt, followed by a retry or an escalation. Three kinds
-   qualify, all matched in renderCallLog() in app.js: truncated or
-   degenerate content (DEGENERATE_RETRIED_*_MARKER), a plain HTTP failure
-   that escalated to the next tier (HTTP_ERROR_ESCALATED_MARKER), and a
-   transient failure that was retried or escalated (TRANSIENT_RETRIED_MARKER).
-   Dimmed to signal the failure did not end the call, distinct from a [degenerate-final] row
-   (nothing left to try - the last tier failing too, or no time budget for
-   another), which deliberately stays at full opacity since that outcome
-   genuinely is fatal.
+   qualify, all matched in renderCallLog() in app.js: truncated or degenerate
+   content (DEGENERATE_RETRIED_*_MARKER), a plain HTTP failure that escalated to
+   the next tier (HTTP_ERROR_ESCALATED_MARKER), and a transient failure that was
+   retried or escalated (TRANSIENT_RETRIED_MARKER). Dimmed to signal the failure
+   did not end the call, distinct from a [degenerate-final] row (nothing left to
+   try - the last tier failing too, or no time budget for another), which
+   deliberately stays at full opacity since that outcome genuinely is fatal.
    The abort endpoint's "abort requested" rows are dimmed too: they record
    the request to stop, not an outcome, and the role's own last row
    follows. That last row - [aborted-mid-call], when the call was still

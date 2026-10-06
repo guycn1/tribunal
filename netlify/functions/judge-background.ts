@@ -15,6 +15,7 @@ import {
   markTrialCompletedIfJudgingDone,
   isGlobalCallCapExceeded,
   isTrialAborted,
+  agentCallRefusal,
   GLOBAL_CALL_CAP,
 } from './lib/db';
 import { isSiteGateOk } from './lib/siteGate';
@@ -22,10 +23,9 @@ import type { JudgeRole, RepresentativeRole } from './lib/types';
 
 // Judges are asked for the longest output in this system - a fuller opinion
 // plus the leading VERDICT line, against a longer word target than a
-// representative's. Sized with headroom above that target rather than a
-// tight fit against it,
-// since a reply that reaches the cap is never kept: callOpenRouter()
-// retries or escalates it, which costs a further attempt.
+// representative's. Sized with headroom above that target rather than a tight
+// fit against it, since a reply that reaches the cap is never kept:
+// callOpenRouter() retries or escalates it, which costs a further attempt.
 //
 // Asked for, not what was observed: in api_call_logs as of 2026-09-21,
 // the representatives had run out of room several times as often as the
@@ -65,7 +65,9 @@ const rawHandler: Handler = async (event) => {
     return json(400, { error: 'Missing trial id or role' });
   }
 
-  if (!(role in JUDGES)) {
+  // An own key only - see the matching check in
+  // representative-background.ts.
+  if (!Object.prototype.hasOwnProperty.call(JUDGES, role)) {
     return json(400, { error: `Unknown judge role: ${role}` });
   }
   const judgeRole = role as JudgeRole;
@@ -93,6 +95,18 @@ const rawHandler: Handler = async (event) => {
   const full = await getFullTrial(id);
   if (!full) {
     return json(404, { error: 'Trial not found' });
+  }
+
+  // A judge that already has a final outcome, or any judge in a trial the
+  // user aborted, is not run - see the matching check in
+  // representative-background.ts.
+  const refusal = await agentCallRefusal(id, judgeRole);
+  if (refusal) {
+    return json(409, {
+      role: judgeRole,
+      status: 'failed',
+      error: refusal === 'aborted' ? 'This trial was aborted.' : 'This role already has a final outcome in this trial.',
+    });
   }
 
   const caseDef = await getChargeSheet();

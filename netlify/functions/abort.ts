@@ -2,9 +2,10 @@ import type { Handler } from '@netlify/functions';
 import { safeHandler } from './lib/safeHandler';
 import { json } from './lib/response';
 import { extractParams } from './lib/extractParams';
+import { isSiteGateOk } from './lib/siteGate';
 import { REPRESENTATIVES } from './lib/representatives';
 import { JUDGES } from './lib/judges';
-import { logApiCall, ABORTED_BY_USER_MESSAGE, NO_MODEL_USED } from './lib/db';
+import { logApiCall, getTrial, getAbortedRoles, ABORTED_BY_USER_MESSAGE, NO_MODEL_USED } from './lib/db';
 
 /**
  * POST /api/trials/:id/abort
@@ -32,8 +33,15 @@ import { logApiCall, ABORTED_BY_USER_MESSAGE, NO_MODEL_USED } from './lib/db';
  * site-wide call cap (isGlobalCallCapExceeded in db.ts).
  *
  * Replies with the roles whose rows were written. A role it does not
- * recognise is skipped, and one whose row the database rejects (an id with
- * no trial behind it, say) is left out of the reply.
+ * recognise is skipped; a role named twice gets one row, and one that
+ * already has an abort row in the trial gets none; and one whose row the
+ * database rejects (an id with no trial behind it, say) is left out of the
+ * reply.
+ *
+ * Needs the site-gate header, as creating a trial does, and refuses a
+ * trial already marked completed (409): every judge has an outcome then,
+ * so nothing is left running to stop, and an abort would only relabel a
+ * finished trial as aborted in the run history.
  *
  * So this call does stop server-side work, just indirectly - by leaving a
  * record the running calls notice, not by cancelling anything. It cannot
@@ -45,6 +53,10 @@ import { logApiCall, ABORTED_BY_USER_MESSAGE, NO_MODEL_USED } from './lib/db';
 const rawHandler: Handler = async (event) => {
   if (event.httpMethod !== 'POST') {
     return json(405, { error: 'Method not allowed' });
+  }
+
+  if (!isSiteGateOk(event.headers)) {
+    return json(401, { error: 'Missing or invalid site gate header.' });
   }
 
   const { id } = extractParams(event, 1);
@@ -59,12 +71,34 @@ const rawHandler: Handler = async (event) => {
     return json(400, { error: 'Malformed JSON body' });
   }
 
+  // A failed lookup is not a reason to refuse: the rows written below are
+  // what stops the running calls, so the abort goes ahead without it. An id
+  // with no trial behind it goes ahead too, and the database rejects its
+  // rows.
+  let trial = null;
+  try {
+    trial = await getTrial(id);
+  } catch (error) {
+    console.error('abort: trial lookup failed, recording the abort anyway:', error instanceof Error ? error.message : error);
+  }
+  if (trial && trial.status === 'completed') {
+    return json(409, { error: 'This trial is already completed - nothing is left to abort.', logged: [] });
+  }
+
   const roles = Array.isArray(body.roles) ? body.roles.filter((r): r is string => typeof r === 'string') : [];
+  const alreadyAborted = await getAbortedRoles(id);
 
   const logged: string[] = [];
-  for (const role of roles) {
-    const callType = role in REPRESENTATIVES ? 'representative' : role in JUDGES ? 'judge' : null;
+  for (const role of new Set(roles)) {
+    // Own keys only: `in` would also accept a name every object inherits,
+    // such as constructor or toString.
+    const callType = Object.prototype.hasOwnProperty.call(REPRESENTATIVES, role)
+      ? 'representative'
+      : Object.prototype.hasOwnProperty.call(JUDGES, role)
+        ? 'judge'
+        : null;
     if (!callType) continue; // unknown role - nothing sensible to log
+    if (alreadyAborted.has(role)) continue; // its abort is already recorded
 
     const written = await logApiCall({
       trialId: id,

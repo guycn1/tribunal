@@ -1,7 +1,8 @@
 /**
- * @file Regression tests for public/app.js: its agent-card and call-log
- * render paths, how it shortens model ids, and how it reports a request
- * that fails outright.
+ * @file Regression tests for public/app.js: its agent-card, judges'-banner
+ * and call-log render paths, how it shortens model ids, how it reports a
+ * request that fails outright, the site-gate header on the requests the
+ * gate checks, and where a card's bottom fade stops.
  *
  * Run with `npm test`. No framework and no browser: app.js's real source is
  * executed against a minimal DOM stub, and the functions under test are
@@ -24,24 +25,31 @@
  *      click appeared to do nothing and the error reached only the console.
  *      A trigger Netlify's per-IP rate limit rejects - a bare 429 with an
  *      empty body - shows on the agent's card as that limit.
- *   4. The call log must say what actually happened: a response the token
- *      cap stopped is "truncated" and one a detector flagged
- *      "degenerated"; a "no response" row says whether it was retried or
- *      escalated; the legacy "truncated" badge marks only rows saved
- *      before truncation became a failure; a discarded attempt is dimmed
- *      and the role's own aborted row is not; an abort endpoint's row reads "abort requested",
- *      dimmed and uncaptioned, with its model printed as "n/a" rather than
- *      shortened like a model id; every cell carries its column name for
- *      the narrow card layout; the token breakdown can break only after
- *      its slash; and a model id is shortened by rule without losing the
- *      date stamp.
+ *   4. The call log must say what actually happened: a response the token cap
+ *      stopped is "truncated" and one a detector flagged "degenerated"; a "no
+ *      response" row says whether it was retried or escalated; the legacy
+ *      "truncated" badge marks only rows saved before truncation became a
+ *      failure; a discarded attempt is dimmed and the role's own aborted row is
+ *      not; an abort endpoint's row reads "abort requested", dimmed and
+ *      uncaptioned, with its model printed as "n/a" rather than shortened like
+ *      a model id; every cell carries its column name for the narrow card
+ *      layout; the token breakdown can break only after its slash; and a model
+ *      id is shortened by rule without losing the date stamp.
  *   5. Every badge label, on the agent cards as in the call log, reads in
  *      lowercase in the text itself.
  *   6. The banner above the judges names each representative whose
  *      argument is missing, and is hidden when none is.
+ *   7. Every request the server's site gate checks carries the page's
+ *      token: creating a trial, starting each of the seven agents, and
+ *      aborting, whose request also names the roles still running. Without
+ *      it the gate turns trial creation and the abort away with a 401, and
+ *      drops an agent call silently.
+ *   8. A card's bottom fade stops where its scrollbar begins, so the
+ *      scrollbar's bottom arrow is not faded into a stray mark after the
+ *      last line.
  */
 
-const { installDom, loadApp } = require('./support/load-app');
+const { installDom, loadApp, makeElement } = require('./support/load-app');
 const { compileBackend } = require('./support/compile-backend');
 
 let failures = 0;
@@ -68,7 +76,7 @@ console.log('\n=== app.js executes cleanly (catches a TDZ-class load crash) ==='
 let app;
 try {
   // Hand back exactly the pieces under test from app.js's own top-level scope.
-  app = loadApp(['state', 'el', 'renderRepresentatives', 'renderJudges', 'renderCallLog', 'agentCardSignature', 'shortModelName', 'REPRESENTATIVE_ROLES', 'JUDGE_ROLES', 'beginTrial', 'loadTrial', 'buildAgentStatusBody', 'appendTruncationNotice', 'triggerAgent', 'deriveRoleStates', 'isTruncated']);
+  app = loadApp(['state', 'el', 'renderRepresentatives', 'renderJudges', 'renderCallLog', 'agentCardSignature', 'shortModelName', 'REPRESENTATIVE_ROLES', 'JUDGE_ROLES', 'beginTrial', 'loadTrial', 'buildAgentStatusBody', 'appendTruncationNotice', 'triggerAgent', 'deriveRoleStates', 'isTruncated', 'abortCurrentTrial', 'SITE_GATE_TOKEN', 'attachScrollFade']);
   check('top-level code ran with no error', true);
 } catch (error) {
   check('top-level code ran with no error', false, error.message);
@@ -377,14 +385,14 @@ const footLabelled = (footRow.match(/data-label=/g) || []).length;
 check('totals row labels its three real value cells', footLabelled === 3, String(footLabelled));
 
 console.log('\n=== Model ids shorten to something the table column can hold ===');
-// The table is narrowest at a 901px viewport (below that the sidebar
-// stacks and the table gets more room, not less): 655px wide, with a 131px
-// Model column, or 640px and 128px once the page has a classic scrollbar.
-// Measured at 655px, the id with "-instruct" left in needed 161px and
-// wrapped; every id below now fits on one line, at 640px too. These assert the rules, not
-// the pixels: a vendor prefix goes, a ":free" suffix goes, a standalone
-// "-instruct" segment goes, and the date stamp stays - it is the only thing
-// telling two pinned snapshots of one model apart.
+// The table is narrowest at a 901px viewport (below that the sidebar stacks and
+// the table gets more room, not less): 655px wide, with a 131px Model column,
+// or 640px and 128px once the page has a classic scrollbar. Measured at 655px,
+// the id with "-instruct" left in needed 161px and wrapped; every id below now
+// fits on one line, at 640px too. These assert the rules, not the pixels: a
+// vendor prefix goes, a ":free" suffix goes, a standalone "-instruct" segment
+// goes, and the date stamp stays - it is the only thing telling two pinned
+// snapshots of one model apart.
 const { shortModelName } = app;
 [
   ['mistralai/mistral-small-24b-instruct-2501', 'mistral-small-24b-2501'],
@@ -408,6 +416,39 @@ const { shortModelName } = app;
 });
 // A name that merely contains the letters is not a segment and must survive.
 check('"instructor" is not stripped', shortModelName('vendor/model-instructor-v2') === 'model-instructor-v2', shortModelName('vendor/model-instructor-v2'));
+
+console.log("\n=== A card's bottom fade stops where its scrollbar begins ===");
+// The fade covered all but the last 4px of the card body, so it covered
+// most of the scrollbar too, and the scrollbar's bottom arrow showed as a
+// stray mark at the end of the last line. It now ends at the scrollbar,
+// whose width attachScrollFade() measures: the body's width less its
+// content-and-padding width.
+/**
+ * A card body inside its fade wrapper, measured as a browser would report it.
+ * @param {{
+ *   offsetWidth: number,
+ *   clientWidth: number,
+ *   scrollHeight: number,
+ *   clientHeight: number,
+ *   scrollTop?: number
+ * }} size
+ * @returns {{wrap: object, body: object}}
+ */
+function fadedBody(size) {
+  const wrap = makeElement('div');
+  const body = makeElement('div');
+  Object.assign(body, { scrollTop: 0 }, size);
+  wrap.appendChild(body);
+  app.attachScrollFade(body);
+  return { wrap, body };
+}
+const overflowing = fadedBody({ offsetWidth: 300, clientWidth: 290, scrollHeight: 600, clientHeight: 173 });
+check('more text below: the fade is shown', overflowing.wrap.classList.contains('has-more-below'));
+check('it stops where a 10px scrollbar begins', overflowing.wrap.style.getPropertyValue('--card-scrollbar-width') === '10px', overflowing.wrap.style.getPropertyValue('--card-scrollbar-width'));
+const scrolledToEnd = fadedBody({ offsetWidth: 300, clientWidth: 290, scrollHeight: 600, clientHeight: 173, scrollTop: 427 });
+check('scrolled to the end: no fade', !scrolledToEnd.wrap.classList.contains('has-more-below'));
+const overlaid = fadedBody({ offsetWidth: 300, clientWidth: 300, scrollHeight: 600, clientHeight: 173 });
+check('a scrollbar drawn over the text takes no width: the fade runs to the edge', overlaid.wrap.style.getPropertyValue('--card-scrollbar-width') === '0px', overlaid.wrap.style.getPropertyValue('--card-scrollbar-width'));
 
 /**
  * A stub fetch Response carrying a JSON body.
@@ -527,8 +568,12 @@ async function requestFailureChecks() {
   };
   let trialReads = 0;
   let historyReads = 0;
+  // Every POST the run sends, with its headers, for the site-gate checks
+  // below.
+  const posts = [];
   rejection = await run(beginTrial, async (url, options = {}) => {
     const method = options.method || 'GET';
+    if (method === 'POST') posts.push({ url, headers: options.headers || {} });
     if (method === 'POST') return url === '/api/trials' ? jsonReply(201, { trial: { id: 'run-1' }, caseDef }) : jsonReply(202, {});
     if (url === '/api/trials') { historyReads++; return jsonReply(200, { trials: [] }); }
     // One poll resolves every representative, the next every judge; the
@@ -545,6 +590,63 @@ async function requestFailureChecks() {
   check('the run history is still refreshed after it', historyReads === 1, String(historyReads));
   check('every result from the run stays on screen', [...Object.values(state.representatives), ...Object.values(state.judges)].every((e) => e.status === 'success') && Object.keys(state.judges).length === JUDGE_ROLES.length);
   check('the controls, overlay and sidebar are restored', isIdle());
+
+  console.log('\n=== Creating a trial and starting each agent send the site-gate header ===');
+  // Without it the site gate turns both away: trial creation with a 401,
+  // and an agent call silently, after Netlify's 202.
+  // Header names are case-insensitive in HTTP, and isSiteGateOk() reads them
+  // so; only the value has to be the page's token.
+  const carriesGate = (post) => Object.entries(post.headers).some(([name, value]) => name.toLowerCase() === 'x-site-gate' && value === app.SITE_GATE_TOKEN);
+  const creates = posts.filter((p) => p.url === '/api/trials');
+  const expectedTriggers = [
+    ...REPRESENTATIVE_ROLES.map((role) => `/api/trials/run-1/representatives/${role}`),
+    ...JUDGE_ROLES.map((role) => `/api/trials/run-1/judges/${role}`),
+  ];
+  const triggers = posts.filter((p) => p.url !== '/api/trials');
+  check('the trial is created once, with the header', creates.length === 1 && carriesGate(creates[0]), JSON.stringify(creates));
+  check('each of the seven agents is started once', JSON.stringify(triggers.map((p) => p.url).sort()) === JSON.stringify([...expectedTriggers].sort()), JSON.stringify(triggers.map((p) => p.url)));
+  check('every agent request carries the header', triggers.length > 0 && triggers.every(carriesGate), JSON.stringify(triggers.filter((p) => !carriesGate(p)).map((p) => p.url)));
+
+  console.log('\n=== Aborting sends the site-gate header the abort endpoint needs ===');
+  // A whole trial on the same virtual clock, aborted at its first poll,
+  // while every representative is still running.
+  let abortVirtualMs = 0;
+  Date.now = () => realNow() + abortVirtualMs;
+  global.setTimeout = (fn, ms = 0) => { abortVirtualMs += ms; setImmediate(fn); return 0; };
+  const running = { trial: { id: 'run-2' }, caseDef, agentProgress: {}, apiCallLogs: [], representativeArguments: [], judgeRulings: [] };
+  let abortRequest = null;
+  let aborting = null;
+  resetToIdle();
+  alerts.length = 0;
+  global.fetch = async (url, options = {}) => {
+    const method = options.method || 'GET';
+    if (method === 'POST' && url === '/api/trials') return jsonReply(201, { trial: { id: 'run-2' }, caseDef });
+    if (method === 'POST' && url === '/api/trials/run-2/abort') { abortRequest = options; return jsonReply(200, { ok: true, logged: [] }); }
+    if (method === 'POST') return jsonReply(202, {});
+    if (url === '/api/trials') return jsonReply(200, { trials: [] });
+    if (url === '/api/trials/run-2') {
+      if (!aborting) aborting = app.abortCurrentTrial();
+      return jsonReply(200, running);
+    }
+    throw new Error(`unexpected request: ${method} ${url}`);
+  };
+  rejection = null;
+  try {
+    state.trialPromise = beginTrial();
+    await state.trialPromise;
+    await aborting;
+  } catch (error) {
+    rejection = error;
+  }
+  global.setTimeout = realSetTimeout;
+  Date.now = realNow;
+  const abortHeaders = (abortRequest && abortRequest.headers) || {};
+  check('the run and the abort do not reject', rejection === null, String(rejection));
+  check('an abort request is sent', abortRequest !== null);
+  check("it carries the page's site-gate header", carriesGate({ headers: abortHeaders }), JSON.stringify(abortHeaders));
+  check('and still says its body is JSON', abortHeaders['Content-Type'] === 'application/json', JSON.stringify(abortHeaders));
+  check('naming the four representatives still running', abortRequest !== null && JSON.stringify(JSON.parse(abortRequest.body).roles) === JSON.stringify(REPRESENTATIVE_ROLES), abortRequest && abortRequest.body);
+  check('the controls, overlay and sidebar are restored after the abort', isIdle());
 
   console.log('\n=== A trigger the per-IP rate limit rejects is reported as that ===');
   // Netlify answers a rate-limited trigger with a bare 429 and an empty

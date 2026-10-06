@@ -6,23 +6,22 @@
  * against a mocked global.fetch, so these assert the actual source rather
  * than a hand-copied imitation of it.
  *
- * This file exists because this specific logic once produced several
- * subtle, expensive bugs, all of them since fixed - an escalation chain that silently never
- * escalated, a timeout ceiling that ignored prompt size, a degeneration
- * check blind to its most common signature, a fractional millisecond that
- * would have crashed half of all real calls, a fast-429 storm that
- * escalated to a costlier tier within seconds, a backoff pause timed
- * as part of the attempt before it, a three-copy loop the
- * repeated-sentence check let through, near-verbatim loops that no exact
- * comparison could see, an attempt that failed as the user aborted logged
- * as "re-tried" when no retry followed, a reply an upstream error cut
- * short that the chain would have kept, a 408 skipped like a removed model
- * id rather than retried like the timeout it is, and a time budget that ran
- * out reported as every tier tried. Most showed up in real use; the
- * fractional millisecond and the backoff timing were caught by the offline
- * tests first, the cut-short reply in OpenRouter's errors docs, and the
- * last two in a reading of the code. Each
- * one below is a test, so none of them can quietly come back.
+ * This file exists because this specific logic once produced several subtle,
+ * expensive bugs, all of them since fixed - an escalation chain that silently
+ * never escalated, a timeout ceiling that ignored prompt size, a degeneration
+ * check blind to its most common signature, a fractional millisecond that would
+ * have crashed half of all real calls, a fast-429 storm that escalated to a
+ * costlier tier within seconds, a backoff pause timed as part of the attempt
+ * before it, a three-copy loop the repeated-sentence check let through,
+ * near-verbatim loops that no exact comparison could see, an attempt that
+ * failed as the user aborted logged as "re-tried" when no retry followed, a
+ * reply an upstream error cut short that the chain would have kept, a 408
+ * skipped like a removed model id rather than retried like the timeout it is,
+ * and a time budget that ran out reported as every tier tried. Most showed up
+ * in real use; the fractional millisecond and the backoff timing were caught by
+ * the offline tests first, the cut-short reply in OpenRouter's errors docs, and
+ * the last two in a reading of the code. Each one below is a test, so none of
+ * them can quietly come back.
  */
 
 const { compileBackend } = require('./support/compile-backend');
@@ -208,8 +207,9 @@ async function main() {
     const LONG = 'He had seen the city burn after the bells rang and he knew that she would not stop.';
     const LONG_LESS_ONE = 'He had seen the city burn after the bells rang and he knew she would not stop.';
 
-    // The miss of 2026-09-26 22:25 UTC (trial e4a20a68), word for word: three copies back to back, a
-    // fourth differing by one word ("Jon Snow's" for "his").
+    // The miss of 2026-09-26 22:25 UTC (trial e4a20a68), word for word: three
+    // copies back to back, a fourth differing by one word ("Jon Snow's" for
+    // "his").
     const closing = 'I ask the Tribunal to consider these words, and to consider the facts of the case. I ask the Tribunal to consider whether Jon Snow\'s actions were justified, and I ask the Tribunal to consider whether his actions were necessary. ' + 'I ask the Tribunal to consider whether his actions were justified, and I ask the Tribunal to consider whether his actions were necessary. '.repeat(3);
     const missed = await verdict(closing);
     check('the looped closing that got through is now caught', missed !== null && /3 times in a row \(sentences 3-5 of 5\)/.test(missed), missed);

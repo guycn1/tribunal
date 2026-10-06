@@ -47,30 +47,29 @@ export function getModelForRole(role: string): string {
 }
 
 // Tier 2 of the escalation chain (see buildRetryTiers in openrouter.ts),
-// reached once tier 1 is done - normally after both of its attempts are
-// used up, on truncation/degeneration or on transient failures that
-// counted against it (a slow one, or a fast one past the tier's few free
-// retries), though a plain HTTP failure at tier 1 escalates at once. Deliberately a different, more capable model than whatever
-// getModelForRole() resolves to, not the same one tried again, and
-// measured as such on this workload: in the targeted trials of 2026-09-27
-// the default model degenerated in 62 of its 157 replies, this one in 1
-// of its 22. In a test on 2026-08-29, once daenerys_targaryen's or
-// grey_worm's first attempt truncated, a same-model retry truncated again
-// 3 times in 5 and 3 times in 4 - closer to "that generation was already
-// in a bad state" than to a fresh roll. That test ran under that day's
-// settings, not today's: the token cap was the only check on a reply, and
-// the retry's added instruction spoke of length alone.
+// reached once tier 1 is done - normally after both of its attempts are used
+// up, on truncation/degeneration or on transient failures that counted against
+// it (a slow one, or a fast one past the tier's few free retries), though a
+// plain HTTP failure at tier 1 escalates at once. Deliberately a different,
+// more capable model than whatever getModelForRole() resolves to, not the same
+// one tried again, and measured as such on this workload: in the targeted
+// trials of 2026-09-27 the default model degenerated in 62 of its 157 replies,
+// this one in 1 of its 22. In a test on 2026-08-29, once daenerys_targaryen's
+// or grey_worm's first attempt truncated, a same-model retry truncated again 3
+// times in 5 and 3 times in 4 - closer to "that generation was already in a bad
+// state" than to a fresh roll. That test ran under that day's settings, not
+// today's: the token cap was the only check on a reply, and the retry's added
+// instruction spoke of length alone.
 //
-// Was mistralai/mistral-large-2512 (chosen for the same vendor family as
-// the default model, for style/formatting consistency with prompts tuned
-// without a cross-vendor model in mind) until that model id was
-// deprecated/removed from OpenRouter's catalogue sometime after this chain
-// was built - confirmed directly on 2026-09-20, when its own OpenRouter
-// model page returned 404, and every real call that needed to escalate past tier 1
-// failed outright rather than reaching the still-live tiers 3/4 (see
-// HTTP_ERROR_ESCALATED_MARKER in openrouter.ts for the escalation-chain
-// bug that used to let one dead tier kill the whole call, fixed separately from
-// this).
+// Was mistralai/mistral-large-2512 (chosen for the same vendor family as the
+// default model, for style/formatting consistency with prompts tuned without a
+// cross-vendor model in mind) until that model id was deprecated/removed from
+// OpenRouter's catalogue sometime after this chain was built - confirmed
+// directly on 2026-09-20, when its own OpenRouter model page returned 404, and
+// every real call that needed to escalate past tier 1 failed outright rather
+// than reaching the still-live tiers 3/4 (see HTTP_ERROR_ESCALATED_MARKER in
+// openrouter.ts for the escalation-chain bug that used to let one dead tier
+// kill the whole call, fixed separately from this).
 //
 // Replaced with anthropic/claude-haiku-4.5 - a genuinely different vendor,
 // breaking the original same-family rationale, but the failure modes this
@@ -130,13 +129,13 @@ export function getTruncationFallbackModel(): string {
 // capability removes any shared-family quirk as an explanation, not just a
 // shared-size one.
 //
-// What api_call_logs showed as of 2026-09-27: every openai/gpt-5.6-sol
-// call had been kept, none discarded; google/gemini-2.5-pro's only
-// failures had been the HTTP 400 "Reasoning is mandatory" rejection from
-// before modelRequiresReasoning() existed below, i.e. a configuration fault
-// rather than anything about the output. Neither had produced a truncated
-// or degenerate result. Reached rarely enough (only after every earlier tier has already
-// failed) that the real cost impact stays small despite their being far
+// What api_call_logs showed as of 2026-09-27: every openai/gpt-5.6-sol call had
+// been kept, none discarded; google/gemini-2.5-pro's only failures had been the
+// HTTP 400 "Reasoning is mandatory" rejection from before
+// modelRequiresReasoning() existed below, i.e. a configuration fault rather
+// than anything about the output. Neither had produced a truncated or
+// degenerate result. Reached rarely enough (only after every earlier tier has
+// already failed) that the real cost impact stays small despite their being far
 // pricier than the default model - see pricing.ts.
 const THIRD_TIER_FALLBACK_MODEL = process.env.THIRD_TIER_FALLBACK_MODEL || 'openai/gpt-5.6-sol';
 const LAST_RESORT_FALLBACK_MODEL = process.env.LAST_RESORT_FALLBACK_MODEL || 'google/gemini-2.5-pro';

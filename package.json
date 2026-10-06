@@ -7,7 +7,7 @@
     "dev": "netlify dev",
     "typecheck": "tsc --noEmit",
     "test": "node tests/retry-logic.test.js && node tests/trial-status.test.js && node tests/render-cards.test.js && node tests/shared-constants.test.js && node tests/docs.test.js && node tests/markdown.test.js",
-    "check-render": "node scripts/check-render.js"
+    "check-render": "node tests/check-render.js"
   },
   "dependencies": {
     "@netlify/functions": "^2.8.1",

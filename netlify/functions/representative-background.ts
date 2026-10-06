@@ -7,7 +7,7 @@ import { REPRESENTATIVES } from './lib/representatives';
 import { buildRepresentativeMessages } from './lib/prompts';
 import { callOpenRouter, finishedAfterAbort } from './lib/openrouter';
 import { getModelForRole, AGENT_MAX_TOKENS } from './lib/models';
-import { getTrial, upsertRepresentativeArgument, logApiCall, upsertAgentProgress, isGlobalCallCapExceeded, isTrialAborted, GLOBAL_CALL_CAP } from './lib/db';
+import { getTrial, upsertRepresentativeArgument, logApiCall, upsertAgentProgress, isGlobalCallCapExceeded, isTrialAborted, agentCallRefusal, GLOBAL_CALL_CAP } from './lib/db';
 import { isSiteGateOk } from './lib/siteGate';
 import type { RepresentativeRole } from './lib/types';
 
@@ -36,12 +36,13 @@ const rawHandler: Handler = async (event) => {
   // separately on each. So the first check refuses any request that did not
   // come through the route on the site's main address, before anything else
   // is read or written: every request this handler acts on has passed the
-  // one count. Not logged, like the method and role checks below - refusing
-  // costs nothing. On the live site on 2026-10-06, gated requests for a real
-  // trial sent to this function's own address and to judge-background's, or
-  // through both routes to main--tribunal-t001.netlify.app, left nothing
-  // behind, while the same request through the route on the main address
-  // started its attempt within 5 seconds.
+  // one count. Not logged, like every check below but the site gate and the
+  // call cap - refusing costs nothing. On the live site on 2026-10-06, gated
+  // requests for a real trial sent to this function's own address and to
+  // judge-background's, or through both routes to
+  // main--tribunal-t001.netlify.app, left nothing behind, while the same
+  // request through the route on the main address started its attempt within
+  // 5 seconds.
   if (!cameThroughApiRoute(event) || !sentToMainAddress(event)) {
     return json(403, { error: "Only accepted through /api/trials/:id/representatives/:role on the site's main address" });
   }
@@ -55,7 +56,10 @@ const rawHandler: Handler = async (event) => {
     return json(400, { error: 'Missing trial id or role' });
   }
 
-  if (!(role in REPRESENTATIVES)) {
+  // An own key only: `in` would also accept a name every object inherits,
+  // such as constructor or toString, and run a call for a role that is not
+  // one of the four.
+  if (!Object.prototype.hasOwnProperty.call(REPRESENTATIVES, role)) {
     return json(400, { error: `Unknown representative role: ${role}` });
   }
   const repRole = role as RepresentativeRole;
@@ -99,6 +103,20 @@ const rawHandler: Handler = async (event) => {
     return json(404, { error: 'Trial not found' });
   }
 
+  // The page triggers each role once per trial, so a role that already has
+  // a final outcome, or a trial the user aborted, is a request the page
+  // never sends: running it would save over a result already kept, or
+  // spend on a trial nobody is waiting for. Not logged, like the checks
+  // above other than the site gate and the call cap.
+  const refusal = await agentCallRefusal(id, repRole);
+  if (refusal) {
+    return json(409, {
+      role: repRole,
+      status: 'failed',
+      error: refusal === 'aborted' ? 'This trial was aborted.' : 'This role already has a final outcome in this trial.',
+    });
+  }
+
   const caseDef = await getChargeSheet();
   const messages = buildRepresentativeMessages(repRole, caseDef);
 
@@ -130,11 +148,11 @@ const rawHandler: Handler = async (event) => {
         responseText: discarded.responseText,
       }),
     // Overwrites the one agent_progress row for this role the moment each
-    // attempt starts - see the "currently in flight" comment on
-    // upsertAgentProgress in db.ts. This is what a client polling mid-call
-    // actually reads to show the real current model/attempt, rather than
-    // only learning about escalation once an attempt is discarded (which
-    // is always one step behind the attempt that's actually running).
+    // attempt starts - see the comment on upsertAgentProgress in db.ts. This
+    // is what a client polling mid-call actually reads to show the real
+    // current model/attempt, rather than only learning about escalation once
+    // an attempt is discarded (which is always one step behind the attempt
+    // that's actually running).
     (info) =>
       upsertAgentProgress({
         trialId: id,
@@ -230,30 +248,32 @@ export const handler = safeHandler(rawHandler);
 // 17.x releases, which could change it. The same goes for
 // judge-background.ts.
 //
-// Why a Background Function at all: the synchronous limit on Netlify's
-// free plan, as documented when checked on 2026-08-28, was far shorter
-// (the budget here was first built around a mistaken, longer one) than
-// real calls on the default model at the time routinely took per attempt.
+// Why a Background Function at all: the synchronous limit on Netlify's free
+// plan, as documented when checked on 2026-08-28, was far shorter (the budget
+// here was first built around a mistaken, longer one) than real calls on the
+// default model at the time routinely took per attempt.
 // No retry or timeout tuning inside callOpenRouter() could close that gap;
-// Background Functions get far longer. The trade-off: the client never
-// receives this handler's return value, since Netlify answers 202 at once, so the frontend learns the
-// outcome by polling GET /api/trials/:id - see the comment above the
-// site-gate and call-cap checks for what that means for their rejections.
-// Confirmed in production on 2026-09-21: all 28 trigger POSTs across four
-// live trials came back with Netlify's own 202 in ~0.3-0.5s, a status no
-// handler in this repository returns.
+// Background Functions get far longer. The trade-off: the client never receives
+// this handler's return value, since Netlify answers 202 at once, so the
+// frontend learns the outcome by polling GET /api/trials/:id - see the comment
+// above the site-gate and call-cap checks for what that means for their
+// rejections. Confirmed in production on 2026-09-21: all 28 trigger POSTs
+// across four live trials came back with Netlify's own 202 in ~0.3-0.5s, a
+// status no handler in this repository returns.
 //
 // No `config` export, on purpose. Netlify's bundler reads one only from a
-// function written with a default export; for a named `handler` export
-// like this one it ignores everything in it (parseSource in
-// @netlify/zip-it-and-ship-it 9.42.1, the version inside the installed
-// netlify-cli, read on 2026-10-02; a later version could differ). An exported config here
-// once declared background: true, a custom path and a per-IP rate limit,
-// and none of the three ever took effect: the 202s come from the filename,
-// routing comes from netlify.toml, and the rate limit was never applied -
-// 75 requests in 80 seconds from one IP on 2026-10-02 all got through. The
-// per-IP rate limit is on this function's redirect in netlify.toml, and the
-// handler's first check accepts only requests that came that way.
+// function written with a default export; for a named `handler` export like
+// this one it ignores everything in it (parseSource in
+// @netlify/zip-it-and-ship-it: 9.42.1, the version inside the installed
+// netlify-cli, read on 2026-10-02, and every release from 15.3.3 to 16.3.0,
+// published 2026-08-12 to 2026-10-05, read on 2026-10-06). An exported
+// config here once declared background: true, a custom path and a per-IP rate
+// limit, and none of the three ever took effect: the 202s come from the
+// filename, routing comes from netlify.toml, and the rate limit was never
+// applied - 75 requests in 80 seconds from one IP on 2026-10-02 all got
+// through. The per-IP rate limit is on this function's redirect in
+// netlify.toml, and the handler's first check accepts only requests that came
+// that way.
 //
 // The filename and the redirect target in netlify.toml must name the same
 // function. When this file was renamed from representative.ts, every call

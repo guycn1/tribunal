@@ -1,7 +1,8 @@
 -- Tribunal database schema.
 --
 -- Six tables:
---   case_definitions        the fixed case record (seeded once, read-only in practice)
+--   case_definitions        the fixed case record (seeded once, read-only in
+--                           practice)
 --   trials                  one row per run of the tribunal against a case
 --   representative_arguments  one row per representative who argued in a trial
 --   judge_rulings            one row per judge who ruled in a trial
@@ -167,27 +168,27 @@ alter table agent_progress enable row level security;
 -- ---------------------------------------------------------------------------
 -- Grants
 -- ---------------------------------------------------------------------------
--- Needed on a Supabase project created with "Automatically expose new
--- tables" unchecked (Supabase's own tighter-security suggestion), as this
--- project's was. That setting turned out, when this project was set up on
--- 2026-08-27, to gate the grants the publishable/secret key system needs
--- (the newer of Supabase's two key systems at the time), not just anon and authenticated as
--- one would expect, so on such a project every backend call fails without
--- these with "permission denied for table X" even when the secret key is
--- correct — a Postgres GRANT error, and a different layer from RLS, which
--- fails by silently returning zero rows instead. This was hit for real on
--- this project's own Supabase project. These lived as a separate manual
--- step for a while, which meant anyone setting up from README's instructions
--- of the time got a correctly-created database that refused every query.
+-- Needed on a Supabase project created with "Automatically expose new tables"
+-- unchecked (Supabase's own tighter-security suggestion), as this project's
+-- was. That setting turned out, when this project was set up on 2026-08-27, to
+-- gate the grants the publishable/secret key system needs (the newer of
+-- Supabase's two key systems at the time), not just anon and authenticated as
+-- one would expect, so on such a project every backend call fails without these
+-- with "permission denied for table X" even when the secret key is correct — a
+-- Postgres GRANT error, and a different layer from RLS, which fails by silently
+-- returning zero rows instead. This was hit for real on this project's own
+-- Supabase project. These lived as a separate manual step for a while, which
+-- meant anyone setting up from README's instructions of the time got a
+-- correctly-created database that refused every query.
 -- They belong here.
 -- RLS is unaffected by any of this: it stays deny-all for anon/authenticated
 -- with no policies defined, and GRANT is a separate mechanism from it.
 grant usage on schema public to service_role;
 grant select, insert, update, delete on all tables in schema public to service_role;
 -- No table here uses a sequence today (every key is a uuid, a composite of
--- existing columns, or case_definitions' text case_code), so this one is precautionary rather than load-bearing —
--- kept because it matches what was actually run, and costs nothing if a
--- future table does use one.
+-- existing columns, or case_definitions' text case_code), so this one is
+-- precautionary rather than load-bearing — kept because it matches what was
+-- actually run, and costs nothing if a future table does use one.
 grant usage, select on all sequences in schema public to service_role;
 -- So a table added after this file was last applied gets the same treatment
 -- without anyone having to remember to re-run the grants above.

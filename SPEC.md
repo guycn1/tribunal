@@ -1,66 +1,217 @@
 # Tribunal — Specification
 
-**Case T-001: The Realm v. Jon Snow.** A fixed, canonical trial — not a general-purpose "submit any charge" tool — argued and ruled on by seven independent AI agents: four representatives (two defense, two prosecution) and three judges, each modelled on a distinct real judicial reasoning method. This is the ASE course's shared "running project": every submission implements the same fixed specification, graded on directing discipline shown, not on the artefact alone.
+**[Case T-001: The Realm v. Jon Snow](#1-the-charge-sheet).** A fixed, canonical
+trial — not a general-purpose "submit any charge" tool — argued and ruled on by
+[seven independent AI agents](#2-the-seven-agents): [four
+representatives](#representatives) (two defense, two prosecution) and [three
+judges](#judges), each modelled on a distinct real judicial reasoning method.
 
-This document is the functional/requirements spec, sourced from the ASE Book "Case Design Dossier." For how this particular submission implements it (architecture, live deployment, setup) see [`README.md`](README.md); for the build history and the engineering decisions behind it, see [`CLAUDE.md`](CLAUDE.md).
+This is the ASE course's shared "running project": every submission
+implements the same fixed specification, graded on directing discipline shown,
+not on the artefact alone.
+
+This document is the functional/requirements spec, sourced from the ASE Book
+"Case Design Dossier." Two other documents cover the rest:
+
+- [`README.md`](README.md): how this particular submission implements it
+  ([architecture](README.md#architecture), [live
+  deployment](https://tribunal-t001.netlify.app),
+  [setup](README.md#local-development));
+- [`CLAUDE.md`](CLAUDE.md): [the build history](CLAUDE.md#status-log) and the
+  engineering decisions behind it.
 
 ## 1. The charge sheet
 
-**Accused:** Jon Snow · **Deceased:** Daenerys Targaryen · **Act alleged:** Jon intentionally killed Daenerys by stabbing her during a private meeting in the throne room after the fall of King's Landing.
+- **Accused:** Jon Snow
+- **Deceased:** Daenerys Targaryen
+- **Act alleged:** Jon intentionally killed Daenerys by stabbing her during a
+  private meeting in the throne room after the fall of King's Landing.
 
-This section is the case exactly as the app serves it — word for word the record seeded into the database by [`supabase/schema.sql`](supabase/schema.sql). The stipulated facts in particular are quoted, not paraphrased: they are what both sides accept, and a restatement can shift what was agreed.
+This section is the case exactly as [the app](https://tribunal-t001.netlify.app)
+serves it — word for word [the record](README.md#case_definitions) seeded into
+[the database](README.md#database) by
+[`supabase/schema.sql`](supabase/schema.sql). [The stipulated
+facts](#stipulated-facts) in particular are quoted, not paraphrased: they are
+what both sides accept, and a restatement can shift what was agreed.
 
-**Background.**
+### Background
 
-The story takes place mainly in Westeros. Jon Snow grows up believing he is the illegitimate son of Lord Eddard Stark; he becomes a military commander, then King in the North, and later learns he is the lawful son of Rhaegar Targaryen and Lyanna Stark — giving him a stronger hereditary claim to the throne than Daenerys, though he does not want to rule.
+The story takes place mainly in Westeros. Jon Snow grows up believing he is
+the illegitimate son of Lord Eddard Stark; he becomes a military commander,
+then King in the North, and later learns he is the lawful son of Rhaegar
+Targaryen and Lyanna Stark — giving him a stronger hereditary claim to the
+throne than Daenerys, though he does not want to rule.
 
-Daenerys Targaryen is the exiled heir of the dynasty that once ruled Westeros. She survives abuse, gains three dragons, frees enslaved people, and builds an army — becoming both liberator and increasingly absolute ruler. Jon and Daenerys become allies and lovers while fighting the Night King. After defeating the dead, Daenerys turns to the Iron Throne; Jon's hidden parentage weakens her political claim and feeds her fear of betrayal.
+Daenerys Targaryen is the exiled heir of the dynasty that once ruled Westeros.
+She survives abuse, gains three dragons, frees enslaved people, and builds an
+army — becoming both liberator and increasingly absolute ruler. Jon and
+Daenerys become allies and lovers while fighting the Night King. After
+defeating the dead, Daenerys turns to the Iron Throne; Jon's hidden parentage
+weakens her political claim and feeds her fear of betrayal.
 
-Daenerys attacks King's Landing. The city surrenders, but Daenerys burns streets and civilians from her dragon, Drogon. Jon witnesses the destruction. Grey Worm, her commander, joins the killing on the ground. Daenerys promises further campaigns of "liberation." Tyrion Lannister, her chief adviser, resigns in protest and is imprisoned, warning Jon that Daenerys will kill anyone who threatens her rule, including Jon's sisters. Jon asks Daenerys to show mercy and share moral judgment with others. She refuses. During an embrace, he stabs her to death. Her soldiers arrest him.
+Daenerys attacks King's Landing. The city surrenders, but Daenerys burns
+streets and civilians from her dragon, Drogon. Jon witnesses the destruction.
+Grey Worm, her commander, joins the killing on the ground. Daenerys promises
+further campaigns of "liberation." Tyrion Lannister, her chief adviser, resigns
+in protest and is imprisoned, warning Jon that Daenerys will kill anyone who
+threatens her rule, including Jon's sisters. Jon asks Daenerys to show mercy
+and share moral judgment with others. She refuses. During an embrace, he stabs
+her to death. Her soldiers arrest him.
 
-**Stipulated facts (both sides accept these):**
+### Stipulated facts
 
-- King's Landing had surrendered: bells rang, organized resistance had ceased. Daenerys then used Drogon against streets and civilians, causing destruction on a vast scale.
-- After the victory, Daenerys told her assembled forces the campaign of "liberation" would continue beyond King's Landing. Jon had seen the city and heard the speech.
-- Tyrion Lannister renounced his office as Hand and was imprisoned. He warned Jon that Daenerys would treat Jon's sisters, and anyone else she regarded as an obstacle, as enemies.
-- Jon asked Daenerys to forgive Tyrion and show mercy. She refused to let others choose what was good and presented her own judgment as decisive.
-- Daenerys was unarmed and was not attacking Jon when he killed her. Jon used their intimacy to get close enough to strike. He had not convened a council, attempted detention, or sought a public surrender of power.
+Both sides accept these:
 
-**Question for judgment:** *Was Jon Snow's intentional killing of Daenerys Targaryen justified as the necessary defense of others and of the realm, given what he knew, the scale of the threatened harm, the absence or presence of safer alternatives, and his lack of formal authority?*
+- King's Landing had surrendered: bells rang, organized resistance had ceased.
+  Daenerys then used Drogon against streets and civilians, causing destruction
+  on a vast scale.
+- After the victory, Daenerys told her assembled forces the campaign of
+  "liberation" would continue beyond King's Landing. Jon had seen the city and
+  heard the speech.
+- Tyrion Lannister renounced his office as Hand and was imprisoned. He warned
+  Jon that Daenerys would treat Jon's sisters, and anyone else she regarded as
+  an obstacle, as enemies.
+- Jon asked Daenerys to forgive Tyrion and show mercy. She refused to let
+  others choose what was good and presented her own judgment as decisive.
+- Daenerys was unarmed and was not attacking Jon when he killed her. Jon used
+  their intimacy to get close enough to strike. He had not convened a council,
+  attempted detention, or sought a public surrender of power.
 
-**Scope:** The Tribunal decides justified / not justified and gives reasons. It does not impose a sentence, and it does not combine the three judges' opinions into one verdict.
+### Question for judgment
+
+*Was Jon Snow's intentional killing of Daenerys Targaryen justified as the
+necessary defense of others and of the realm, given what he knew, the scale of
+the threatened harm, the absence or presence of safer alternatives, and his
+lack of formal authority?*
+
+### Scope
+
+The Tribunal decides justified / not justified and gives reasons. It does not
+impose a sentence, and it does not combine the three judges' opinions into one
+verdict.
 
 ## 2. The seven agents
 
-**Non-negotiable rule:** a representative's seat (defense or prosecution) fixes only procedural role — never an opinion, a factual inference, or a final position. A judge's named model fixes the reasoning method it applies, never the verdict. No agent is instructed to argue toward a predetermined conclusion; each reasons from its own character/method and may land anywhere, including against "its side." Each agent's full system prompt (real depth, not a one-line trait) lives in [`netlify/functions/lib/representatives.ts`](netlify/functions/lib/representatives.ts) or [`judges.ts`](netlify/functions/lib/judges.ts), and [`prompts.ts`](netlify/functions/lib/prompts.ts) pairs it with the case record (for a judge, with the representatives' arguments too) — this section states identity and required reasoning approach, not the prompts themselves.
+**Non-negotiable rule:**
 
-**Representatives:**
+- a representative's seat (defense or prosecution) fixes only procedural role
+  — never an opinion, a factual inference, or a final position;
+- a judge's named model fixes the reasoning method it applies, never the
+  verdict;
+- no agent is instructed to argue toward a predetermined conclusion; each
+  reasons from its own character/method and may land anywhere, including
+  against "its side."
 
-- **Jon Snow** (defense) — plain-spoken, duty- and protection-driven; accepts blame readily; changes position when honor or evidence requires it.
-- **Tyrion Lannister** (defense) — quick, ironic, skeptical of purity and inherited power; favors persuasion and outcomes that leave people alive.
-- **Daenerys Targaryen** (prosecution) — commanding, morally intense; prizes liberation and loyalty; reacts sharply to betrayal but can be reached by genuine respect; interprets the record herself, including evidence against her.
-- **Grey Worm** (prosecution) — terse, disciplined; weighs witnessed conduct and sequence of events over rhetoric or speculation.
+Each agent's full system prompt (real depth, not a one-line trait) lives in
+[`netlify/functions/lib/representatives.ts`](netlify/functions/lib/representatives.ts)
+or [`judges.ts`](netlify/functions/lib/judges.ts), and
+[`prompts.ts`](netlify/functions/lib/prompts.ts) pairs it with [the case
+record](#1-the-charge-sheet) (for a judge, with [the
+representatives](#representatives)' arguments too). This section states identity
+and required reasoning approach, not the prompts themselves.
 
-**Judges** (each modelled on a real jurist's documented reasoning method, not a persona):
+### Representatives
 
-- **Judge 1 — the Aharon Barak model.** Systematic and rights-centered; purposive interpretation (text read against a rule's function, structure, and democratic values); tests a rights claim through lawful authority, proper purpose, rational fit, less harmful means, and proportionality; builds an explicit doctrinal structure before resolving the dispute.
-- **Judge 2 — the Menachem Elon model.** Tradition-minded; treats Jewish law as a working legal source alongside comparative and historical material; insists courts have limited authority — identifying illegality is not license to supervise every political or social choice; comfortable dissenting on the merits.
-- **Judge 3 — the Meir Shamgar model.** Institutional and fact-heavy; identifies offices, powers, duties, and remedies before moral intuition; treats constitutional development as reasoned legal development from text, precedent, and institutional structure rather than proclamation; returns consistently to the claimant, the right, and the remedy.
+- **[Jon Snow](CLAUDE.md#jon-snow--defense-seat)** (defense) — plain-spoken,
+  duty- and protection-driven; accepts blame readily; changes position when
+  honor or evidence requires it.
+- **[Tyrion Lannister](CLAUDE.md#tyrion-lannister--defense-seat)** (defense) —
+  quick, ironic, skeptical of purity and inherited power; favors persuasion and
+  outcomes that leave people alive.
+- **[Daenerys Targaryen](CLAUDE.md#daenerys-targaryen--prosecution-seat)**
+  (prosecution) — commanding, morally intense; prizes liberation and loyalty;
+  reacts sharply to betrayal but can be reached by genuine respect; interprets
+  the record herself, including evidence against her.
+- **[Grey Worm](CLAUDE.md#grey-worm--prosecution-seat)** (prosecution) — terse,
+  disciplined; weighs witnessed conduct and sequence of events over rhetoric or
+  speculation.
+
+### Judges
+
+Each is modelled on a real jurist's documented reasoning method, not a
+persona.
+
+- **Judge 1 — [the Aharon Barak
+  model](CLAUDE.md#judge-1--the-aharon-barak-model).** Systematic and
+  rights-centered:
+  - purposive interpretation (text read against a rule's function, structure,
+    and democratic values);
+  - tests a rights claim through lawful authority, proper purpose, rational
+    fit, less harmful means, and proportionality;
+  - builds an explicit doctrinal structure before resolving the dispute.
+- **Judge 2 — [the Menachem Elon
+  model](CLAUDE.md#judge-2--the-menachem-elon-model).** Tradition-minded:
+  - treats Jewish law as a working legal source alongside comparative and
+    historical material;
+  - insists courts have limited authority — identifying illegality is not
+    license to supervise every political or social choice;
+  - comfortable dissenting on the merits.
+- **Judge 3 — [the Meir Shamgar
+  model](CLAUDE.md#judge-3--the-meir-shamgar-model).** Institutional and
+  fact-heavy:
+  - identifies offices, powers, duties, and remedies before moral intuition;
+  - treats constitutional development as reasoned legal development from
+    text, precedent, and institutional structure rather than proclamation;
+  - returns consistently to the claimant, the right, and the remedy.
 
 ## 3. Functional and technical requirements
 
-- The Tribunal runs exactly this one fixed case — not a user-editable charge sheet.
-- All four representatives are called in parallel; none depends on another's output.
-- All three judges are called only after the representative phase resolves; each receives the full charge sheet plus every representative argument actually available (a failed representative call is never backfilled with invented text).
-- Each judge returns one independent ruling — **justified** or **not justified** — with reasoning in its own voice/method.
-- **No sentence or penalty is ever imposed** — the Tribunal rules only on justified/not justified.
-- **The three rulings are never combined, aggregated, or reduced to a majority/consensus.** No vote count, no aggregate field, no single "outcome" — all three are shown independently, each on its own card. This is a hard requirement, not a default to optimise away under any framing.
-- A representative's argument must reflect authentic in-character reasoning; an argument landing against its seat's usual side is a valid, expected outcome, not a defect.
-- Verdict vocabulary is **justified / not justified** everywhere an outcome is expressed — backend, frontend, and stored data alike — never guilty/not guilty.
-- A failed model call must surface as a visible failure, in the UI and the call log alike. It must never be silently dropped or replaced with a fabricated argument or ruling.
-- Every model call is logged with: agent role, model used, prompt tokens, completion tokens, total tokens, cost, status, and timestamp. Token counts are read from the API response's own usage data; cost is computed from per-token pricing.
-- **Architecture:** three-tier — browser / backend / database. The backend alone holds the API key and orchestrates every model call; the database stores the case record, every argument and ruling, and the full per-call log.
+### The case and the order of calls
 
----
+- The Tribunal runs exactly [this one fixed case](#1-the-charge-sheet) — not a
+  user-editable charge sheet.
+- All four [representatives](#representatives) are called in parallel; none
+  depends on another's output.
+- All three [judges](#judges) are called only after the representative phase
+  resolves; each receives [the full charge sheet](#1-the-charge-sheet) plus
+  every representative argument actually available (a failed representative
+  call is never backfilled with invented text).
 
-How this repo actually satisfies the above — the specific model(s) used, cost/reliability engineering, [anti-abuse measures](README.md#anti-abuse-and-cost-controls), the database (defined in [`supabase/schema.sql`](supabase/schema.sql), and mapped in [`README.md`](README.md#database)), and the decisions behind them — is documented in [`README.md`](README.md) (current state) and [`CLAUDE.md`](CLAUDE.md#status-log) (running log), not repeated here.
+### Arguments and rulings
+
+- Each judge returns one independent ruling — **justified** or **not
+  justified** — with reasoning in its own voice/method.
+- **No sentence or penalty is ever imposed** — the Tribunal rules only on
+  justified/not justified.
+- **The three rulings are never combined, aggregated, or reduced to a
+  majority/consensus.**
+  - No vote count, no aggregate field, no single "outcome" — all three are
+    shown independently, each on its own card.
+  - This is a hard requirement, not a default to optimise away under any
+    framing.
+- A representative's argument must reflect authentic in-character reasoning;
+  an argument landing against its seat's usual side is a valid, expected
+  outcome, not a defect.
+- Verdict vocabulary is **justified / not justified** everywhere an outcome is
+  expressed — backend, frontend, and stored data alike — never guilty/not
+  guilty.
+
+### Failures, logging and architecture
+
+- A failed model call must surface as a visible failure, in the UI and [the
+  call log](README.md#call-log) alike. It must never be silently dropped or
+  replaced with a fabricated argument or ruling.
+- Every model call is logged with: agent role, model used, prompt tokens,
+  completion tokens, total tokens, cost, status, and timestamp. Token counts
+  are read from the API response's own usage data; cost is computed from
+  [per-token pricing](netlify/functions/lib/pricing.ts).
+- **Architecture:** [three-tier](README.md#architecture) — [browser](public) /
+  [backend](netlify/functions) / [database](README.md#database). The backend
+  alone holds the API key and orchestrates every model call; the database stores
+  [the case record](README.md#case_definitions), every
+  [argument](README.md#representative_arguments) and
+  [ruling](README.md#judge_rulings), and [the full per-call
+  log](README.md#api_call_logs).
+
+## How this repository implements it
+
+How this repository actually satisfies the above is documented in
+[`README.md`](README.md) (current state) and
+[`CLAUDE.md`](CLAUDE.md#status-log) (running log), not repeated here:
+
+- the specific model(s) used, and the cost and reliability engineering, in
+  [the escalation chain](README.md#the-escalation-chain);
+- the [anti-abuse measures](README.md#anti-abuse-and-cost-controls);
+- the database, defined in [`supabase/schema.sql`](supabase/schema.sql) and
+  [mapped in `README.md`](README.md#database);
+- and [the decisions behind them](CLAUDE.md#status-log).

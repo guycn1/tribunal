@@ -7,11 +7,29 @@
  * docs describe is compared against its source here, as are the endpoints'
  * status codes and site-gate requirement, the agent endpoints' order of
  * checks, which of their rejections are logged and their rate limit, the
- * anti-abuse layers the code applies, the case text, the fields every call
- * logs and the verdict vocabulary, so changing one without the other fails
- * this suite instead of leaving the docs quietly wrong. Where the fact is about
- * behaviour, it is checked by running the real code (the backend compiled
- * from its TypeScript, app.js against a stub DOM), not by reading its text.
+ * anti-abuse layers the code applies, the counts README states (of tables,
+ * tiers, suites, anti-abuse layers, routes and agent endpoints among them),
+ * the case text, the fields every call logs and the verdict vocabulary, so
+ * changing one without the other fails this suite instead of leaving the
+ * docs quietly wrong. Where the fact is about behaviour, it is checked by
+ * running the real code (the backend compiled from its TypeScript, app.js
+ * against a stub DOM), not by reading its text.
+ *
+ * README's own layout is held in place too: each endpoint entry a route
+ * line and a description line, every path starting in the same column; the
+ * database section a map of the tables in schema.sql's order, then a section
+ * per table whose Columns line names exactly its columns; and each badge
+ * label of more than one word joined, or wrapped only where its table allows.
+ *
+ * README's architecture diagram is read as nodes and arrows and held to
+ * the code: every file and directory it names exists, every function is
+ * drawn once, every arrow between two modules is a real import, every import
+ * from a function into a module drawn has its arrow, every library module is
+ * drawn or listed as not drawn, the per-IP limit sits on the arrows to the
+ * rate-limited functions, the database's tables are listed, and the claims
+ * beneath it hold - that the page requests only /api/ routes and loads
+ * nothing from another host, and that one module each reaches OpenRouter
+ * and the database and reads the secrets they need.
  *
  * It also holds every Markdown file but CLAUDE.md to HARD RULE 4: references
  * are links, and every link lands (see checkReferencesAreLinks()).
@@ -58,8 +76,8 @@ const read = (...parts) => fs.readFileSync(path.join(ROOT, ...parts), 'utf8').re
  * back into one line, the inverse of wrapping it at 80 columns: headings,
  * table rows, list-item starts, fenced code and blank lines stay as they are,
  * and a line after a hard break (one ending in a backslash) is not joined to
- * it. README is wrapped for its Code view; the checks below read the
- * sentences it states whole, wherever the wrapping broke them.
+ * it. README and SPEC.md are wrapped for their Code view; the checks below
+ * read the sentences they state whole, wherever the wrapping broke them.
  * @param {string} doc
  * @returns {string}
  */
@@ -78,7 +96,7 @@ function unwrap(doc) {
 }
 
 const README = unwrap(read('README.md'));
-const SPEC = read('SPEC.md');
+const SPEC = unwrap(read('SPEC.md'));
 const CLAUDE = read('CLAUDE.md');
 const SCHEMA = read('supabase', 'schema.sql');
 const TOML = read('netlify.toml');
@@ -154,8 +172,10 @@ const norm = (s) => String(s ?? '').replace(/\*\*|\*|`/g, '').replace(/[“”]/
  * @typedef {object} TableInfo
  * @property {string[]} columns
  * @property {Record<string, string[]>} checks Allowed values, by column.
- * @property {boolean} keyedByTrialAndRole Unique or primary key on (trial_id, role).
- * @property {boolean} cascades trial_id references trials(id) on delete cascade.
+ * @property {boolean} keyedByTrialAndRole Unique or primary key on
+ *   (trial_id, role).
+ * @property {boolean} cascades trial_id references trials(id) on delete
+ *   cascade.
  */
 /** @type {Record<string, TableInfo>} */
 const TABLES = {};
@@ -182,7 +202,9 @@ const SEED = (() => {
 })();
 
 // ------------------------------------------------------------ the repository
-/** Every file that is or would be committed: tracked, plus new and not ignored. */
+/**
+ * Every file that is or would be committed: tracked, plus new and not ignored.
+ */
 const REPO_FILES = (() => {
   try {
     return execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard'], { cwd: ROOT, encoding: 'utf8' })
@@ -241,7 +263,7 @@ async function main() {
   const backend = compileBackend(['lib/openrouter.ts', 'lib/representatives.ts', 'lib/judges.ts', 'lib/pricing.ts', 'trials.ts', 'trial.ts', 'case.ts', 'abort.ts', 'representative-background.ts', 'judge-background.ts']);
   useFakeSupabase(backend.outDir);
 
-  // ====================================================== README: unwrapping
+  // ============================================ README: unwrapping
   // Every check below reads README through unwrap(), so it is checked first,
   // on a sample with each kind of line it must keep apart, set directly
   // after a wrapped paragraph line.
@@ -261,7 +283,7 @@ async function main() {
   check('unwrap() joins wrapped lines and keeps every other line apart', unwrap(wrapped) === joined, JSON.stringify(unwrap(wrapped)));
   check('unwrap() leaves an unwrapped file as it is', unwrap(joined) === joined, JSON.stringify(unwrap(joined)));
 
-  // ======================================================== README: layout
+  // ============================================ README: layout
   console.log('\n=== README: the project layout lists every file, and only real ones ===');
   const layout = section(README, '## Project layout');
   const treeBlock = (layout.match(/```text\n([\s\S]*?)```/) || [])[1] || '';
@@ -289,7 +311,7 @@ async function main() {
   const missingDirs = tree.filter((t) => t.isDir && !(fs.existsSync(path.join(ROOT, t.path)) && fs.statSync(path.join(ROOT, t.path)).isDirectory()));
   check('every directory in the tree exists', missingDirs.length === 0, missingDirs.map((t) => t.path).join(', '));
 
-  // ======================================================== README: endpoints
+  // ============================================ README: endpoints
   console.log('\n=== README: the endpoint list matches netlify.toml and the handlers ===');
   const api = section(README, '### API endpoints');
   // Each endpoint is a list item of two lines: its route, as one code
@@ -321,7 +343,7 @@ async function main() {
 
   const documentedFns = [...new Set(rows.map((r) => r.fn))];
   // Checked first, and the rest of this section only looks at functions that
-  // exist: a README row naming a missing file must fail here, not crash the
+  // exist: a README entry naming a missing file must fail here, not crash the
   // suite on the read or require of a file that is not there.
   const missingFns = documentedFns.filter((fn) => !fs.existsSync(path.join(ROOT, 'netlify', 'functions', `${fn}.ts`)));
   check('every function the list names exists', missingFns.length === 0, missingFns.join(', '));
@@ -344,13 +366,18 @@ async function main() {
    * @param {string} fn The function file's name, without .ts.
    * @param {string} method
    * @param {string} urlPath
-   * @param {{headers?: Record<string, string>, body?: string}} [request]
+   * @param {{
+   *   headers?: Record<string, string>,
+   *   body?: string,
+   *   trialStatus?: string
+   * }} [request]
+   *   trialStatus is the status the one trial holds.
    * @returns {Promise<number>}
    */
-  const invoke = async (fn, method, urlPath, { headers = {}, body } = {}) => {
+  const invoke = async (fn, method, urlPath, { headers = {}, body, trialStatus = 'created' } = {}) => {
     global.fakeSupabase = fakeSupabase({
       case_definitions: [{ ...caseRow }],
-      trials: [{ id: TRIAL_ID, case_code: 'T-001', status: 'created', created_at: '1', updated_at: '1' }],
+      trials: [{ id: TRIAL_ID, case_code: 'T-001', status: trialStatus, created_at: '1', updated_at: '1' }],
       representative_arguments: [], judge_rulings: [], api_call_logs: [], agent_progress: [],
     }).client;
     const response = await backend.load(`${fn}.js`).handler({ httpMethod: method, path: urlPath, headers, queryStringParameters: {}, body }, {});
@@ -362,8 +389,9 @@ async function main() {
     const correct = await invoke(row.fn, row.method, row.path.replace(':id', TRIAL_ID), { headers: { 'x-site-gate': GATE }, body });
     const withoutGate = await invoke(row.fn, row.method, row.path.replace(':id', TRIAL_ID), { body });
     const unknownTrial = row.path.includes(':id') ? await invoke(row.fn, row.method, row.path.replace(':id', UNKNOWN_ID), { headers: { 'x-site-gate': GATE }, body }) : null;
+    const completedTrial = row.path.includes(':id') ? await invoke(row.fn, row.method, row.path.replace(':id', TRIAL_ID), { headers: { 'x-site-gate': GATE }, body, trialStatus: 'completed' }) : null;
     delete process.env.SITE_GATE_TOKEN;
-    const observed = [correct, withoutGate, unknownTrial].filter((c) => c !== null);
+    const observed = [correct, withoutGate, unknownTrial, completedTrial].filter((c) => c !== null);
     check(`${row.method} ${row.path} succeeds when called correctly`, correct >= 200 && correct < 300, String(correct));
     for (const code of [...row.text.matchAll(/`(\d{3})`/g)].map((m) => Number(m[1]))) {
       check(`${row.method} ${row.path}: it really answers ${code}`, observed.includes(code), observed.join(', '));
@@ -395,9 +423,10 @@ async function main() {
   check('the Background Functions are the ones documented as such', backgroundFns.length > 0 && minus(backgroundFns, documentedBackground).length === 0 && minus(documentedBackground, backgroundFns).length === 0, `filename: ${backgroundFns}, README: ${documentedBackground}`);
   // Netlify's bundler read a function's `config` export only when the
   // function had a default export (@netlify/zip-it-and-ship-it 9.42.1, read
-  // on 2026-10-02), so next to a named `handler` export it was ignored
-  // whole - a rate limit, a path or background: true declared there would
-  // read as in force and do nothing.
+  // on 2026-10-02, and every release from 15.3.3 to 16.3.0, read on
+  // 2026-10-06), so next to a named `handler` export it was ignored whole - a
+  // rate limit, a path or background: true declared there would read as in
+  // force and do nothing.
   const ignoredConfig = topLevel.filter(([, src]) => /^export const handler\b/m.test(src) && /^export const config\b/m.test(src)).map(([f]) => path.basename(f, '.ts'));
   check('no function exports a config its bundler ignores', ignoredConfig.length === 0, ignoredConfig.join(', '));
   check(`"the ${(agentPara.match(/^#### The (\w+)/) || [])[1]} agent endpoints" is the right count`, wordToNumber((agentPara.match(/^#### The (\w+)/) || [])[1]) === backgroundFns.length, String(backgroundFns.length));
@@ -435,13 +464,13 @@ async function main() {
   // real handlers with requests that fail one check, or two at once - two
   // at once answer with the status of whichever check runs first.
   const { GLOBAL_CALL_CAP } = backend.load('lib/db.js');
-  const STEP_CODE = { route: 403, post: 405, role: 400, gate: 401, cap: 429, trial: 404, address: 403 };
+  const STEP_CODE = { route: 403, post: 405, role: 400, gate: 401, cap: 429, trial: 404, done: 409, address: 403 };
   // A test value for Netlify's URL variable, the site's main address; a
   // request failing 'address' comes through its route to another address
   // of the same site. 'address' is part of the route step in README.
   const MAIN_HOST = 'tribunal.example';
   const orderClause = (agentPara.match(/The handler checks, in order, (.*?)\. Because/) || [])[1] || '';
-  const stepAt = { route: orderClause.indexOf('came through its rate-limited route'), post: orderClause.indexOf('a POST naming a trial and a role'), role: orderClause.indexOf('role is one it knows'), gate: orderClause.indexOf('site-gate header'), cap: orderClause.indexOf('call cap'), trial: orderClause.indexOf('trial exists') };
+  const stepAt = { route: orderClause.indexOf('came through its rate-limited route'), post: orderClause.indexOf('a POST naming a trial and a role'), role: orderClause.indexOf('role is one it knows'), gate: orderClause.indexOf('site-gate header'), cap: orderClause.indexOf('call cap'), trial: orderClause.indexOf('trial exists'), done: orderClause.indexOf('no final outcome yet') };
   check('the order of the agent handlers\' checks is stated, naming each one', Object.values(stepAt).every((i) => i >= 0), JSON.stringify(stepAt));
   const documentedOrder = Object.keys(stepAt).sort((a, b) => stepAt[a] - stepAt[b]);
   /**
@@ -456,11 +485,14 @@ async function main() {
     const role = fails.has('role') ? 'nobody' : fn === 'judge-background' ? 'barak' : 'jon_snow';
     const id = fails.has('trial') ? UNKNOWN_ID : TRIAL_ID;
     const recent = new Date().toISOString();
+    // Failing 'done': the role already has a final outcome, a success - in
+    // whichever trial the request names, so the order against 'trial' shows.
+    const finished = fails.has('done') ? [{ trial_id: id, agent_role: role, call_type: fn === 'judge-background' ? 'judge' : 'representative', status: 'success', error_message: null, model_used: 'vendor/a-model', timestamp: recent }] : [];
     global.fakeSupabase = fakeSupabase({
       case_definitions: [{ ...caseRow }],
       trials: [{ id: TRIAL_ID, case_code: 'T-001', status: 'created', created_at: '1', updated_at: '1' }],
       representative_arguments: [], judge_rulings: [], agent_progress: [],
-      api_call_logs: fails.has('cap') ? Array.from({ length: GLOBAL_CALL_CAP }, () => ({ trial_id: TRIAL_ID, model_used: 'vendor/a-model', timestamp: recent })) : [],
+      api_call_logs: [...(fails.has('cap') ? Array.from({ length: GLOBAL_CALL_CAP }, () => ({ trial_id: TRIAL_ID, model_used: 'vendor/a-model', timestamp: recent })) : []), ...finished],
     }).client;
     global.fetch = async () => { throw new Error('no model call expected'); };
     process.env.SITE_GATE_TOKEN = GATE;
@@ -508,14 +540,15 @@ async function main() {
   const listLimit = Number((read('netlify', 'functions', 'lib', 'db.ts').match(/function listTrials\(limit = (\d+)\)/) || [])[1]);
   check(`GET /api/trials returns the ${listLimit} most recent trials`, api.includes(`The ${listLimit} most recent trials`), String(listLimit));
 
-  // ======================================================== README: database
+  // ============================================ README: database
   console.log('\n=== README: the database section matches schema.sql ===');
   const db = section(README, '### Database');
   const tableNames = Object.keys(TABLES);
   check('schema.sql defines tables', tableNames.length > 0);
   const countClaims = [
     ['the Database section', (db.match(/^(\w+) tables in Supabase/m) || [])[1]],
-    ['Local development', (section(README, '## Local development').match(/creates the (\w+) tables/) || [])[1]],
+    // The count may open a link: "creates the [six tables](#database)".
+    ['Local development', (section(README, '## Local development').match(/creates the \[?(\w+) tables/) || [])[1]],
     ['the layout tree', (treeBlock.match(/all (\w+) tables/) || [])[1]],
     ["schema.sql's own header", (SCHEMA.match(/^-- (\w+) tables:/m) || [])[1]],
   ];
@@ -548,7 +581,7 @@ async function main() {
     const badMarkers = named.filter((n) => n.startsWith('[') && !markerValues.includes(n));
     check(`${table}: every marker named is a real one`, badMarkers.length === 0, badMarkers.join(', '));
     for (const [column, allowed] of Object.entries(info.checks)) {
-      if (column === 'role') continue; // the roles are checked against the code below, in the endpoint paragraph
+      if (column === 'role') continue; // the roles are checked against the code below, in the agent-endpoint subsection
       const missing = allowed.filter((v) => !named.includes(v));
       check(`${table}: every allowed ${column} value is listed`, missing.length === 0, missing.join(', '));
     }
@@ -567,7 +600,7 @@ async function main() {
   const caseInCode = [...FUNCTION_SOURCES.map(([f, src]) => [f, src]), ['public/app.js', read('public', 'app.js')]].filter(([, src]) => SEED.agreedFacts.some((fact) => src.includes(fact.slice(0, 60))));
   check('the case text lives only in the database, not in code', /reads the case from here at runtime/.test(sections.case_definitions || '') && caseInCode.length === 0, caseInCode.map(([f]) => f).join(', '));
 
-  // ======================================================== README: numbers the code sets
+  // ============================================ README: numbers the code sets
   console.log('\n=== README: the escalation chain, detectors and prices match the code ===');
   process.env.OPENROUTER_API_KEY = 'test-key';
   const { callOpenRouter } = backend.load('lib/openrouter.js');
@@ -591,7 +624,12 @@ async function main() {
    * @param {string} model
    * @param {string} content
    * @param {string} [finishReason='stop']
-   * @returns {{ok: boolean, status: number, headers: Map<string, string>, json: () => Promise<object>}}
+   * @returns {{
+   *   ok: boolean,
+   *   status: number,
+   *   headers: Map<string, string>,
+   *   json: () => Promise<object>
+   * }}
    */
   const reply =(model, content, finishReason = 'stop') => ({
     ok: true, status: 200, headers: new Map(),
@@ -626,7 +664,8 @@ async function main() {
      */
     const perMillion = (model) => [calculateCost(model, 1e6, 0), calculateCost(model, 0, 1e6)];
     const [defaultPrices, tier2Prices] = [perMillion(tiers[0].model), perMillion(tiers[1].model)];
-    // "Significantly": several times the price, for prompt and completion tokens alike.
+    // "Significantly": several times the price, for prompt and completion
+    // tokens alike.
     check('tier 2 is several times the default\'s price', tier2Prices.every((p, i) => p >= 3 * defaultPrices[i]), `${defaultPrices.join('/')} vs ${tier2Prices.join('/')}`);
   }
 
@@ -826,7 +865,13 @@ async function main() {
      * `changed` words replaced, then `after` fillers. 100 words by default,
      * so likeness moves in steps of 1%. Each run of fillers is numbered apart
      * from the others, so no filler appears twice.
-     * @param {{len?: number, changed?: number, gap?: number, after?: number, lead?: number}} [options]
+     * @param {{
+     *   len?: number,
+     *   changed?: number,
+     *   gap?: number,
+     *   after?: number,
+     *   lead?: number
+     * }} [options]
      *   `len` defaults to 100, `changed` to the number of words that leaves
      *   a 100-word copy exactly at the stated likeness, `gap` to 1, `after`
      *   to 0 and `lead` to 20.
@@ -853,7 +898,8 @@ async function main() {
   check('the fast-failure threshold is stated, the same everywhere', fastClaims.length > 0 && fastClaims.every((n) => n === fastClaims[0]), fastClaims.join(', '));
   if (fastClaims.length) {
     /**
-     * Whether a rate limit that takes `seconds` to come back is retried for free.
+     * Whether a rate limit that takes `seconds` to come back is retried for
+     * free.
      * @param {number} seconds
      * @returns {Promise<boolean>}
      */
@@ -895,7 +941,7 @@ async function main() {
   check(`every "a trial sends N" uses ${agentCount}, one request per agent`, requestClaims.length > 0 && requestClaims.every((n) => n === agentCount), requestClaims.join(', ') || 'not stated');
   backend.cleanup();
 
-  // ======================================================== README: what the UI shows
+  // ============================================ README: what the UI shows
   console.log('\n=== README: the badge tables match what app.js renders ===');
   installDom();
   const app = loadApp([
@@ -1022,7 +1068,7 @@ async function main() {
   const resultClaims = [...README.matchAll(/(?:all|its) (\d+)(?: of (\d+))? results/g)].flatMap((m) => [m[1], m[2]].filter(Boolean).map(Number));
   check(`every "N of ${expected} results" uses ${expected}`, resultClaims.length > 0 && resultClaims.every((n) => n === expected), resultClaims.join(', '));
 
-  // ======================================================== README: local development
+  // ============================================ README: local development
   console.log('\n=== README: setup and the test suites match package.json and .env.example ===');
   const local = section(README, '## Local development');
   const suites = [...(PKG.scripts.test || '').matchAll(/node (tests\/[\w.-]+\.js)/g)].map((m) => m[1]);
@@ -1063,7 +1109,7 @@ async function main() {
   const threeTier = README.split('\n').find((line) => line.startsWith('Three-tier:')) || '';
   check('the bundler is esbuild, as the architecture line says', /bundled by esbuild/.test(threeTier) && /node_bundler = "esbuild"/.test(TOML), threeTier || 'no "Three-tier:" line in README');
 
-  // ======================================================== README: anti-abuse layers
+  // ============================================ README: anti-abuse layers
   console.log('\n=== README: the anti-abuse layers are the ones the code has ===');
   // Each layer, the words README names it by, and whether the code applies
   // it to every call that spends quota. The call cap and the site gate are
@@ -1100,7 +1146,109 @@ async function main() {
   const routeClaims = statedCounts(README, 'routes');
   check(`every "N routes" in README uses ${agentRoutes.length}, the routes to agent functions`, routeClaims.length > 0 && routeClaims.every((w) => countOf(w) === agentRoutes.length), routeClaims.join(', ') || 'not stated');
 
-  // ======================================================== paths named anywhere
+  // ============================================ README: the diagram
+  console.log('\n=== README: the architecture diagram draws what the code does ===');
+  // The Mermaid diagram under "What talks to what", read as nodes (an id,
+  // its shape and its label) and arrows (from, to and any label). A node
+  // stands for the files its label names; an arrow between two such nodes
+  // claims that every file of the first imports a file of the second.
+  const talks = section(README, '### What talks to what');
+  const mermaid = (talks.match(/```mermaid\n([\s\S]*?)```/) || [])[1] || '';
+  const nodes = new Map([...mermaid.matchAll(/^\s*(\w+)(\["|\[\("|\(\[")(.*?)("\]|"\)\]|"\]\))\s*$/gm)]
+    .map((m) => [m[1], { shape: m[2], label: m[3] }]));
+  const arrows = [...mermaid.matchAll(/^\s*(\w+)\s*(?:-->|-\.->)\s*(?:\|"([^"]*)"\|\s*)?(\w+)\s*$/gm)]
+    .map((m) => ({ from: m[1], to: m[3], label: m[2] || '' }));
+  check('README draws the architecture as a Mermaid diagram', nodes.size > 0 && arrows.length > 0, `${nodes.size} nodes, ${arrows.length} arrows`);
+  check('every arrow joins two nodes the diagram declares', arrows.every((a) => nodes.has(a.from) && nodes.has(a.to)), arrows.filter((a) => !nodes.has(a.from) || !nodes.has(a.to)).map((a) => `${a.from} -> ${a.to}`).join(', '));
+  // A file under netlify/functions/ by its name alone, as a label gives it.
+  const tsByName = new Map(FUNCTION_SOURCES.map(([rel, src]) => [path.posix.basename(rel), { rel, src }]));
+  /** The files a node's label names. */
+  const filesOf = (id) => [...((nodes.get(id) || { label: '' }).label.matchAll(/[\w-]+\.(?:ts|toml)\b/g))].map((m) => m[0]);
+  const named = [...nodes.keys()].flatMap(filesOf);
+  const unknown = named.filter((f) => !(tsByName.has(f) || (REPO_FILES || []).includes(f)));
+  check('every file the diagram names is in the repository', named.length > 0 && unknown.length === 0, unknown.join(', '));
+  const dirsNamed = [...nodes.values()].flatMap((n) => [...n.label.matchAll(/(?:^|<br\/>)([\w-]+\/)/g)].map((m) => m[1]));
+  check('every directory the diagram names is in the repository', dirsNamed.every((d) => (REPO_FILES || []).some((f) => f.startsWith(d))), dirsNamed.join(', '));
+  const fnFiles = FUNCTION_SOURCES.filter(([rel]) => path.posix.dirname(rel) === 'netlify/functions').map(([rel]) => path.posix.basename(rel));
+  const libFiles = FUNCTION_SOURCES.filter(([rel]) => path.posix.dirname(rel) === 'netlify/functions/lib').map(([rel]) => path.posix.basename(rel));
+  const drawnOnce = (f) => [...nodes.keys()].filter((id) => filesOf(id).includes(f)).length === 1;
+  check('every function is drawn, once', fnFiles.length > 0 && fnFiles.every(drawnOnce), fnFiles.filter((f) => !drawnOnce(f)).join(', '));
+  /** The files under netlify/functions/ that `file` imports, by name. */
+  const importsOf = (file) => [...((tsByName.get(file) || { src: '' }).src.matchAll(/from '\.\/(?:lib\/)?([\w-]+)'/g))].map((m) => `${m[1]}.ts`);
+  const fileNodes = [...nodes.keys()].filter((id) => filesOf(id).some((f) => f.endsWith('.ts')));
+  /** The files of node `from` that import a file of node `to`. */
+  const nodeImports = (from, to) => filesOf(from).filter((f) => importsOf(f).some((i) => filesOf(to).includes(i)));
+  const unsound = arrows.filter((a) => fileNodes.includes(a.from) && fileNodes.includes(a.to) && nodeImports(a.from, a.to).length !== filesOf(a.from).length);
+  check('every arrow between two modules is a real import, from every file of the first', unsound.length === 0, unsound.map((a) => `${a.from} -> ${a.to}`).join(', '));
+  const fnNodes = fileNodes.filter((id) => filesOf(id).every((f) => fnFiles.includes(f)));
+  const libNodes = fileNodes.filter((id) => filesOf(id).every((f) => libFiles.includes(f)));
+  check('every node holds functions or library modules, not both', fileNodes.every((id) => fnNodes.includes(id) || libNodes.includes(id)), fileNodes.filter((id) => !fnNodes.includes(id) && !libNodes.includes(id)).join(', '));
+  const undrawn = fnNodes.flatMap((from) => libNodes.filter((to) => nodeImports(from, to).length > 0 && !arrows.some((a) => a.from === from && a.to === to)).map((to) => `${from} -> ${to}`));
+  check('every import from a function into a module drawn has its arrow', undrawn.length === 0, undrawn.join(', '));
+  // The modules left out are named as such, so a new one has to be drawn or
+  // listed.
+  const notDrawnBullet = (talks.match(/^- \*\*Not drawn:\*\*.*$/m) || [''])[0].split(/, and the imports/)[0];
+  const notDrawn = [...notDrawnBullet.matchAll(/`([\w-]+\.ts)`/g)].map((m) => m[1]);
+  const libDrawn = libFiles.filter((f) => named.includes(f));
+  const neither = minus(libFiles, [...libDrawn, ...notDrawn]);
+  const wrongly = notDrawn.filter((f) => !libFiles.includes(f) || libDrawn.includes(f));
+  check('every library module is drawn or listed as not drawn, not both', notDrawn.length > 0 && neither.length === 0 && wrongly.length === 0, `neither: ${neither}; listed but drawn or unknown: ${wrongly}`);
+
+  // The code the claims below the diagram rest on, with its comments
+  // removed by TypeScript's own printer, so that a comment naming a key or a
+  // host counts for nothing.
+  const ts = require('typescript');
+  const codeOf = (file, text) => ts.createPrinter({ removeComments: true }).printFile(ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true));
+  const backendCode = FUNCTION_SOURCES.map(([rel, src]) => [path.posix.basename(rel), codeOf(rel, src)]);
+  const appCode = codeOf('app.js', read('public', 'app.js'));
+  const nodeOf = (file) => [...nodes.keys()].find((id) => filesOf(id).includes(file));
+  const into = (id) => arrows.filter((a) => a.to === id).map((a) => a.from);
+
+  // The browser: its one arrow goes to the routes, and the page asks nothing
+  // of any other host.
+  const browser = [...nodes.keys()].find((id) => /^Browser\b/.test(nodes.get(id).label));
+  const routesNode = nodeOf('netlify.toml');
+  const fromBrowser = arrows.filter((a) => a.from === browser);
+  check('the browser\'s one arrow goes to netlify.toml\'s routes', Boolean(browser) && Boolean(routesNode) && fromBrowser.length === 1 && fromBrowser[0].to === routesNode, fromBrowser.map((a) => a.to).join(', '));
+  // triggerAgent() passes its url parameter on to fetch(); every caller of it
+  // gives a literal.
+  const fetchArgs = [...appCode.matchAll(/\bfetch\(\s*([^,)]+)/g)].map((m) => m[1].trim());
+  const triggerArgs = [...appCode.matchAll(/\btriggerAgent\(\s*([^,)]+)/g)].map((m) => m[1].trim()).filter((a) => a !== 'url');
+  const toApi = (arg) => /^['"`]\/api\//.test(arg);
+  check('app.js requests only routes under /api/', fetchArgs.length > 0 && fetchArgs.every((a) => toApi(a) || a === 'url') && triggerArgs.length > 0 && triggerArgs.every(toApi), [...fetchArgs, ...triggerArgs].filter((a) => !toApi(a) && a !== 'url').join(', '));
+  check('app.js names no other host', !/:\/\//.test(appCode), (appCode.match(/\S*:\/\/\S*/) || [''])[0]);
+  const loads = [...read('public', 'index.html').matchAll(/<(?:script|img|iframe)\b[^>]*\bsrc="([^"]*)"|<link\b[^>]*\bhref="([^"]*)"/g)].map((m) => m[1] || m[2]);
+  check('index.html loads nothing from another host', loads.length > 0 && loads.every((u) => /^\/(?!\/)/.test(u)), loads.join(', '));
+  check('styles.css loads nothing from another host', !/:\/\/|@import/.test(read('public', 'styles.css').replace(/\/\*[\s\S]*?\*\//g, '')));
+
+  // The routes: one arrow to each function node, and the per-IP limit on the
+  // arrows to exactly the functions whose routes carry it.
+  const fromRoutes = arrows.filter((a) => a.from === routesNode);
+  check('netlify.toml\'s routes reach every function node, and only those', fnNodes.length > 0 && fnNodes.every((id) => fromRoutes.some((a) => a.to === id)) && fromRoutes.every((a) => fnNodes.includes(a.to)), fromRoutes.map((a) => a.to).join(', '));
+  const limitDrawn = fromRoutes.filter((a) => /per-IP limit/.test(a.label)).flatMap((a) => filesOf(a.to)).map((f) => path.basename(f, '.ts'));
+  check('the per-IP limit is drawn on the arrows to exactly the rate-limited functions', limitDrawn.length > 0 && minus(limitDrawn, limitedFns).length === 0 && minus(limitedFns, limitDrawn).length === 0, `drawn: ${limitDrawn}; netlify.toml: ${limitedFns}`);
+
+  // OpenRouter and the database: one arrow into each, from the one module
+  // that reaches it, and the secrets each needs read there alone.
+  const outside = (shape) => [...nodes.keys()].find((id) => nodes.get(id).shape === shape);
+  const openRouterNode = outside('(["');
+  const databaseNode = outside('[("');
+  const readsVar = (name) => backendCode.filter(([, code]) => code.includes(`process.env.${name}`)).map(([f]) => f);
+  const codeMatching = (re) => backendCode.filter(([, code]) => re.test(code)).map(([f]) => f);
+  const onlyIn = (files, file) => files.length === 1 && files[0] === file;
+  check('the one arrow into OpenRouter comes from openrouter.ts', Boolean(openRouterNode) && into(openRouterNode).length === 1 && filesOf(into(openRouterNode)[0]).join() === 'openrouter.ts', into(openRouterNode || '').join(', '));
+  check('openrouter.ts makes the backend\'s one outgoing request', onlyIn(codeMatching(/\bfetch\(/), 'openrouter.ts') && onlyIn(codeMatching(/openrouter\.ai/), 'openrouter.ts'), `fetch: ${codeMatching(/\bfetch\(/)}; openrouter.ai: ${codeMatching(/openrouter\.ai/)}`);
+  check('the OpenRouter key is read in openrouter.ts alone', onlyIn(readsVar('OPENROUTER_API_KEY'), 'openrouter.ts'), readsVar('OPENROUTER_API_KEY').join(', '));
+  check('the one arrow into the database comes from supabase.ts', Boolean(databaseNode) && into(databaseNode).length === 1 && filesOf(into(databaseNode)[0]).join() === 'supabase.ts', into(databaseNode || '').join(', '));
+  check('the Supabase client is made in supabase.ts alone', onlyIn(codeMatching(/\bcreateClient\(/), 'supabase.ts'), codeMatching(/\bcreateClient\(/).join(', '));
+  check('the Supabase URL and key are read in supabase.ts alone', onlyIn(readsVar('SUPABASE_URL'), 'supabase.ts') && onlyIn(readsVar('SUPABASE_SERVICE_ROLE_KEY'), 'supabase.ts'), `${readsVar('SUPABASE_URL')} | ${readsVar('SUPABASE_SERVICE_ROLE_KEY')}`);
+  const supabaseImporters = [...tsByName.keys()].filter((f) => importsOf(f).includes('supabase.ts'));
+  const drawnIntoSupabase = into(nodeOf('supabase.ts') || '').flatMap(filesOf);
+  check('the arrows into supabase.ts come from exactly the modules that import it', supabaseImporters.length > 0 && minus(supabaseImporters, drawnIntoSupabase).length === 0 && minus(drawnIntoSupabase, supabaseImporters).length === 0, `import it: ${supabaseImporters}; drawn: ${drawnIntoSupabase}`);
+  const databaseTables = (nodes.get(databaseNode || '') || { label: '' }).label.split('<br/>').slice(1);
+  check('the database node lists every table, in schema order', JSON.stringify(databaseTables) === JSON.stringify(Object.keys(TABLES)), databaseTables.join(', '));
+
+  // ============================================ paths named anywhere
   console.log('\n=== README, SPEC.md and CLAUDE.md\'s requirement parts: every file and route they name exists ===');
   const CLAUDE_REQUIREMENTS = `${section(CLAUDE, '## Part 1 — The canonical charge sheet (fixed content, not user input)')}\n${section(CLAUDE, '## Part 5 — Core technical requirements')}`;
   check('CLAUDE.md Parts 1 and 5 were found', /^## Part 1 /m.test(CLAUDE_REQUIREMENTS) && /^## Part 5 /m.test(CLAUDE_REQUIREMENTS));
@@ -1137,7 +1285,7 @@ async function main() {
     check(`${doc}: all ${named.length} file names resolve`, named.length > 0 && missing.length === 0, missing.join(', '));
   }
 
-  // ======================================================== SPEC.md and CLAUDE.md
+  // ============================================ SPEC.md and CLAUDE.md
   console.log('\n=== SPEC.md and CLAUDE.md: the case is the one the app serves ===');
   const seedParts = [['accused', SEED.accused], ['deceased', SEED.deceased], ['act alleged', SEED.actAlleged], ['question', SEED.question], ['scope note', SEED.scopeNote],
     ...SEED.background.map((p, i) => [`background paragraph ${i + 1}`, p]), ...SEED.agreedFacts.map((f, i) => [`stipulated fact ${i + 1}`, f])];
@@ -1155,8 +1303,9 @@ async function main() {
   // CLAUDE.md is wrapped at 80 columns, so the line may break before the list.
   const claudeFields = ((CLAUDE.match(/every\s+call\s+must\s+log\s+`([^`]+)`/) || [])[1] || '').split(/,\s*/);
   // Parentheticals dropped first: they would hold a field's allowed values,
-  // such as (`success` or `failed`), not further fields.
-  const readmeFields = [...((sections.api_call_logs || '').match(/^- The fields the spec requires for every call: (.*)$/m) || ['', ''])[1].replace(/\([^)]*\)/g, '').matchAll(/`([a-z_]+)`/g)].map((m) => m[1]);
+  // such as (`success` or `failed`), not further fields. "The spec" may be a
+  // link to SPEC.md.
+  const readmeFields = [...((sections.api_call_logs || '').match(/^- The fields (?:the spec|\[the spec\]\([^)\s]*\)) requires for every call: (.*)$/m) || ['', ''])[1].replace(/\([^)]*\)/g, '').matchAll(/`([a-z_]+)`/g)].map((m) => m[1]);
   const logColumns = (TABLES.api_call_logs || { columns: [] }).columns;
   for (const [doc, fields] of [['SPEC.md', specFields], ['CLAUDE.md Part 5', claudeFields], ['README', readmeFields]]) {
     check(`${doc}: every required log field is a real column`, fields.length > 1 && minus(fields, logColumns).length === 0, minus(fields, logColumns).join(', ') || String(fields.length));
@@ -1203,7 +1352,11 @@ function headingAnchors(doc) {
  * heading, a table row, a list item with its continuation lines, or a
  * paragraph. Fenced code blocks are left out, since they cannot hold a link.
  * @param {string} doc
- * @returns {{ text: string, kind: 'heading' | 'row' | 'item' | 'para', headings: string[] }[]}
+ * @returns {{
+ *   text: string,
+ *   kind: 'heading' | 'row' | 'item' | 'para',
+ *   headings: string[]
+ * }[]}
  */
 function markdownUnits(doc) {
   const units = [];
@@ -1244,15 +1397,16 @@ function isCommit(hash) {
  * of something with a home of its own is a link to that home, at its first
  * mention in each paragraph, and every link lands. Checked here: that every
  * link resolves (a file or directory in the repository, a heading's anchor,
- * a commit by its full hash); that no link destination holds whitespace; and,
+ * a commit by its full hash, or a compare page by full hashes whose base is
+ * an ancestor of its head); that no link destination holds whitespace; and,
  * for the kinds of mention a script can recognise, that the first mention in
  * each paragraph is linked to the right place - a file or directory in the
- * repository, another Markdown file, a commit hash, `npm test`, a database
- * table outside its own README section, an API route outside README's
- * endpoint list, and the thing a README section's heading names ("The
- * escalation chain") outside that section. Whether a prose mention of a
- * commit is linked, or a link's words describe its target, stays a reading
- * job.
+ * repository, another Markdown file, `npm test`, a database table outside
+ * its own README section, an API route outside README's endpoint list, and
+ * the thing a README section's heading names ("The escalation chain")
+ * outside that section - and that a commit hash is linked at every mention.
+ * Whether a prose mention of a commit is linked, or a link's words describe
+ * its target, stays a reading job.
  */
 function checkReferencesAreLinks() {
   console.log('\n=== Every Markdown file but CLAUDE.md: references are links (HARD RULE 4) ===');
@@ -1311,7 +1465,7 @@ function checkReferencesAreLinks() {
         }
       }
     }
-    check(`${doc}: every link lands - a tracked file or directory, a heading's anchor, or a commit by its full hash`, broken.length === 0, broken.join(' | '));
+    check(`${doc}: every link lands - a tracked file or directory, a heading's anchor, or a commit or compare page by full hashes`, broken.length === 0, broken.join(' | '));
     check(`${doc}: no link destination holds whitespace`, spaced.length === 0, spaced.join(' | '));
 
     /**
@@ -1335,7 +1489,10 @@ function checkReferencesAreLinks() {
       if (kind === 'heading') continue;
       const done = new Set();
       const section = headings[headings.length - 1] || '';
-      /** Requires the first mention of `target` in this unit to link where `ok` says. */
+      /**
+       * Requires the first mention of `target` in this unit to link where `ok`
+       * says.
+       */
       const firstMustLink = (bucket, target, dest, ok, label) => {
         if (done.has(target)) return;
         done.add(target);

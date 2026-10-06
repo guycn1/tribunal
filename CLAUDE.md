@@ -62,8 +62,8 @@ attempt (first attempt delivered no readable content at all, silently). Compared
 Rules 1 and 2 were restated explicitly by the user on 2026-08-27, specifically
 so they survive a context compaction; rule 3 was added by the user on
 2026-09-27, and applies retroactively as well as to new text; rules 4 and 5
-were added by the user on 2026-10-06, each after another project's rule of the
-same kind.
+were added by the user on 2026-10-06, each after a rule of the same kind in
+CineRank, another of the user's own projects.
 
 Together they govern almost every action taken in this repo and are not
 situational — they apply the same way regardless of how routine the action
@@ -198,11 +198,22 @@ ask what "see `schema.sql`" means; a link answers it in one click.
 
 #### What counts as a reference
 
+The kinds below are the ones met so far, not a closed list: the sentence in
+bold above is the rule, and a thing with a home counts however the prose names
+it - by its own name, by its path, or in other words.
+
 - **Another document, or a section of one:** `README.md`, or the map of the
   tables in its "Database" section, `README.md#database`.
+  - A section named in other words than its heading links there too: "the
+    chain" or "an escalation" to "The escalation chain", "an abort" to
+    "Aborting a trial", "the offline suites" to "The test suites".
 - **A file or directory in the repository,** named by its path or by a file name
   only one file has: `netlify.toml`, `case.ts`, `netlify/functions/`. The link
   is relative.
+  - So does code a mention names without its path: a mechanism links to the
+    file that holds it (the escalation chain to `openrouter.ts`, the worker
+    pool to `app.js`), "the schema" to `schema.sql`, and a tier of the
+    architecture to its directory or section.
 - **A commit.** A quoted hash links to its commit page by the full hash,
   `https://github.com/guycn1/tribunal/commit/<full hash>`, the one kind of link
   into this repository that is absolute.
@@ -215,14 +226,24 @@ ask what "see `schema.sql`" means; a link answers it in one click.
     `compare/<base>...<head>`, by full hashes, the base being the commit just
     before the run. A set that is not contiguous stays plain.
 - **`npm test`** links to `tests/`, and an `npm run` script to `package.json`.
-- **A database table named outside its own section of README** links to that
-  section, `#api_call_logs` (or `README.md#api_call_logs` from another file).
-- **An API route named outside README's endpoint list** links to the list,
-  `#api-endpoints`.
+- **A database table named outside its own section of README,** by its name or
+  in other words ("the case record", "a call-log row"), links to that section,
+  `#api_call_logs` (or `README.md#api_call_logs` from another file).
+- **An API route named outside README's endpoint list,** by its path or in
+  other words ("the abort endpoint"), links to the list, `#api-endpoints`.
 - **A badge label named outside its own table** links to that table's section,
   `#call-log` or `#run-history-sidebar`.
+- **An agent, the case or the question for judgment.** In README a
+  representative or a judge, by name or as a group, links to its section of
+  SPEC.md, the case to SPEC.md's charge sheet and the question to its own
+  section; in SPEC.md an agent's name links to its profile in Part 2 or Part 3
+  of this file.
+- **The live site,** named as "the deployed site", "the site's main address"
+  and the like, links to `https://tribunal-t001.netlify.app`.
 - **An outside source a claim rests on,** such as a vendor's documentation page,
-  links to that page.
+  links to that page, read first to confirm it says what the sentence rests on.
+- **A dated measurement or verification** ("measured on 2026-09-21") links the
+  entry in this file's status log that records it.
 
 #### Once per paragraph
 
@@ -237,8 +258,14 @@ targets.
 - Headings and fenced code blocks, which cannot hold a link: the project-layout
   tree in README is one.
 - A file's mention of itself, and a mention inside the section it would link to.
+  Inside a section, the parts of what it documents stay plain too; its opening
+  may link the code that holds them.
+- What names nothing with a home: an indefinite noun ("a judge", "no judge"),
+  and a word used generically ("the backend", "the browser", "the page").
 - What has no home a reader can open: `.env` and other git-ignored paths, a
   model id, a column name or a status value, a command-line tool.
+- A person or a product (the three jurists, Netlify, Supabase), unless a claim
+  rests on a page about it.
 - A mention quoted as an example of an unlinked reference.
 
 #### Why this file is exempt
@@ -267,7 +294,8 @@ finding every quote of the old name, across line breaks too, and updating it.
 
 A prose mention of a commit, a badge label, an outside source, a section named
 in other words than its heading ("the reliability chain", "a Background
-Function"), and whether a link's words describe its target are reading jobs no
+Function"), a table, route, agent, measurement or piece of code named in other
+words, and whether a link's words describe its target are reading jobs no
 script can do.
 
 A pass that adds links is proven to have changed nothing else by rendering each
@@ -292,21 +320,30 @@ tag it does not know.
   Markdown file for the defects already known: an HTML tag GitHub would drop, a
   code span left open or holding an escape it would print, a line of `-` or `=`
   that turns the text above into a heading, a list, heading or quote starting
-  mid-paragraph, a separator right before a heading, a table missing its `|---|`
-  row, with a row of the wrong width or with a pipe inside a code span, an
-  unmatched `**`, an asterisk between two letters or digits, a broken link, two
-  trailing spaces, a paragraph indented into a code block, and a
-  `[[wiki-style]]` link. Each rule was established by rendering the defect
-  through GitHub's own Markdown API and watching it break; the comment on each
-  says what GitHub does.
-- **`npm run check-render`** (`scripts/check-render.js`) renders every Markdown
+  mid-paragraph, a line starting with `+ ` or `* `, which opens a list even
+  inside a list item, a separator right before a heading, a table missing its
+  `|---|` row, with a row of the wrong width or with a pipe inside a code span,
+  an unmatched `**`, an asterisk between two letters or digits, a broken link,
+  two trailing spaces, a paragraph indented into a code block, a
+  `[[wiki-style]]` link, an image at a `data:` or `javascript:` address,
+  which GitHub strips, a centred block left open or with a tag that shares its
+  line or has no blank line after it, and a `<br>` alone on its line with no
+  blank line after it or with text directly above. Each rule was established by
+  rendering the defect through GitHub's own Markdown API and watching it break;
+  the comment on each says what GitHub does. It also checks how
+  `npm run check-render` cuts a file too large for GitHub's API: the pieces
+  must join back into the file, each after the first starting at a heading.
+- **`npm run check-render`** (`tests/check-render.js`) renders every Markdown
   file through GitHub's Markdown API and compares the page with the source:
   every word of the source must reach the page, no Markdown may be printed as
   text, and the page must have as many headings, tables, table cells, rules,
-  code blocks, list items, quotes, line breaks, links and bold spans as the
-  source asks for. This is the check that catches a defect nobody has listed
-  yet. It needs the network - one unauthenticated GitHub request per file, 60 an
-  hour, and none of this project's quota - so it is not part of `npm test`.
+  code blocks, list items, quotes, line breaks, links, images and bold spans as
+  the source asks for. This is the check that catches a defect nobody has listed
+  yet. It needs the network - one unauthenticated GitHub request per file, or
+  per piece of a file over 200,000 characters, 60 an hour, and none of this
+  project's quota - so it is not part of `npm test`. GitHub's API renders at
+  most 400 KB, so a larger file is sent in pieces cut before its `##` and `###`
+  headings, each compared with its own source.
 
 #### When to run them
 
@@ -332,13 +369,21 @@ tag it does not know.
 
 - A literal angle bracket outside a code span is `&lt;` or `&gt;`. The only raw
   tags are `<code>` and `<b>`, which GitHub keeps, in README's endpoint list and
-  badge tables.
-- A list follows a blank line, and a wrapped line never starts with `- `, `+ `,
-  `* `, `1. `, `#` or `>`.
+  badge tables, the `<div align="center">` and `</div>` that centre its live
+  link, each alone on its line with a blank line after it, and the `<br>` below
+  them, alone on its line with a blank line after it and no text directly
+  above. GitHub keeps `align` and strips `style` and `class`, so a div can
+  centre a block but not set its spacing: blank lines collapse, and a `<br>`
+  alone on its line adds one line of space.
+- A list follows a blank line, and is written with `- ` or a number, never `+ `
+  or `* `. A wrapped line never starts with `- `, `+ `, `* `, `1. `, `1) `, `#`
+  or `>`, inside a list item as anywhere else.
 - Nothing but a blank line sits directly above a `---`, and no `---` sits right
   before a heading.
 - No pipe inside a code span in a table, no `[[wiki-style]]` link, and no line
   ending in two spaces.
+- An image is `![alt text](path)`, its path a file in the repository: GitHub
+  keeps the alt text, and strips an address it does not allow.
 - A memory note is named in a code span (the `tribunal-git-workflow` note), not
   linked.
 
@@ -595,7 +640,10 @@ it should be.
   - don't re-run the full 4-representative + 3-judge pipeline to verify a fix —
     hit a single agent endpoint (e.g.
     `POST /api/trials/:id/representatives/jon_snow`) directly instead, and
-    reserve full end-to-end runs for a final check.
+    reserve full end-to-end runs for a final check. The endpoint takes the
+    request only through its `/api` route, with the site-gate header, and
+    refuses a role that already has a final outcome in the trial, so each
+    such call needs a trial where that role has none.
   - **There is no request allowance to budget against.** The free-tier daily
     request cap (50/day, or 1000/day with $10+ of credit added) applied only
     until 2026-08-28; since then every model this project calls is a genuinely
@@ -1479,10 +1527,10 @@ unverified claim):
     26](https://answers.netlify.com/t/synchronous-function-timeout-raised-to-26/164676),
     [Netlify support forum - 10 second
     timeout](https://answers.netlify.com/t/10-seconds-timeout/115315).
-- **This directly contradicts the "~30s, observed" figure logged above** (under
-  "Production deployment" in the bug log below, and baked into
-  `TOTAL_BUDGET_MS = 26000` and every constant derived from it in
-  `openrouter.ts`).
+- **This directly contradicts the "~30s, observed" figure logged above** (in
+  the 2026-08-26/27 entries; the bug log below has it too, under
+  "Production deployment"), and baked into `TOTAL_BUDGET_MS = 26000` and every
+  constant derived from it in `openrouter.ts`.
   - That figure came from two calls to the deployed site on 2026-08-26 that hung
     for about 30 seconds before the platform cut them off (commit `786cbc4`),
     and it was taken to be the platform's limit.
@@ -2192,7 +2240,7 @@ has also truncated.
     are repetition loops, and of 687 tier-1 replies that finished on their own,
     the longest was 1,147 of the 1,400 tokens. A truncation here has been a loop
     run to the cap, not a sound argument cut short. The bigger caps were kept as
-    a safeguard; see the 2026-09-27 entry.)*
+    a safeguard; see the 2026-09-27 entry on capped replies.)*
 - `TOTAL_BUDGET_MS` raised 250000 -> 650000 (real margin above the ~498s
   worst-case sum of every tier's attempt ceilings, including backoff delays,
   while staying comfortably under the real 900s background-function wall).
@@ -2304,6 +2352,10 @@ zero escalations, zero truncations.**
     count instead of ruling presence for the remaining rounds.
   - Not a bug in the shipped app - `deriveRoleStates`'s presence-based check is
     correct for its real use case (a trial that only ever runs once).
+  - *(A trial can no longer be reused this way: since 2026-10-06 an agent
+    endpoint refuses a role that already has a final outcome, so each round
+    needs a trial of its own - see "2026-10-06: the abort endpoint, and agent
+    calls the page never sends".)*
 
 #### The rate limit raised, the merge, and the production env vars
 
@@ -2628,7 +2680,10 @@ cover everything relevant, load-bearingly").**
       methods;
     - the Background Function claims (including that the `-background` filename,
       which local dev keys off, and `config.background`, which the platform keys
-      off, agree);
+      off, agree); *(the platform did not read `config.background` either: with
+      a named `handler` export the whole `config` export was ignored, as found
+      on 2026-10-02, and since then the suite fails if a function has one -
+      see that day's entry)*
     - rate-limit and quota-spending claims;
     - every table, column, allowed value, uniqueness rule, cascade and RLS claim
       against `schema.sql`;
@@ -2747,8 +2802,9 @@ other.
 
 Much of what was wrong was stale rather than false-when-written, so this log
 kept its entries and gained inline *(italic)* notes where a later change made
-one misleading, plus a paragraph at the top of this section saying that a dated
-entry's numbers and "now" are that day's. The findings that went beyond wording:
+one misleading, plus a paragraph at the top of the log (see
+"How to read this log") saying that a dated entry's numbers and "now" are that
+day's. The findings that went beyond wording:
 
 - **Chromium ignores the whole `::-webkit-scrollbar` block here.** Measured in
   headless Edge 153 and Chrome 154: on an element that also sets the standard
@@ -3557,7 +3613,8 @@ limit was then tested on the live site with ungated POSTs (no quota spent).
   the `429`s began.
 - README and netlify.toml were then corrected on `draft` to say the 30 are
   counted across the two routes together, and that the limit was verified -
-  comments and docs only, so they ride with the next merge.
+  comments and docs only, so they reached `main` in the next merge,
+  `c4a55dd` (2026-10-06).
 - `GET /api/trials` answered `200` throughout.
 - The user kept the limit at 30 (about 4 full trials per IP in 3 minutes) rather
   than raising it to restore the per-route headroom of the old setting: retries
@@ -3627,7 +3684,8 @@ full trial sends 7 requests".
 - Every other number in README is either already checked or a dated measurement.
   *(Not so: two counts in README's "Status" were checked by nothing - how many
   offline regression suites `npm test` runs, and how many anti-abuse layers are
-  in place. Found, and checks added, on 2026-10-06; see that day's entry.)*
+  in place. Found, and checks added, on 2026-10-06; see that day's entry on
+  those two counts.)*
 
 **Conditional claims ("X only happens when Y") checked across every tracked file
 (2026-10-03, on the user's request), and the ones whose conditions are wider
@@ -3761,8 +3819,8 @@ log (whose last row was then from 2026-10-03).
 - each claim about an outside platform (Netlify, OpenRouter, Firefox, the
   installed netlify-cli) names the date it was read, and its source where one
   exists.
-- Dates across the docs and comments follow the convention stated at the top of
-  this section.
+- Dates across the docs and comments follow the convention stated under
+  "How to read this log" above.
 
 **Numeric claims checked across every tracked file (2026-10-05, on the user's
 request), and the ones the record did not bear out restated.** Every count,
@@ -3902,9 +3960,10 @@ descriptions, and left free they wrapped at every space, `aborted (N` / `of 7` /
 ### 2026-10-06: this file's and README's layout, and HARD RULES 4 and 5
 
 **This file restructured (2026-10-06, on the user's request, after the layout of
-another project's CLAUDE.md).** Before, many of its lines ran to thousands of
-characters, which made the file unreadable in GitHub's Code view without
-line-wrapping, and many entries were single dense paragraphs.
+the CLAUDE.md in CineRank, another of the user's own projects).** Before, many
+of its lines ran to thousands of characters, which made the file unreadable in
+GitHub's Code view without line-wrapping, and many entries were single dense
+paragraphs.
 
 - Lines are now wrapped at 80 characters, long entries are split into paragraphs
   and sub-items, and the status log has a heading per day or arc.
@@ -3922,8 +3981,8 @@ line-wrapping, and many entries were single dense paragraphs.
 
 **HARD RULE 4 added (2026-10-06, by the user): in every Markdown file but this
 one, a reference is a link** - see the HARD RULES block at the top, which adapts
-another project's rule in its broader reading. Applied the same day to the two
-files it covers, `README.md` and `SPEC.md`:
+the user's rule from their CineRank project in its broader reading. Applied the
+same day to the two files it covers, `README.md` and `SPEC.md`:
 
 - 50 links added: every file and directory they name, the other documents and
   the sections meant (`README.md#database`, `CLAUDE.md#status-log`), the two
@@ -3956,9 +4015,9 @@ files it covers, `README.md` and `SPEC.md`:
 **HARD RULE 5 added (2026-10-06, by the user): every Markdown file renders
 exactly as written** - see the HARD RULES block at the top. Prompted by HARD
 RULE 3's "until &lt;date&gt;", which GitHub had shown as "until ," from
-2026-09-27 until `27103e4` found it by chance. The idea is another project's
-Markdown checker; the rules and the code were built afresh, from what GitHub was
-seen to do.
+2026-09-27 until `27103e4` found it by chance. The idea is the Markdown checker
+in the user's CineRank project; the rules and the code were built afresh, from
+what GitHub was seen to do.
 
 - `tests/markdown.test.js`, now part of `npm test`, checks every Markdown file,
   this one included, for 15 known defects, each first rendered through GitHub in
@@ -3972,7 +4031,8 @@ seen to do.
   fires on a file built to cause it, a controls file renders as written, and it
   exits 1 on a defect and 2 when GitHub cannot be reached. A probe for a
   backslash printed in prose was dropped on the way: a backslash the source
-  writes outside a code span is what it shows.
+  writes outside a code span is what it shows. *(The script moved to
+  `tests/check-render.js` later the same day.)*
 - On today's files both pass. The audit that started this found one thing to
   fix: the three `[[memory-note]]` pointers in HARD RULES 1 and 2, which GitHub
   prints with their brackets, are now note names in code spans. SPEC.md's three
@@ -4336,6 +4396,664 @@ README and the representatives handler's comment give these results, and
 reached `main` in a further merge the same day that changes only
 documentation and comments, whose message carries Netlify's `[skip netlify]`
 marker.
+
+### 2026-10-06: the abort endpoint, and agent calls the page never sends
+
+**The abort endpoint and the agent handlers now accept only the requests the
+page sends (2026-10-06, on the user's go-ahead).** Read from the code that day:
+
+- the abort endpoint needed no site-gate header, and wrote one row for every
+  role named in the request, however many times it was named, for any trial,
+  a completed one included, where an abort row relabels it `aborted` in the run
+  history;
+- an agent handler ran a role however many times it was called for one trial,
+  and a later run saved over the result already kept;
+- and the role checks used `in`, which also accepts a name every object
+  inherits: `constructor` passed both agent handlers' role check, and the call
+  then stopped with a `500` before any model call or write, while the abort
+  endpoint wrote an abort row for it.
+
+The change:
+
+- `abort.ts` needs the site-gate header (`401` without it, as `trials.ts`'s
+  POST), answers `409` for a trial already `completed`, and writes at most one
+  row per role per trial: a role named twice gets one row, and a role that
+  already has an abort row gets none (`getAbortedRoles()` in `db.ts`).
+  - A failed lookup of the trial or of its abort rows does not stop the abort,
+    since its rows are what stops the running calls.
+  - `app.js` sends the header with the abort request.
+- Each agent handler's last check, after the trial lookup, is
+  `agentCallRefusal()` in `db.ts`: `409`, unlogged, for a trial with an abort
+  row, or a role that already has a final outcome - the rows
+  `markTrialCompletedIfJudgingDone()` counts.
+  - A role with only discarded attempts logged is not refused, so a call that
+    died mid-chain can still run, and a failed lookup lets the call start.
+  - An abort that lands after this check and before the first attempt still
+    ends the call with its "Stopped before attempt 1" row.
+- Every role check is an own-key check
+  (`Object.prototype.hasOwnProperty.call`), in both agent handlers and the
+  abort endpoint.
+- The page triggers each role once per trial and aborts only roles still
+  pending, so its requests are refused only around an abort:
+  - a trigger sent just before an abort and arriving after it is refused, and
+    the role's abort row already records it as aborted, where it used to log a
+    "Stopped before attempt 1" row as well;
+  - an abort clicked in the moments after the last judge finished, before the
+    next poll shows it, gets a `409` with nothing left running. The page shows
+    those cards as aborted, as before, and the run history shows the trial as
+    `completed`, with its real outcomes, where it showed
+    `aborted (N of 7 completed)`.
+- README's endpoint list, the agent handlers' order of checks and the
+  test-suite descriptions say so; `.env.example` and `app.js` list the abort
+  among the requests the site gate covers.
+
+**Tests:**
+
+- `tests/trial-status.test.js` runs the real handlers: each kind of final
+  outcome refused (a success, a final failure, an abort's own row), an abort
+  for another role refusing every role, discarded attempts and another role's
+  outcome not refusing, a failed lookup letting the call start, `constructor`,
+  `toString` and `hasOwnProperty` refused by both handlers with a `400`, and
+  the abort endpoint's one row per role, its `409`, its site gate and its two
+  failed lookups. The check on an abort landing before the first attempt
+  injects it after the handler's checks, when it reads the case.
+  `tests/support/fake-supabase.js` gained `failReadsOf`, failing reads of the
+  tables it names only.
+- `tests/render-cards.test.js` runs a trial and aborts it at its first poll:
+  the abort request carries the site-gate header, says its body is JSON, and
+  names the four representatives still running.
+- `tests/docs.test.js` checks the new step's place in the order README gives,
+  its `409` and that it is unlogged, and observes the abort endpoint's `409`
+  by calling it for a completed trial.
+- Proven both ways, every file restored byte for byte, in 30 cases: 20 breaks
+  to the code (each refusal removed, either of its two conditions dropped or
+  widened, its lookup failing closed, the step moved before the trial check or
+  logged, `in` put back in each of the three places, and in the abort endpoint
+  the gate, the de-duplication, the skip of recorded roles, the completed-trial
+  refusal and each fail-open lookup removed, and the page's header or content
+  type dropped) and 4 to README were each caught by the checks meant for them;
+  each of the 5 new parts of the tests, removed in turn, raised an alarm on
+  correct code or let its defect through; and a control rewording passed.
+- The two new queries were also run read-only against the real database on a
+  completed trial (`finished` for its roles, no abort rows), an aborted one
+  (`aborted`, its four abort rows) and an unknown id (no refusal).
+
+**The page's site-gate header put under test on every request the gate checks
+(2026-10-06, on the user's go-ahead).** Only the abort request's header was
+checked; a trial created, or an agent started, without it would have passed
+every check, while the live site turned the first away with a `401` and dropped
+the second silently.
+
+- `tests/render-cards.test.js` records every POST of its whole-trial run: the
+  trial is created once with the page's token, each of the seven agents is
+  started once, and every agent request carries the token. Header names are
+  matched in any case, as `isSiteGateOk()` reads them.
+- Proven both ways, every file restored byte for byte, in 8 cases: the header
+  dropped from trial creation, from the agent requests or from the shared
+  headers, a stale token, another header name, and one judge never started
+  were each caught by the check meant for them; with the POSTs not recorded,
+  the checks raised an alarm on correct code; and the header name in
+  lowercase, which the server accepts, passed. The abort-header cases of the
+  commit before were run again on the changed check and caught as before.
+
+### 2026-10-06: SPEC.md's layout
+
+**SPEC.md spaced out and wrapped at 80 characters (2026-10-06, on the user's
+request, as README and this file were), with HARD RULES 4 and 5 applied to it
+in full.** It had 66 lines, 35 of them over 80 characters, and 4 headings; it
+now has 204 lines and 14 headings.
+
+- The new headings: the charge sheet's "Background", "Stipulated facts",
+  "Question for judgment" and "Scope"; "Representatives" and "Judges"; the
+  requirements under "The case and the order of calls", "Arguments and
+  rulings" and "Failures, logging and architecture"; and "How this repository
+  implements it", over the closing pointer to README and this file, which sat
+  after a `---`.
+- The charge sheet's three lead items, the non-negotiable rule, each judge's
+  method, the never-combined requirement, the pointer to the other two
+  documents and the closing pointer are now bullets.
+- Prose is wrapped at 80 characters. The one longer line is a single link,
+  to `representatives.ts`, which cannot break.
+- Links added under HARD RULE 4: the README sections meant (its
+  architecture, setup, database and call-log sections, and the escalation
+  chain), the live site, this file's status log, `pricing.ts` for per-token
+  pricing, and SPEC.md's own sections where its text names them (the seven
+  agents, the charge sheet, the stipulated facts, the representatives, the
+  judges). The case text itself, which must match the seed word for word,
+  carries no links.
+- Rendered through GitHub's markdown API before and after, the text is the
+  same apart from the headings added, the bold leads they replace
+  ("Background.", "Stipulated facts (both sides accept these):", "Question
+  for judgment:", "Scope:", "Representatives:"), and sentences split or
+  joined for the bullets; `npm run check-render` and
+  `tests/markdown.test.js` pass on it.
+- `tests/docs.test.js` reads SPEC.md through `unwrap()`, as it does README,
+  so the logged fields and the verdict vocabulary are read wherever the wrap
+  broke their sentence.
+- Proven both ways, every file restored byte for byte, in 13 cases: SPEC.md
+  read without `unwrap()` fails the two logged-field checks; a field dropped
+  or renamed on a wrapped line, the vocabulary changed, a word of a
+  stipulated fact, the background or the scope changed, a misspelt anchor to
+  SPEC.md or to README, `README.md` unlinked and the escalation chain
+  unlinked were each caught by the check meant for it; and the vocabulary's
+  bold wrapped across two lines, and a paragraph rewrapped, both passed.
+
+### 2026-10-06: README's architecture diagram
+
+**README's Architecture section gained a diagram, "What talks to what"
+(2026-10-06, on the user's request, after the one in the README of CineRank,
+another of the user's own projects).** It is a Mermaid flowchart, which GitHub
+draws in place of the code block:
+
+- the browser, with one arrow, to the `/api/*` routes in `netlify.toml`;
+- the six functions in three nodes - the two that only read, the two that
+  create, list and abort trials, and the two agent functions, whose arrow
+  carries the per-IP limit;
+- the library modules they reach: `db.ts` and `chargeSheet.ts`, `siteGate.ts`,
+  `prompts.ts`, `openrouter.ts`, and `supabase.ts` below the first;
+- OpenRouter, reached from `openrouter.ts` alone, and the database with its
+  six tables, from `supabase.ts` alone.
+
+Beneath it, "What the picture claims" states what the drawing asserts: the page
+asks nothing of any host but its own `/api/` routes; each secret is read in one
+module; only the agent functions reach OpenRouter; every database access goes
+through `db.ts` or `chargeSheet.ts`; which functions check the site gate; and
+where the per-IP limit sits. A last bullet lists the library modules not drawn.
+
+- Laid out by rendering it with Mermaid 11 in headless Edge: six function nodes
+  in a row, the first layout, came out about 1,350px wide with tangled arrows,
+  and grouping the functions by what they import brought it to about 1,050px
+  with few crossings.
+- `tests/docs.test.js` reads the diagram as nodes and arrows, 24 checks: every
+  file and directory it names exists; every function is drawn once; every arrow
+  between two modules is an import from every file of the first, and every
+  import from a function into a module drawn has its arrow; every library
+  module is drawn or listed as not drawn; the routes reach every function node,
+  with the per-IP limit on the arrows to exactly the rate-limited functions;
+  the database node lists the schema's tables in order; one arrow each goes
+  into OpenRouter, from `openrouter.ts`, and into the database, from
+  `supabase.ts`; and the claims - `app.js` requests only `/api/` routes and
+  names no other host, `index.html` and `styles.css` load nothing from one,
+  `openrouter.ts` makes the backend's one request and reads its key alone,
+  `supabase.ts` makes the client and reads the Supabase variables alone, and
+  only the modules drawn into it import it. The code is read with its comments
+  removed by TypeScript's printer.
+- Proven both ways, every file restored byte for byte, in 37 cases: 19 breaks
+  to the diagram and 10 to the code were each caught by the check meant for
+  it; two controls (comments naming keys, hosts and calls, and the diagram's
+  arrows reordered) passed; and each of six parts of the checks, removed in
+  turn (the comment stripping, every-file soundness, the completeness check,
+  "not both", the table order, the agent-trigger calls), let its defect
+  through or raised an alarm on correct code.
+- Rendered through GitHub's markdown API, README is the same as before apart
+  from the new section and a bullet describing the checks;
+  `npm run check-render` passes, and `npm test` ran 659 checks.
+
+### 2026-10-06: the card fade and the card scrollbar
+
+**A card's bottom fade now stops where its scrollbar begins (2026-10-06,
+found by the user in a screenshot taken for README).** The fade covered all
+but the last 4px of the card body (`right: 4px`), so it also covered most of
+the card's scrollbar, about 10px wide in Chromium with `scrollbar-width: thin`.
+The scrollbar's ▼ arrow, half faded, read as a stray comma at the end of every
+card's last line, on the live site as in the capture.
+
+- `attachScrollFade()` in `app.js` measures each card's scrollbar as the
+  body's width less its content-and-padding width, and sets it as
+  `--card-scrollbar-width` on the wrapper; the fade's right edge in
+  `styles.css` reads it, 0px before that and wherever scrollbars overlay the
+  content.
+- Measured in headless Edge on a card with the real stylesheet and `app.js`:
+  a 10px scrollbar, the property set to 10px, and the fade's right edge at
+  the scrollbar's left edge, to the pixel.
+- Tests: `tests/render-cards.test.js` runs `attachScrollFade()` on a card
+  with a 10px scrollbar, one scrolled to its end and one whose scrollbar takes
+  no width, and the stub DOM in `tests/support/load-app.js` now keeps the
+  style properties set on it; `tests/shared-constants.test.js` checks that
+  the property `app.js` sets is the one the fade's right edge reads.
+- Proven both ways, every file restored byte for byte: the measurement
+  removed, a fixed 4px, the width measured with the padding, the property
+  renamed on either side, the fade's toggle inverted, the fade put back to
+  `right: 4px` and the stub's style made a no-op again were each caught by the
+  checks meant for them, and a different fallback value passed. The first run
+  let one rename through: a name the other only starts with
+  (`--card-scrollbar`) still matched, so the shared-name check now requires
+  the name to end where the property does.
+
+### 2026-10-06: README's hero, and images in the render check
+
+**README opens with a hero (2026-10-06, on the user's request, after the one
+in the README of CineRank, another of the user's own projects): the live link,
+then a screenshot of a whole trial with a caption.** The screenshot,
+`screenshots/readme-1-hero-split-rulings.png`, was taken by the user from local
+`netlify dev` and shows trial `0a5de440`
+(2026-10-05): the case card, the four arguments, the three rulings and the run
+history.
+
+- That trial was chosen for its 2-1 split - the Elon judge ruled the killing
+  justified, the Barak and Shamgar judges not - and for Grey Worm's argument,
+  answered by `claude-haiku-4.5` after his first attempt hit the token cap and
+  his second closed on a near-copy of an earlier sentence. The caption states
+  both, as the call log records them.
+- How it was taken, worked out over several attempts: DevTools' device
+  toolbar set to the Desktop device type (the default Mobile type draws
+  overlay scrollbars over the Run history entries), 1100 CSS pixels wide at
+  pixel ratio 2, so GitHub shows it at about 80% rather than the 68% of a
+  1300-pixel capture; a viewport as tall as the page, so the sidebar, one
+  viewport tall, runs its full height; and, injected from the Console for the
+  capture only, the page's scrollbar hidden and each card's text area cut to
+  eight whole lines (`calc(0.9rem * 1.5 * 8)`, 155.5px at the 14.4px root),
+  since 170px, 8.74 lines, sliced the ninth line through its letters.
+- Before it, the five trials still `interrupted` from that day's route and
+  address probes were deleted from the database on the user's request, with
+  their 14 dependent rows; a backup of every deleted row was kept in that
+  session's scratch directory.
+- The README's old "Live:" line is replaced by the hero's heading, and the
+  layout tree lists `screenshots/`.
+
+**The render check reads images (same day).** Rendered through GitHub's API,
+the hero image came out as an `<img>` keeping its full alt text, but
+`scripts/check-render.js` reported its alt text as missing words and counted
+the image as a link the page lacked. *(The script moved to
+`tests/check-render.js` later the same day.)*
+
+- Alt text now counts among the page's words, and images have a count of
+  their own, so an image is no longer counted as a link.
+- Probing found what the check missed: GitHub strips an image's address when
+  it does not allow it (`data:` and `javascript:`), leaving a broken `<img>`
+  with no `src` and all its alt text. An image now counts only if it kept its
+  address, and `tests/markdown.test.js` gained the matching offline rule.
+- Proven both ways: six probe files rendered through GitHub, and README.
+  Correct images, an image inside a link and one beside a link pass, and a
+  path with a space and both stripped addresses are flagged; each of the four
+  new parts of the check, removed in turn, raised a false alarm on correct
+  files or let the stripped images through. The offline rule fails on a
+  `data:` and a `JavaScript:` image appended to `SPEC.md` and passes the hero
+  image.
+
+**The render check sends a large file in pieces (same day).** With that
+entry added, `npm run check-render` could not render CLAUDE.md: GitHub's
+Markdown API renders at most 400 KB and answered 403, "too_large", so the
+script exited 2 - the check had not run. The commit that added the entry,
+`f168021`, went to `draft` all the same, its message saying the check passed;
+the command chain that ran the check went on to commit without stopping on its
+exit code.
+
+- `scripts/check-render.js` now renders a file over 200,000 characters in
+  pieces, each cut just before a `##` or `###` heading outside a code block,
+  and compares each piece with its own source; a defect names its piece
+  ("part 3 of 3: ..."). It also sends a file with LF line endings, as GitHub
+  stores it, whatever the working copy has. CLAUDE.md goes in three pieces.
+  *(The script moved to `tests/check-render.js` later the same day.)*
+- `tests/markdown.test.js` cuts every Markdown file as small as it can be cut
+  and checks that the pieces join back into the file, that each piece after
+  the first starts at such a heading, and that a heading-shaped line inside a
+  code block is not cut before.
+- Proven both ways, every file restored byte for byte: never splitting,
+  ignoring code blocks and packing pieces without their line break were each
+  caught offline; README cut into 7 pieces rendered through GitHub as
+  written; and a dropped `<date>` tag in CLAUDE.md's first piece and in its
+  last were each caught, labelled with the piece.
+
+**A card's text area is now a whole number of lines tall (same day, found by
+the user in a close-up of the judges' cards taken for README).** The area
+was capped at 340px, and card text is 12.96px at a line height of 1.5 - the
+root is 90%, 14.4px by default - so a line is 19.44px and 340px is 17.49
+lines: the box cut the 18th line about halfway down its letters, a row of
+letter tops under the fade, plain in a close-up at reading size.
+
+- `.card-body-scroll` is now capped at `18lh`, the element's own line height
+  times 18 (349.6px by default, measured in headless Edge as 18.00 lines),
+  with 340px kept before it for a browser without `lh`. 18 is the whole
+  number nearest 340px that shows no less text.
+- `tests/shared-constants.test.js` checks that the cap set last is a whole
+  number of `lh`. Caught: the cap back in pixels, 17.5lh, 0lh, and the
+  fallback set after the `lh` value; 17lh passed.
+
+**README's second screenshot: the three judges up close (same day).**
+`screenshots/readme-2-judges.png`, taken by the user from local `netlify dev`
+after the `lh` fix, shows the Judges section of trial `0a5de440` at the
+cards' real height, under "How a trial runs". Its caption quotes each
+judge's opening lines - Barak's "structured, rights-centered analysis" and
+his definitions of "justified" and "necessary", Elon's turn to the rodef of
+Jewish legal tradition, Shamgar's governing standard, institutional
+framework and chronology - each checked against the stored rulings and
+against that judge's method in the dossier (Part 3 above).
+
+**README's third screenshot: the same trial's call log (same day).**
+`screenshots/readme-3-call-log.png`, taken by the user at the main column's
+full width, shows all ten attempts of trial `0a5de440` and the totals row, in
+the "Call log" part of README's badge section, between the paragraph on
+dimmed rows and the badge table. Every row's tokens, duration and cost (to
+two decimals of a cent) and the totals (27,210 tokens, 0.56¢ of a stored
+0.5586¢, 144,178 ms) were checked against the stored rows, and the caption's
+reasons against their stored error messages. The status captions wrap with
+"model)" on a line of its own; that is the app at its widest layout.
+
+**README's fourth screenshot: an aborted trial (same day).**
+`screenshots/readme-4-aborted-trial.png`, taken by the user, shows trial
+`298f38b4` (2026-09-27) at the end of README's "Aborting a trial": four
+`aborted` cards, the four `abort requested` rows written about 4.5 seconds
+in, and the four first attempts that were already generating, each run to its
+end, logged with its real tokens and cost and not retried or saved - two
+repeated a sentence, two hit the token cap. The trial ran at 19:57 UTC, after
+that day's abort fixes (`82f7c97`, `a3fe0d8`, `e464938`), so its rows are what
+the app writes today; every figure was checked against them (8,054 tokens,
+0.05¢ of a stored 0.0521¢, 81,869 ms).
+
+**README's fifth screenshot: a trial in progress (same day).**
+`screenshots/readme-5-in-progress.png`, taken by the user from local
+`netlify dev` during trial `33384a48`, shows the representatives mid-run, in
+"Background Functions and polling": Jon Snow's argument landed, Tyrion and
+Daenerys on their first attempts, Grey Worm on his second. The call log dates
+the moment to between 14:32:56 UTC, when Grey Worm's first attempt was
+discarded for repeating an 18-word sentence three times, and 14:33:10, when
+his second succeeded. The trial completed 7 of 7 at 14:34:15, Daenerys after
+an escalation to `claude-haiku-4.5`, and its judges ruled 2-1. The cards'
+text areas show eight lines, as in the hero.
+
+**README's live link centred, with space below it (same day, on the user's
+report and choice).** On GitHub the "Live app" line sat 16px above the
+screenshot, close enough to be skimmed past as part of it. It is now centred in
+a `<div align="center">`, with an empty paragraph, `&nbsp;` alone, between it
+and the screenshot. *(A `<br>` took the empty paragraph's place later the same
+day, for a 40px gap; see the next entry.)*
+
+- Four layouts were rendered through GitHub's markdown API with its dark CSS
+  in headless Edge: as it was, with the empty paragraph, centred, and both.
+  Centred alone left the gap at 16px; the empty paragraph moved the screenshot
+  down by its line and margin, 40px, to a 56px gap. The user chose both.
+- GitHub keeps a div's `align` and strips `style` and `class` (probed through
+  its API that day), so spacing cannot be set directly; blank lines collapse,
+  and a paragraph with nothing visible in it is what adds a line of space.
+- The div is the one raw block tag allowed, so both checks were narrowed for
+  it, after probing each way of writing it through GitHub: with no blank line
+  after `<div align="center">` the heading inside is printed as typed, with
+  none after `</div>` so is the paragraph that follows, text on a tag's own
+  line is printed too, and a block never closed centres the rest of the file;
+  a missing blank line before either tag changes nothing.
+  - `tests/markdown.test.js` allows exactly those two tags, and a new rule
+    requires each alone on its line with a blank line after it, and every
+    block closed. `tests/check-render.js` reads the two tags as holding no
+    words, like `<code>` and `<b>`.
+  - Proven both ways, every file restored byte for byte: each defect's probe
+    appended to `SPEC.md` failed, and the three correct forms passed; with the
+    allowance removed, README's block failed, and with each other part of the
+    rule removed or widened in turn, the probe it exists for got through - the
+    missing blank line after an opening tag is also caught by the rule on a
+    heading starting mid-paragraph. Run on the saved GitHub HTML,
+    `check-render` reports the printed Markdown but not the unclosed block,
+    which only the offline rule catches, and without the two tags in its list
+    it reports their words as missing.
+
+**A `<br>` in place of the empty paragraph (same day, on the user's
+request).** The empty paragraph left a 56px gap below the live link. A `<br>`
+alone on its line, between blank lines, leaves 40px: its one 24px line on top
+of the heading's 16px margin, measured as before. Two `<br>`s on the line of
+`</div>` would have left 64px.
+
+- `<br>` is now an allowed tag, after probing each way of writing it through
+  GitHub. Alone on its line it adds a line of space, and so it does directly
+  under a heading, a `</div>` or a list item; with text on its line it is an
+  ordinary line break. With no blank line after it the next line is printed as
+  typed, and directly under a line of text it joins that paragraph as a last
+  line break, which adds no space.
+  - `tests/markdown.test.js` allows `<br>`, and a new rule requires a `<br>`
+    alone on its line to have a blank line after it and no text directly
+    above. The centred-block rule now also accepts a `<br>` line directly
+    under `</div>`, which GitHub renders as one HTML block with it.
+  - `tests/check-render.js` reads `<br>` as holding no words, and counts each
+    one in the source as a line break the page must have.
+- Every probe of this entry and the one above was rendered again in the API's
+  default mode, the one `check-render` uses and a file's page matches: the
+  first round used `gfm`, which turns each line break inside a paragraph into
+  a `<br>`. The results were the same.
+- Proven both ways, every file restored byte for byte:
+  - the two defects appended to `SPEC.md` failed, and the five correct forms
+    passed;
+  - with the allowance removed README failed, with each part of the new rule
+    removed the defect it exists for got through, and with each of its three
+    exemptions removed a correct form raised an alarm;
+  - the centred-block rule's new exemption, removed, raised an alarm on a
+    `</div>` with a `<br>` under it, and widened to any line let the printed
+    paragraph through;
+  - and `check-render`, without `<br>` among its tags, reported the word "br"
+    missing, and without its count, line breaks the source does not ask for.
+    The centred-block proof was run again in full.
+
+### 2026-10-06: HARD RULE 4 read broadly in README and SPEC.md
+
+**README and SPEC.md now link every mention of something with a home of its
+own, at its first mention in each paragraph (2026-10-06, on the user's
+request).** Both files were read line by line against the rule's opening
+sentence rather than only its list of kinds: 186 links were added to README and
+21 to SPEC.md, and README's link to OpenRouter's streaming docs now gives the
+page's current address, to which the old one redirects.
+
+- **A README section named in other words:** an abort, an escalation, a
+  detector or a tier, the agent endpoints, functions and routes, the site gate,
+  the call cap and the per-IP limit, the call log, the run-history sidebar and
+  polling, each linked to its section.
+- **A table named in other words:** the case record, a trial, an argument, a
+  ruling, a call-log row and the attempt a role is on, each linked to its
+  table's section in README.
+- **The agents and the case:** the representatives and the judges, by name or
+  as a group, link to their SPEC.md sections, the case to its charge sheet and
+  the question to its own section; in SPEC.md, each agent's name links to its
+  profile in Part 2 or Part 3 of this file.
+- **Code or a file a mention names:** the escalation chain's lead to
+  `openrouter.ts`, the worker pool to `app.js`, the three anti-abuse layers in
+  their own section to `db.ts`, `netlify.toml` and `siteGate.ts`, the test
+  setup to `tests/support/`, the schema to `schema.sql`, and the three tiers of
+  the architecture line to `public/`, `netlify/functions/` and the Database
+  section.
+- **An outside source a claim rests on:** Netlify's documentation (Background
+  Functions, the synchronous execution limit, a function's own address, rate
+  limiting and the `URL` variable), OpenRouter's (errors and 402s), Supabase's
+  (row-level security) and GitHub's (the Markdown API), each read on 2026-10-06
+  and found to say what its sentence rests on.
+- **A dated measurement or verification:** linked to the entry in this log
+  that records it.
+- **Left plain in this pass:** a verb ("was aborted", "escalated"), an
+  indefinite "a judge", and generic uses of "the backend", "the browser" and
+  "the page", as well as settings and thresholds, the three jurists and the
+  products named.
+
+Verification:
+
+- Rendered through GitHub's markdown API before and after with every `<a>` tag
+  stripped, both files are identical. No paragraph links one target twice, and
+  every outside address answered 200.
+- `tests/docs.test.js` read two README sentences with patterns a link breaks,
+  and now reads each with or without its link: `creates the [six tables]` and
+  `The fields [the spec] requires`. Proven both ways, every file restored byte
+  for byte: a field dropped from the linked line and a wrong count in the
+  linked sentence were each caught, both sentences written plainly passed, and
+  the old patterns, put back, failed on the linked sentences.
+
+**HARD RULE 4 itself sets out this reading (same day, on the user's
+direction).** Its "What counts as a reference" opens by saying that its kinds
+are not a closed list, and adds sections, tables and routes named in other
+words, code named without its path, the agents and the case, the live site and
+dated measurements; "What stays plain" adds indefinite nouns and generic words,
+and people and products.
+
+- Verbs are listed in neither. A verb can still be a reference: one that says
+  what a commit did is a mention of that commit, and one describing today's
+  behaviour can link what established it, the commit or the entry in this log
+  that records it, where that is the relevant destination.
+  - In README, "before that column existed", in the `api_call_logs` section,
+    now links `8b4f395`, the commit that added `duration_ms`.
+- Nor are settings and thresholds: a setting's description or a threshold's
+  figure can link what established it, the commit or commits or the entry in
+  this log that records it.
+  - README's now link the entries that set them: the escalation chain's tiers
+    and the 12-minute polling window to "The 4-tier escalation chain", the
+    run-on detector to the 2026-09-01 entry, the repetition rules to "A
+    widened repeated-sentence detector", "Capped replies, clause-level rules,
+    and the detectors measured" and the 2026-09-28 entry, the 10-second
+    fast-failure line to the 2026-09-20 follow-up, the prompt-scaled timeouts
+    to the 2026-09-20 timeout fix, the 1,400-token cap to "Per-attempt
+    logging, timeouts, truncation, and the merge", the rate limit of 60 to
+    the 2026-10-04 entry, and the 40-minute "interrupted" line to the
+    frontend polish backlog of 2026-09-02.
+
+### 2026-10-06: the render check moved into `tests/`
+
+**`scripts/check-render.js` is now `tests/check-render.js` (2026-10-06, on the
+user's request).** It was the only file in `scripts/`, and it is a check rather
+than tooling: HARD RULE 5 counts it as one of its two checks, and the other,
+`tests/markdown.test.js`, already imported from it the code that cuts a large
+file into pieces.
+
+- It had gone into `scripts/` with HARD RULE 5, whose idea came from the
+  Markdown checker in CineRank, another of the user's own projects, and that
+  checker lives in CineRank's `scripts/`. Its need for the network, which
+  keeps it out of `npm test`, holds in either folder.
+- Its name has no `.test.js`, so `tests/docs.test.js` does not take it for a
+  suite `npm test` must run, and README's tree now gives `tests/` as the home
+  of both `npm test` and `npm run check-render`.
+- `package.json`, `tests/markdown.test.js`, README and HARD RULE 5 give the new
+  path, and the three dated entries above that give the old one carry a note.
+  Nothing in the script changed: it finds the repository root as the folder
+  above its own, which `tests/` is, as `scripts/` was.
+- `npm test`, the typecheck and `npm run check-render` from the new path pass.
+  Three breaks each failed `npm test`, every file restored byte for byte:
+  README's tree still naming the old path failed the docs test's two tree
+  checks; `package.json` still running the script from there failed the check
+  of the setup block's `npm run check-render` line; and `tests/markdown.test.js`
+  still requiring it from there stopped that suite on a missing module.
+
+### 2026-10-06: cross-references checked again
+
+**Cross-references checked again across every tracked file (2026-10-06, on the
+user's request), for the work since the last such check, `b3e6d75`.** That work
+gave this file a new layout, README and SPEC.md new sections, and the render
+check a new folder. Every pointer in the docs, the code comments and the tests -
+to a file, a function or constant, a section or heading, a log entry, or a
+position such as "above" or "the next entry" - was followed to its target, and
+the few that did not land where they said were corrected. Every anchor that a
+README link names on an outside page was found on that page. The details are in
+the commit message.
+
+### 2026-10-06: lists and enumerations checked again
+
+**Lists and enumerations checked again across every tracked file (2026-10-06,
+on the user's request), for the work since the last such check, `15c2d61`.**
+Every list in the docs, the code comments and the tests - of checks and
+refusals, badges and their causes, what a suite or a file covers, and the like,
+whether set out as bullets or run into a sentence - was read against what it
+lists, and the ones that the new handler checks, the abort endpoint's site gate
+and refusal, the new suites and checks and README's new layout had left behind
+were completed. The details are in the commit message.
+
+### 2026-10-06: stale and contradicting statements checked again
+
+**Every Markdown file and every code comment read again for what the work since
+the 2026-09-27 evening merge (`67f00f1`) had left stale or contradicted
+(2026-10-06, on the user's request, ahead of the merge to `main` recorded under
+"2026-10-06: the evening merge" below).** Every statement, figure, pointer and
+list was read against the code, the tests and the other statements that touch
+the same fact.
+
+- Part 5's advice to test one agent endpoint at a time now says that the
+  endpoint takes a request only through its route, with the site-gate header,
+  and refuses a role that already has a final outcome; and HARD RULE 5's list
+  of what a wrapped line never starts with gains `1) `, which the offline
+  check catches too.
+- Notes were added where a dated entry had become misleading: test rounds that
+  reused one trial, the local workaround of calling a function at its own
+  address, the platform credited with reading `config.background`, the per-IP
+  limiter's `429` described as an error page, and the card's text area at
+  340px.
+- In README and the comments: what the abort endpoint writes for a role named
+  twice or already recorded, when the render check cuts a file into pieces,
+  which trials the concurrency measurement covered, which rows the run
+  history's failure flag counts, and what the HARD RULE 4 check accepts as a
+  link.
+
+The details are in the commit message.
+
+### 2026-10-06: the ignored `config` export checked in every bundler release
+
+**The 2026-10-02 finding that Netlify never read the agent functions' `config`
+export, `background: true` included, checked again (2026-10-06, on the user's
+request).** It rested on the bundler inside the installed `netlify-cli`,
+`@netlify/zip-it-and-ship-it` 9.42.1, while a deploy is built by Netlify's own
+release of it.
+
+- **Read in every release from 15.3.3 to 16.3.0** (published 2026-08-12 to
+  2026-10-05; the exports were deployed from 2026-08-28 until `3c30abc`):
+  `parseSource` reads a `config` export only for a function with a default
+  export and no named handler. From a named `handler`'s source it reads only a
+  `schedule` or `stream` helper. Background mode comes from the `-background`
+  filename, or from `background: true` in a config the bundler does read -
+  `netlify.toml`'s, or a default-export function's own. 9.42.1 does the same,
+  and does not know `background` as a config key at all.
+- **Bundled locally** with 9.42.1 and with 16.2.0, the latest release on the
+  day of the 2026-09-27 deploys: `representative-background.ts` as of
+  `67f00f1`, saved under a name without the suffix, came out with no
+  background mode, no route and no rate-limit rule. With the suffix it came out
+  as a Background Function, and a default-export function with the same
+  `config` came out with its route and its rate limit, and from 16.2.0 as a
+  Background Function too.
+- So the 202s came from the filename alone, as the 2026-10-02 entry says.
+  `representative-background.ts` and `tests/docs.test.js` now cite the releases
+  read.
+
+### 2026-10-06: no line starts with `+ ` or `* `
+
+**Every line of every Markdown file is checked for a leading `+ ` or `* `
+(2026-10-06, on the user's question, after a footnote in CineRank, another of
+the user's own projects, was wrapped before "+ 93" and rendered as a bullet).**
+No line in the repository starts with either, in Markdown or in a code comment.
+
+- Rendered through GitHub's API that day, a list item wrapped before
+  "+ 93 = 517" made "93 = 517" a nested list item, and a paragraph wrapped the
+  same way started a list; `* ` did the same.
+- The rule on a list starting mid-paragraph reads unindented lines, and
+  `npm run check-render` counts such a line as the list item GitHub makes of
+  it, so `tests/markdown.test.js` gained a rule that reads every line: none may
+  start with `+ ` or `* `, since every list here is written with `- ` or a
+  number.
+- Proven both ways, every file restored byte for byte: `+ ` and `* ` wrapped
+  inside a bulleted item, `+ ` inside a numbered item and `+ ` under a paragraph
+  each failed it; a `+` mid-line, bold and italics opening a line, and a `- `
+  sub-item passed. Without the rule, the first of those passed both checks.
+- HARD RULE 5 and README's description of the suite list the rule.
+
+### 2026-10-06: the evening merge
+
+**Merged to `main` (2026-10-06, on the user's explicit request), triggering a
+deploy: 28 commits, everything since `4098e3b`.** They are:
+
+- the abort endpoint and the agent handlers accepting only the requests the
+  page sends, and the page's site-gate header put under test on every request
+  the gate checks (`f160c54`, `328e8f0`);
+- SPEC.md spaced out, wrapped at 80 characters and linked (`8f2862e`);
+- README's architecture diagram, held to the code by 24 checks (`4fcc91d`);
+- CineRank named in this file as the user's own project (`22f7bc1`);
+- a card's bottom fade stopping where its scrollbar begins, and its text area
+  capped at a whole number of lines (`88f1c00`, `62f45c3`);
+- README's hero and four further screenshots, with the render check reading
+  images and sending a large file in pieces (`f168021`, `bc4aa0c`, `5207865`,
+  `43ce8f2`, `a420950`, `b005959`);
+- HARD RULE 4 read broadly in README and SPEC.md, and set out so in the rule
+  itself (`49062be`, `c85069a`, `e9536ea`, `252ab5a`);
+- the render check moved into `tests/` (`f01bb01`);
+- README's live link centred, with a `<br>` below it, and both tags allowed by
+  the two checks (`e7ff038`, `bc0b086`);
+- cross-references, lists and stale or contradicting statements checked again
+  for the work since the last such checks (`ec0759e`, `e3673f9`, `3c95e45`);
+- comments reflowed to 80 columns (`1132429`);
+- the ignored `config` export checked in every bundler release (`269a9c3`);
+- no Markdown line starting with `+ ` or `* ` (`5f57312`);
+- the commit that adds this entry, and the one that points two earlier
+  entries' mentions of the merge still to come at it.
+
+No database change is needed: nothing since `4098e3b` adds or alters a
+column. This entry was committed to `draft` ahead of the merge, so that right
+after it `main` and `draft` held identical trees.
 
 ## Operational notes
 
@@ -5141,6 +5859,10 @@ to `draft` by 2026-09-03:
 7. **Capped card height** — `.card-body-scroll` (340px max-height, themed
    scrollbar) on the actual argument/ruling text only, not the short
    loading/failed status text. `ed9a2de`.
+   *(Capped at 18 lines, `18lh`, since 2026-10-06, so the box ends between two
+   lines rather than through one, with 340px kept for a browser without `lh` -
+   see "2026-10-06: README's hero, and images in the render check" under
+   "Status log".)*
 
 All 7 verified via offline tests (extracted real functions against synthetic
 data/DOM stubs) or structural/typecheck review — no OpenRouter calls spent on
@@ -5722,12 +6444,14 @@ exactly the 2 functions that call OpenRouter), declared via the function's own
   to the function's own address, `/.netlify/functions/<name>`, or to any
   address of the site but its main one, so every request an agent function
   acts on has come through its route on the main address and passed the one
-  count - see that day's entries.)*
+  count - see "2026-10-06: the agent functions accept requests only through
+  their routes" under "Status log".)*
 
 ### Site-gate header
 
 **Site-gate header** (`isSiteGateOk` in `siteGate.ts`, `X-Site-Gate` header,
-checked in `trials.ts`'s POST too): explicitly NOT real access control - the
+checked in `trials.ts`'s POST too, and in `abort.ts` since 2026-10-06):
+explicitly NOT real access control - the
 token is a plain constant in the publicly-downloadable `app.js`, so anyone who
 looks defeats it trivially.
 
@@ -5743,19 +6467,19 @@ looks defeats it trivially.
 ### How the rejections reach the UI
 
 **Every rejection from all three layers surfaces a clear, specific reason in the
-UI**, not a raw status code *(no longer true for the agent endpoints - see the
-"Superseded" note at the end of this section: a site-gate or call-cap rejection
-of an agent call now reaches only Netlify's function logs. The per-IP limiter's
-rejection, which the platform returns before the handler runs, and a site-gate
-rejection of trial creation still reach the UI)* - this took a real fix, not
-just returning better text server-side:
+UI**, not a raw status code *(it holds for the per-IP limiter's rejection,
+which the platform returns before the handler runs, and for a site-gate
+rejection of trial creation; a site-gate or call-cap rejection of an agent call
+reaches only Netlify's function logs, and the page does not read the abort
+endpoint's reply - see the "Superseded" note at the end of this section)* -
+this took a real fix, not just returning better text server-side:
 
 - `callAgentWithRetry()` in `app.js` previously called `res.json()`
   unconditionally, so a response that DOESN'T come back as this app's own JSON
-  shape (the realistic case for Netlify's platform-level rate-limit block, which
-  returns a plain error page) threw a raw `SyntaxError` that fell into the
-  generic network-failure branch - confusing, and would have incorrectly retried
-  a permanently-blocked request.
+  shape (the realistic case for Netlify's platform-level rate-limit block,
+  whose `429` has an empty body, as measured on the live site on 2026-10-02)
+  threw a raw `SyntaxError` that fell into the generic network-failure branch -
+  confusing, and would have incorrectly retried a permanently-blocked request.
   - Fixed by splitting the fetch and the JSON parse into separate try/catches,
     with a specific message for a non-JSON 429 (recognised as the platform rate
     limiter) and a fallback for any other unrecognised non-JSON response.
@@ -5877,7 +6601,10 @@ this log didn't exist yet to check against).
   - *(No longer reproduces: every local browser trial since the Background
     Functions move of 2026-08-28 has gone through exactly these `/api/...`
     routes - trigger and poll alike - and worked, and the deployed site never
-    had it. The workaround is no longer needed.)*
+    had it. The workaround is no longer needed, and for the agent functions it
+    no longer works: since 2026-10-06 each refuses a request sent to its own
+    address - see "2026-10-06: the agent functions accept requests only through
+    their routes" under "Status log".)*
 - **A representative call that got cut off by `netlify dev`'s local 30-second
   lambda-local timeout had actually already succeeded server-side** — the
   OpenRouter call, the Supabase write, and the call log all completed and saved
