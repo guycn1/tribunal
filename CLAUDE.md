@@ -4247,8 +4247,33 @@ are:
 - the commit that adds this entry.
 
 No database change is needed: nothing since `6af2e72` adds or alters a
-column. This entry was committed to `draft` ahead of the merge, so that right
-after it `main` and `draft` held identical trees.
+column. Merge commit `c4a55dd`. This entry was committed to `draft` ahead of
+the merge, so that right after it `main` and `draft` held identical trees.
+
+**Confirmed live the same day**, from 03:07 UTC. The deployed `app.js`,
+`styles.css` and `index.html` matched `main` byte for byte 23 seconds after the
+push, and:
+
+- gated requests for a real trial sent straight to both agent functions' own
+  addresses left no call-log row and no attempt after 60 seconds, while the
+  same representative request through its route started its attempt within 5
+  seconds and saved its argument after one same-model retry;
+- a full 7-agent trial (`113bf607`) completed in 70 seconds, 7 of 7: three
+  representatives recovered on the default model after a repeated sentence or
+  the token cap, `grey_worm` escalated to `anthropic/claude-haiku-4.5` and
+  finished cleanly, and the three judges ruled independently; 11 calls,
+  $0.0057;
+- with POSTs carrying no site-gate header, so no quota spent, 70 to the
+  representatives route got 62 `202`s and then `429`s; after the window had
+  cleared, 40 to the representatives route left 23 for the judges route. That
+  is the limit of 60, counted across the two routes together, plus Netlify's
+  short enforcement delay;
+- `GET /api/trials` answered `200` throughout.
+
+README, `netlify.toml` and the representatives handler's comment give these
+measurements. They reached `main` in a second merge the same day that changes
+only documentation and comments, whose message carries Netlify's
+`[skip netlify]` marker.
 
 ## Operational notes
 

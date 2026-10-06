@@ -34,7 +34,10 @@ const rawHandler: Handler = async (event) => {
   // route. So the first check refuses any request that did not come through
   // the route, before anything else is read or written: every request this
   // handler acts on has passed the limit. Not logged, like the method and
-  // role checks below - refusing costs nothing.
+  // role checks below - refusing costs nothing. On the live site on
+  // 2026-10-06, gated requests for a real trial sent to this address and to
+  // judge-background's left nothing behind, while the same request through
+  // the route started its attempt within 5 seconds.
   if (!cameThroughApiRoute(event)) {
     return json(403, { error: 'Only accepted through /api/trials/:id/representatives/:role' });
   }
