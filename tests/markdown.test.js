@@ -52,6 +52,13 @@ function markdownFiles() {
 const KEPT_TAGS = new Set(['code', 'b']);
 
 /**
+ * The one block written on purpose in HTML: README's live link, centred.
+ * GitHub keeps a div and its align attribute (rendered through its API on
+ * 2026-10-06), and only these two exact tags are allowed for it.
+ */
+const CENTRED_BLOCK = ['<div align="center">', '</div>'];
+
+/**
  * Blanks every code span in a paragraph, delimiters included, keeping its
  * length and newlines, so what is left is the paragraph's prose. A span is
  * closed by the next run of exactly as many backticks as opened it.
@@ -129,7 +136,10 @@ for (const file of markdownFiles()) {
   const found = {
     tags: [], unclosed: [], escapes: [], setext: [], interrupts: [], ruleBeforeHeading: [], tableSeparator: [],
     tableCells: [], pipeInCode: [], bold: [], intraword: [], links: [], trailing: [], indented: [], wiki: [], imageSrc: [],
+    centred: [],
   };
+  /** Every centred block's tag, in order, to find one left open. */
+  const centredTags = [];
   const at = (n, what) => `line ${n}: ${String(what).replace(/\s+/g, ' ').slice(0, 70)}`;
 
   for (const { text: para, line } of paras) {
@@ -141,8 +151,23 @@ for (const file of markdownFiles()) {
     // a literal angle bracket is written &lt; / &gt;. A backslash-escaped <
     // and an autolink such as <https://...> are not tag-shaped.
     for (const m of prose.matchAll(/(?<!\\)<\/?([A-Za-z][A-Za-z0-9-]*)(?:\s[^<>]*)?\/?>/g)) {
+      if (CENTRED_BLOCK.includes(m[0])) continue;
       if (!KEPT_TAGS.has(m[1].toLowerCase()) || /\s/.test(m[0])) found.tags.push(at(lineOf(m.index), m[0]));
     }
+    // A centred block's tags must each be alone on their line, with a blank
+    // line after it (rendered through GitHub's API on 2026-10-06): with no
+    // blank line after <div align="center">, the heading inside is printed
+    // as typed, "### ..." and "**...**" included; with none after </div>, so
+    // is the paragraph after it; and text on a tag's own line is printed as
+    // typed too. A blank line before either tag is not needed.
+    prose.split('\n').forEach((proseLine, k, own) => {
+      for (const m of proseLine.matchAll(/<div align="center">|<\/div>/g)) {
+        const n = line + k;
+        if (proseLine.trim() !== m[0]) found.centred.push(at(n, `${m[0]} shares its line`));
+        else if (k !== own.length - 1) found.centred.push(at(n, `${m[0]} has no blank line after it`));
+        centredTags.push({ n, open: m[0] !== '</div>' });
+      }
+    });
     // A backtick run with no closing run of the same length in its paragraph
     // pairs with nothing, or with the wrong one: "a ` b `c` d" renders "b " as
     // code and prints the last backtick.
@@ -220,8 +245,17 @@ for (const file of markdownFiles()) {
     }
   });
   endTable();
+  // A centred block never closed centres everything after it: GitHub closes
+  // the div at the end of the file (rendered through its API on 2026-10-06).
+  let depth = 0;
+  let lastOpen = 0;
+  for (const tag of centredTags) {
+    if (tag.open) { depth++; lastOpen = tag.n; } else depth = Math.max(0, depth - 1);
+  }
+  if (depth) found.centred.push(at(lastOpen, '<div align="center"> never closed'));
 
-  check(`${file}: no HTML tag GitHub would drop (anything but <code> and <b>) outside a code span`, !found.tags.length, found.tags.join(' | '));
+  check(`${file}: no HTML tag GitHub would drop (anything but <code>, <b> and a centred block) outside a code span`, !found.tags.length, found.tags.join(' | '));
+  check(`${file}: every centred block is closed, and each of its tags is alone on its line with a blank line after it`, !found.centred.length, found.centred.join(' | '));
   check(`${file}: every code span is closed in its paragraph`, !found.unclosed.length, found.unclosed.join(' | '));
   check(`${file}: no backslash escape inside a code span, where it is printed`, !found.escapes.length, found.escapes.join(' | '));
   check(`${file}: no line of - or = directly under text, which turns it into a heading`, !found.setext.length, found.setext.join(' | '));

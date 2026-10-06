@@ -324,10 +324,11 @@ tag it does not know.
   row, with a row of the wrong width or with a pipe inside a code span, an
   unmatched `**`, an asterisk between two letters or digits, a broken link, two
   trailing spaces, a paragraph indented into a code block, a
-  `[[wiki-style]]` link, and an image at a `data:` or `javascript:` address,
-  which GitHub strips. Each rule was established by rendering the defect
-  through GitHub's own Markdown API and watching it break; the comment on each
-  says what GitHub does.
+  `[[wiki-style]]` link, an image at a `data:` or `javascript:` address,
+  which GitHub strips, and a centred block left open, or with a tag that shares
+  its line or has no blank line after it. Each rule was established by
+  rendering the defect through GitHub's own Markdown API and watching it break;
+  the comment on each says what GitHub does.
 - **`npm run check-render`** (`tests/check-render.js`) renders every Markdown
   file through GitHub's Markdown API and compares the page with the source:
   every word of the source must reach the page, no Markdown may be printed as
@@ -364,7 +365,10 @@ tag it does not know.
 
 - A literal angle bracket outside a code span is `&lt;` or `&gt;`. The only raw
   tags are `<code>` and `<b>`, which GitHub keeps, in README's endpoint list and
-  badge tables.
+  badge tables, and the `<div align="center">` and `</div>` that centre its
+  live link, each alone on its line with a blank line after it. GitHub keeps
+  `align` and strips `style` and `class`, so a div can centre a block but not
+  set its spacing; an empty paragraph, `&nbsp;` alone, adds a line of space.
 - A list follows a blank line, and a wrapped line never starts with `- `, `+ `,
   `* `, `1. `, `#` or `>`.
 - Nothing but a blank line sits directly above a `---`, and no `---` sits right
@@ -4727,6 +4731,39 @@ discarded for repeating an 18-word sentence three times, and 14:33:10, when
 his second succeeded. The trial completed 7 of 7 at 14:34:15, Daenerys after
 an escalation to `claude-haiku-4.5`, and its judges ruled 2-1. The cards'
 text areas show eight lines, as in the hero.
+
+**README's live link centred, with space below it (same day, on the user's
+report and choice).** On GitHub the "Live app" line sat 16px above the
+screenshot, close enough to be skimmed past as part of it. It is now centred in
+a `<div align="center">`, with an empty paragraph, `&nbsp;` alone, between it
+and the screenshot.
+
+- Four layouts were rendered through GitHub's markdown API with its dark CSS
+  in headless Edge: as it was, with the empty paragraph, centred, and both.
+  Centred alone left the gap at 16px; the empty paragraph moved the screenshot
+  down by its line and margin, 40px, to a 56px gap. The user chose both.
+- GitHub keeps a div's `align` and strips `style` and `class` (probed through
+  its API that day), so spacing cannot be set directly; blank lines collapse,
+  and a paragraph with nothing visible in it is what adds a line of space.
+- The div is the one raw block tag allowed, so both checks were narrowed for
+  it, after probing each way of writing it through GitHub: with no blank line
+  after `<div align="center">` the heading inside is printed as typed, with
+  none after `</div>` so is the paragraph that follows, text on a tag's own
+  line is printed too, and a block never closed centres the rest of the file;
+  a missing blank line before either tag changes nothing.
+  - `tests/markdown.test.js` allows exactly those two tags, and a new rule
+    requires each alone on its line with a blank line after it, and every
+    block closed. `tests/check-render.js` reads the two tags as holding no
+    words, like `<code>` and `<b>`.
+  - Proven both ways, every file restored byte for byte: each defect's probe
+    appended to `SPEC.md` failed, and the three correct forms passed; with the
+    allowance removed, README's block failed, and with each other part of the
+    rule removed or widened in turn, the probe it exists for got through - the
+    missing blank line after an opening tag is also caught by the rule on a
+    heading starting mid-paragraph. Run on the saved GitHub HTML,
+    `check-render` reports the printed Markdown but not the unclosed block,
+    which only the offline rule catches, and without the two tags in its list
+    it reports their words as missing.
 
 ### 2026-10-06: HARD RULE 4 read broadly in README and SPEC.md
 

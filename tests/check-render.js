@@ -32,7 +32,10 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 
 const ROOT = path.join(__dirname, '..');
-const KEPT_TAGS = /<\/?(code|b)>/g;
+// The tags written on purpose, which GitHub keeps and which hold no words of
+// their own: <code> and <b> in README's endpoint list and badge tables, and
+// the div that centres its live link.
+const KEPT_TAGS = /<\/?(code|b)>|<div align="center">|<\/div>/g;
 const THEMATIC_BREAK = /^\s*(-{3,}|\*{3,}|_{3,})\s*$/;
 const SEPARATOR_ROW = /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)*\|?\s*$/;
 const LIST_ITEM = /^\s*(?:[-*+]|\d+[.)])\s+\S/;
