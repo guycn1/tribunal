@@ -164,6 +164,16 @@ synchronous function is allowed to run.
 The browser triggers a call, gets an immediate `202`, and polls
 [`GET /api/trials/:id`](#api-endpoints) until the result lands.
 
+![A trial in progress: Jon Snow's argument has landed, while Tyrion's,
+Daenerys's and Grey Worm's cards show a spinner and the model each is running
+on](screenshots/readme-5-in-progress.png)
+
+*Captured while the page polled: Jon Snow's argument had landed, Tyrion and
+Daenerys were still on their first attempts, and Grey Worm on his second - his
+first had repeated an 18-word sentence three times and was discarded. Each
+card's model line is the attempt that is starting, recorded as it begins. The
+trial went on to finish 7 of 7.*
+
 ### The escalation chain
 
 **A 4-tier model escalation chain** guards against unusable output:
@@ -583,7 +593,8 @@ Every file tracked in the repository. Not tracked, and git-ignored:
 │   ├── readme-1-hero-split-rulings.png
 │   ├── readme-2-judges.png
 │   ├── readme-3-call-log.png
-│   └── readme-4-aborted-trial.png
+│   ├── readme-4-aborted-trial.png
+│   └── readme-5-in-progress.png
 ├── tests/                            npm test — no network, spends no quota
 │   ├── retry-logic.test.js           the escalation chain, from the real TypeScript
 │   ├── trial-status.test.js          when a trial is completed; aborts; calls the page never sends; the call cap and the failure flag; replies kept for audit, off the page

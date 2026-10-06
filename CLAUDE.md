@@ -4683,9 +4683,18 @@ end, logged with its real tokens and cost and not retried or saved - two
 repeated a sentence, two hit the token cap. The trial ran at 19:57 UTC, after
 that day's abort fixes (`82f7c97`, `a3fe0d8`, `e464938`), so its rows are what
 the app writes today; every figure was checked against them (8,054 tokens,
-0.05¢ of a stored 0.0521¢, 81,869 ms). The user had earlier deleted two other
-aborted trials from 2026-09-27, `4c2177d2` and `062b10b6`, among others, so
-that the hero's run history did not show three aborted trials in a row.
+0.05¢ of a stored 0.0521¢, 81,869 ms).
+
+**README's fifth screenshot: a trial in progress (same day).**
+`screenshots/readme-5-in-progress.png`, taken by the user from local
+`netlify dev` during trial `33384a48`, shows the representatives mid-run, in
+"Background Functions and polling": Jon Snow's argument landed, Tyrion and
+Daenerys on their first attempts, Grey Worm on his second. The call log dates
+the moment to between 14:32:56 UTC, when Grey Worm's first attempt was
+discarded for repeating an 18-word sentence three times, and 14:33:10, when
+his second succeeded. The trial completed 7 of 7 at 14:34:15, Daenerys after
+an escalation to `claude-haiku-4.5`, and its judges ruled 2-1. The cards'
+text areas show eight lines, as in the hero.
 
 ## Operational notes
 
