@@ -295,16 +295,17 @@ tag it does not know.
   mid-paragraph, a separator right before a heading, a table missing its `|---|`
   row, with a row of the wrong width or with a pipe inside a code span, an
   unmatched `**`, an asterisk between two letters or digits, a broken link, two
-  trailing spaces, a paragraph indented into a code block, and a
-  `[[wiki-style]]` link. Each rule was established by rendering the defect
+  trailing spaces, a paragraph indented into a code block, a
+  `[[wiki-style]]` link, and an image at a `data:` or `javascript:` address,
+  which GitHub strips. Each rule was established by rendering the defect
   through GitHub's own Markdown API and watching it break; the comment on each
   says what GitHub does.
 - **`npm run check-render`** (`scripts/check-render.js`) renders every Markdown
   file through GitHub's Markdown API and compares the page with the source:
   every word of the source must reach the page, no Markdown may be printed as
   text, and the page must have as many headings, tables, table cells, rules,
-  code blocks, list items, quotes, line breaks, links and bold spans as the
-  source asks for. This is the check that catches a defect nobody has listed
+  code blocks, list items, quotes, line breaks, links, images and bold spans as
+  the source asks for. This is the check that catches a defect nobody has listed
   yet. It needs the network - one unauthenticated GitHub request per file, 60 an
   hour, and none of this project's quota - so it is not part of `npm test`.
 
@@ -339,6 +340,8 @@ tag it does not know.
   before a heading.
 - No pipe inside a code span in a table, no `[[wiki-style]]` link, and no line
   ending in two spaces.
+- An image is `![alt text](path)`, its path a file in the repository: GitHub
+  keeps the alt text, and strips an address it does not allow.
 - A memory note is named in a code span (the `tribunal-git-workflow` note), not
   linked.
 
@@ -4560,6 +4563,55 @@ card's last line, on the live site as in the capture.
   let one rename through: a name the other only starts with
   (`--card-scrollbar`) still matched, so the shared-name check now requires
   the name to end where the property does.
+
+### 2026-10-06: README's hero, and images in the render check
+
+**README opens with a hero (2026-10-06, on the user's request, after the one
+in CineRank's README): the live link, then a screenshot of a whole trial with
+a caption.** The screenshot, `screenshots/readme-1-hero-split-rulings.png`,
+was taken by the user from local `netlify dev` and shows trial `0a5de440`
+(2026-10-05): the case card, the four arguments, the three rulings and the run
+history.
+
+- That trial was chosen for its 2-1 split - the Elon judge ruled the killing
+  justified, the Barak and Shamgar judges not - and for Grey Worm's argument,
+  answered by `claude-haiku-4.5` after his first attempt hit the token cap and
+  his second closed on a near-copy of an earlier sentence. The caption states
+  both, as the call log records them.
+- How it was taken, worked out over several attempts: DevTools' device
+  toolbar set to the Desktop device type (the default Mobile type draws
+  overlay scrollbars over the Run history entries), 1100 CSS pixels wide at
+  pixel ratio 2, so GitHub shows it at about 80% rather than the 68% of a
+  1300-pixel capture; a viewport as tall as the page, so the sidebar, one
+  viewport tall, runs its full height; and, injected from the Console for the
+  capture only, the page's scrollbar hidden and each card's text area cut to
+  eight whole lines (`calc(0.9rem * 1.5 * 8)`), since 170px sliced the eighth
+  line through its letters.
+- Before it, the five trials still `interrupted` from that day's route and
+  address probes were deleted from the database on the user's request, with
+  their 14 dependent rows; a backup of every deleted row was kept in that
+  session's scratch directory.
+- The README's old "Live:" line is replaced by the hero's heading, and the
+  layout tree lists `screenshots/`.
+
+**The render check reads images (same day).** Rendered through GitHub's API,
+the hero image came out as an `<img>` keeping its full alt text, but
+`scripts/check-render.js` reported its alt text as missing words and counted
+the image as a link the page lacked.
+
+- Alt text now counts among the page's words, and images have a count of
+  their own, so an image is no longer counted as a link.
+- Probing found what the check missed: GitHub strips an image's address when
+  it does not allow it (`data:` and `javascript:`), leaving a broken `<img>`
+  with no `src` and all its alt text. An image now counts only if it kept its
+  address, and `tests/markdown.test.js` gained the matching offline rule.
+- Proven both ways: six probe files rendered through GitHub, and README.
+  Correct images, an image inside a link and one beside a link pass, and a
+  path with a space and both stripped addresses are flagged; each of the four
+  new parts of the check, removed in turn, raised a false alarm on correct
+  files or let the stripped images through. The offline rule fails on a
+  `data:` and a `JavaScript:` image appended to `SPEC.md` and passes the hero
+  image.
 
 ## Operational notes
 

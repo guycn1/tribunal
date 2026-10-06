@@ -16,8 +16,8 @@
  * - no Markdown syntax is printed as text (**, __, a backtick, "](", "][", "[[",
  *   an HTML comment, a table left as a paragraph of pipes);
  * - the page has as many headings, tables, table cells, rules, code blocks,
- *   list items, quotes, line breaks, links and bold spans as the source asks
- *   for.
+ *   list items, quotes, line breaks, links, images and bold spans as the
+ *   source asks for.
  *
  * It needs the network, so it is not part of `npm test`: run it before every
  * commit that touches a Markdown file, and before every merge to main. It
@@ -84,7 +84,7 @@ function splitCodeSpans(s) {
  */
 function expectFromSource(source) {
   const lines = source.replace(/\r\n/g, '\n').replace(/<!--[\s\S]*?-->/g, (m) => m.replace(/[^\n]/g, ' ')).split('\n');
-  const expected = { words: [], heading: 0, table: 0, cell: 0, hr: 0, pre: 0, li: 0, blockquote: 0, br: 0, link: 0, strong: 0 };
+  const expected = { words: [], heading: 0, table: 0, cell: 0, hr: 0, pre: 0, li: 0, blockquote: 0, br: 0, link: 0, image: 0, strong: 0 };
   let fence = false;
   const proseLines = [];
   lines.forEach((line, i) => {
@@ -123,7 +123,12 @@ function expectFromSource(source) {
     // and this count does not - an angle-bracket destination, a reference
     // link - is reported too: this repository writes every link as
     // [text](destination).
-    expected.link += (prose.match(/\]\([^)\s]*\)/g) || []).length;
+    // An image, ![alt](destination), is counted as an image rather than a
+    // link: GitHub wraps it in a link to the file, but one that starts with
+    // other attributes, which the page's link count below does not read.
+    const images = (prose.match(/!\[[^\]]*\]\([^)\s]*\)/g) || []).length;
+    expected.image += images;
+    expected.link += (prose.match(/\]\([^)\s]*\)/g) || []).length - images;
     // A bare URL is a link too - GitHub autolinks it, in parentheses or not.
     expected.link += (prose.replace(/\]\([^)\s]*\)/g, ']').match(/\bhttps?:\/\/[^\s)<>]+/g) || []).length;
     expected.strong += Math.floor((prose.match(/\*\*/g) || []).length / 2);
@@ -147,12 +152,22 @@ function readRendered(html) {
   }
   // A table GitHub did not recognise is a paragraph that starts with a pipe.
   for (const m of html.matchAll(/<p>\s*\|([^<]{0,60})/g)) leaks.push(`a table printed as a paragraph of pipes: |${decode(m[1])}...`);
+  // An image's alt text is on the page as its alt attribute, which a reader
+  // of the page meets in place of the image (rendered through GitHub's API
+  // on 2026-10-06: ![text](file) becomes <img src="file" alt="text">, every
+  // word kept), so it counts among the page's words.
+  const withAlt = html.replace(/<img\b[^>]*\balt="([^"]*)"[^>]*>/g, ' $1 ');
   return {
-    words: words(decode(html.replace(/<[^>]+>/g, ' '))),
+    words: words(decode(withAlt.replace(/<[^>]+>/g, ' '))),
     leaks,
     heading: count(/<h[1-6][ >]/g), table: count(/<table[ >]/g), cell: count(/<t[hd][ >]/g), hr: count(/<hr[ >/]/g),
     pre: count(/<pre[ >]/g), li: count(/<li[ >]/g), blockquote: count(/<blockquote[ >]/g), br: count(/<br[ >/]/g),
     link: count(/<a href="(?!#)[^"]*"(?![^>]*class="anchor")/g) + count(/<a href="#[^"]*"(?![^>]*class="anchor")/g),
+    // Only an image that kept its address counts: GitHub strips one it does
+    // not allow (a javascript: or data: URL, rendered through its API on
+    // 2026-10-06) and leaves an <img> with no src, a broken image with all of
+    // its alt text still there.
+    image: count(/<img\b[^>]*\bsrc="[^"]+"/g),
     strong: count(/<strong[ >]/g),
   };
 }
@@ -176,7 +191,7 @@ function compare(source, html) {
   }
   if (lost.size) defects.push(`words of the source missing from the page: ${[...lost].map(([w, n]) => (n > 1 ? `${w} x${n}` : w)).join(', ')}`);
   for (const leak of got.leaks) defects.push(`Markdown printed as text, ${leak}`);
-  for (const key of ['heading', 'table', 'cell', 'hr', 'pre', 'li', 'blockquote', 'br', 'link', 'strong']) {
+  for (const key of ['heading', 'table', 'cell', 'hr', 'pre', 'li', 'blockquote', 'br', 'link', 'image', 'strong']) {
     if (want[key] !== got[key]) defects.push(`${key}: the source asks for ${want[key]}, the page has ${got[key]}`);
   }
   return defects;

@@ -1,5 +1,17 @@
 # Tribunal
 
+### ▶ Live app: **https://tribunal-t001.netlify.app**
+
+![A completed trial of Case T-001: the case card, the four representatives'
+arguments and the three judges' rulings side by side, with the run history on
+the left](screenshots/readme-1-hero-split-rulings.png)
+
+*Three judges, three separate rulings: the Elon judge found the killing
+justified, the Barak and Shamgar judges did not, and nothing on the page adds
+them up. Grey Worm's argument was answered by `claude-haiku-4.5` rather than
+the default model: his first two attempts were caught and discarded, and [the
+escalation chain](#the-escalation-chain) moved him up a tier.*
+
 A fixed, canonical fictional tribunal — **Case T-001: The Realm v. Jon Snow** —
 argued and ruled on by seven independent AI agents: four representatives (two
 defense, two prosecution) and three judges, each modelled on a distinct real
@@ -9,8 +21,6 @@ The Tribunal decides one question — **justified / not justified** — and give
 reasons. It does not impose a sentence, and the three judges' rulings are never
 combined into a single verdict; they are displayed independently, each on its
 own card.
-
-**Live:** https://tribunal-t001.netlify.app
 
 ## Architecture
 
@@ -538,6 +548,8 @@ Every file tracked in the repository. Not tracked, and git-ignored:
 │       └── types.ts                  types shared across the backend
 ├── supabase/schema.sql               all six tables, the seeded case, RLS, grants
 ├── scripts/check-render.js           npm run check-render — renders each Markdown file through GitHub and compares the page with its source
+├── screenshots/                      the images in this README, captured from the running app
+│   └── readme-1-hero-split-rulings.png
 ├── tests/                            npm test — no network, spends no quota
 │   ├── retry-logic.test.js           the escalation chain, from the real TypeScript
 │   ├── trial-status.test.js          when a trial is completed; aborts; calls the page never sends; the call cap and the failure flag; replies kept for audit, off the page
@@ -660,7 +672,7 @@ file through GitHub's own Markdown API and compares the page with its source:
 - every word of the source reaching the page;
 - no Markdown printed as text;
 - and as many headings, tables, table cells, rules, code blocks, list items,
-  quotes, line breaks, links and bold spans as the source asks for.
+  quotes, line breaks, links, images and bold spans as the source asks for.
 
 That is what catches a defect nobody has thought of yet. Run it before every
 commit that touches a Markdown file; it uses one unauthenticated GitHub request

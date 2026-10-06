@@ -128,7 +128,7 @@ for (const file of markdownFiles()) {
   const paras = paragraphs(lines);
   const found = {
     tags: [], unclosed: [], escapes: [], setext: [], interrupts: [], ruleBeforeHeading: [], tableSeparator: [],
-    tableCells: [], pipeInCode: [], bold: [], intraword: [], links: [], trailing: [], indented: [], wiki: [],
+    tableCells: [], pipeInCode: [], bold: [], intraword: [], links: [], trailing: [], indented: [], wiki: [], imageSrc: [],
   };
   const at = (n, what) => `line ${n}: ${String(what).replace(/\s+/g, ' ').slice(0, 70)}`;
 
@@ -164,6 +164,10 @@ for (const file of markdownFiles()) {
     }
     // A wiki-style link prints its brackets: "[[note]]" stays "[[note]]".
     for (const m of prose.matchAll(/\[\[[^\]]*\]\]/g)) found.wiki.push(at(lineOf(m.index), m[0]));
+    // An image whose address GitHub does not allow loses it: "![alt](data:...)"
+    // and "![alt](javascript:...)" render as an <img> with no src, a broken
+    // image (rendered through GitHub's API on 2026-10-06).
+    for (const m of prose.matchAll(/!\[[^\]]*\]\(\s*(?:javascript|data):[^)]*\)/gi)) found.imageSrc.push(at(lineOf(m.index), m[0]));
   }
 
   let pipeRun = [];
@@ -232,6 +236,7 @@ for (const file of markdownFiles()) {
   check(`${file}: no line ends in two spaces, an invisible line break`, !found.trailing.length, found.trailing.join(' | '));
   check(`${file}: no paragraph indented four spaces outside a list, which becomes a code block`, !found.indented.length, found.indented.join(' | '));
   check(`${file}: no [[wiki-style]] link, which GitHub prints with its brackets`, !found.wiki.length, found.wiki.join(' | '));
+  check(`${file}: no image at a data: or javascript: address, which GitHub strips`, !found.imageSrc.length, found.imageSrc.join(' | '));
 }
 
 console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} check(s) failed.`);
