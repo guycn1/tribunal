@@ -5020,6 +5020,38 @@ No line in the repository starts with either, in Markdown or in a code comment.
   sub-item passed. Without the rule, the first of those passed both checks.
 - HARD RULE 5 and README's description of the suite list the rule.
 
+### 2026-10-06: the evening merge
+
+**Merged to `main` (2026-10-06, on the user's explicit request), triggering a
+deploy: 27 commits, everything since `4098e3b`.** They are:
+
+- the abort endpoint and the agent handlers accepting only the requests the
+  page sends, and the page's site-gate header put under test on every request
+  the gate checks (`f160c54`, `328e8f0`);
+- SPEC.md spaced out, wrapped at 80 characters and linked (`8f2862e`);
+- README's architecture diagram, held to the code by 24 checks (`4fcc91d`);
+- CineRank named in this file as the user's own project (`22f7bc1`);
+- a card's bottom fade stopping where its scrollbar begins, and its text area
+  capped at a whole number of lines (`88f1c00`, `62f45c3`);
+- README's hero and four further screenshots, with the render check reading
+  images and sending a large file in pieces (`f168021`, `bc4aa0c`, `5207865`,
+  `43ce8f2`, `a420950`, `b005959`);
+- HARD RULE 4 read broadly in README and SPEC.md, and set out so in the rule
+  itself (`49062be`, `c85069a`, `e9536ea`, `252ab5a`);
+- the render check moved into `tests/` (`f01bb01`);
+- README's live link centred, with a `<br>` below it, and both tags allowed by
+  the two checks (`e7ff038`, `bc0b086`);
+- cross-references, lists and stale or contradicting statements checked again
+  for the work since the last such checks (`ec0759e`, `e3673f9`, `3c95e45`);
+- comments reflowed to 80 columns (`1132429`);
+- the ignored `config` export checked in every bundler release (`269a9c3`);
+- no Markdown line starting with `+ ` or `* ` (`5f57312`);
+- the commit that adds this entry.
+
+No database change is needed: nothing since `4098e3b` adds or alters a
+column. This entry was committed to `draft` ahead of the merge, so that right
+after it `main` and `draft` held identical trees.
+
 ## Operational notes
 
 ### Image and screenshot volume in long sessions
