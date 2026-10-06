@@ -3613,7 +3613,8 @@ limit was then tested on the live site with ungated POSTs (no quota spent).
   the `429`s began.
 - README and netlify.toml were then corrected on `draft` to say the 30 are
   counted across the two routes together, and that the limit was verified -
-  comments and docs only, so they ride with the next merge.
+  comments and docs only, so they reached `main` in the next merge,
+  `c4a55dd` (2026-10-06).
 - `GET /api/trials` answered `200` throughout.
 - The user kept the limit at 30 (about 4 full trials per IP in 3 minutes) rather
   than raising it to restore the per-route headroom of the old setting: retries
@@ -4950,9 +4951,10 @@ were completed. The details are in the commit message.
 
 **Every Markdown file and every code comment read again for what the work since
 the 2026-09-27 evening merge (`67f00f1`) had left stale or contradicted
-(2026-10-06, on the user's request, ahead of the next merge to `main`).** Every
-statement, figure, pointer and list was read against the code, the tests and
-the other statements that touch the same fact.
+(2026-10-06, on the user's request, ahead of the merge to `main` recorded under
+"2026-10-06: the evening merge" below).** Every statement, figure, pointer and
+list was read against the code, the tests and the other statements that touch
+the same fact.
 
 - Part 5's advice to test one agent endpoint at a time now says that the
   endpoint takes a request only through its route, with the site-gate header,
@@ -5023,7 +5025,7 @@ No line in the repository starts with either, in Markdown or in a code comment.
 ### 2026-10-06: the evening merge
 
 **Merged to `main` (2026-10-06, on the user's explicit request), triggering a
-deploy: 27 commits, everything since `4098e3b`.** They are:
+deploy: 28 commits, everything since `4098e3b`.** They are:
 
 - the abort endpoint and the agent handlers accepting only the requests the
   page sends, and the page's site-gate header put under test on every request
@@ -5046,7 +5048,8 @@ deploy: 27 commits, everything since `4098e3b`.** They are:
 - comments reflowed to 80 columns (`1132429`);
 - the ignored `config` export checked in every bundler release (`269a9c3`);
 - no Markdown line starting with `+ ` or `* ` (`5f57312`);
-- the commit that adds this entry.
+- the commit that adds this entry, and the one that points two earlier
+  entries' mentions of the merge still to come at it.
 
 No database change is needed: nothing since `4098e3b` adds or alters a
 column. This entry was committed to `draft` ahead of the merge, so that right
