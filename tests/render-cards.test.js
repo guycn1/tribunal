@@ -44,9 +44,12 @@
  *      aborting, whose request also names the roles still running. Without
  *      it the gate turns trial creation and the abort away with a 401, and
  *      drops an agent call silently.
+ *   8. A card's bottom fade stops where its scrollbar begins, so the
+ *      scrollbar's bottom arrow is not faded into a stray mark after the
+ *      last line.
  */
 
-const { installDom, loadApp } = require('./support/load-app');
+const { installDom, loadApp, makeElement } = require('./support/load-app');
 const { compileBackend } = require('./support/compile-backend');
 
 let failures = 0;
@@ -73,7 +76,7 @@ console.log('\n=== app.js executes cleanly (catches a TDZ-class load crash) ==='
 let app;
 try {
   // Hand back exactly the pieces under test from app.js's own top-level scope.
-  app = loadApp(['state', 'el', 'renderRepresentatives', 'renderJudges', 'renderCallLog', 'agentCardSignature', 'shortModelName', 'REPRESENTATIVE_ROLES', 'JUDGE_ROLES', 'beginTrial', 'loadTrial', 'buildAgentStatusBody', 'appendTruncationNotice', 'triggerAgent', 'deriveRoleStates', 'isTruncated', 'abortCurrentTrial', 'SITE_GATE_TOKEN']);
+  app = loadApp(['state', 'el', 'renderRepresentatives', 'renderJudges', 'renderCallLog', 'agentCardSignature', 'shortModelName', 'REPRESENTATIVE_ROLES', 'JUDGE_ROLES', 'beginTrial', 'loadTrial', 'buildAgentStatusBody', 'appendTruncationNotice', 'triggerAgent', 'deriveRoleStates', 'isTruncated', 'abortCurrentTrial', 'SITE_GATE_TOKEN', 'attachScrollFade']);
   check('top-level code ran with no error', true);
 } catch (error) {
   check('top-level code ran with no error', false, error.message);
@@ -413,6 +416,33 @@ const { shortModelName } = app;
 });
 // A name that merely contains the letters is not a segment and must survive.
 check('"instructor" is not stripped', shortModelName('vendor/model-instructor-v2') === 'model-instructor-v2', shortModelName('vendor/model-instructor-v2'));
+
+console.log("\n=== A card's bottom fade stops where its scrollbar begins ===");
+// The fade covered all but the last 4px of the card body, so it covered
+// most of the scrollbar too, and the scrollbar's bottom arrow showed as a
+// stray mark at the end of the last line. It now ends at the scrollbar,
+// whose width attachScrollFade() measures: the body's width less its
+// content-and-padding width.
+/**
+ * A card body inside its fade wrapper, measured as a browser would report it.
+ * @param {{offsetWidth: number, clientWidth: number, scrollHeight: number, clientHeight: number, scrollTop?: number}} size
+ * @returns {{wrap: object, body: object}}
+ */
+function fadedBody(size) {
+  const wrap = makeElement('div');
+  const body = makeElement('div');
+  Object.assign(body, { scrollTop: 0 }, size);
+  wrap.appendChild(body);
+  app.attachScrollFade(body);
+  return { wrap, body };
+}
+const overflowing = fadedBody({ offsetWidth: 300, clientWidth: 290, scrollHeight: 600, clientHeight: 173 });
+check('more text below: the fade is shown', overflowing.wrap.classList.contains('has-more-below'));
+check('it stops where a 10px scrollbar begins', overflowing.wrap.style.getPropertyValue('--card-scrollbar-width') === '10px', overflowing.wrap.style.getPropertyValue('--card-scrollbar-width'));
+const scrolledToEnd = fadedBody({ offsetWidth: 300, clientWidth: 290, scrollHeight: 600, clientHeight: 173, scrollTop: 427 });
+check('scrolled to the end: no fade', !scrolledToEnd.wrap.classList.contains('has-more-below'));
+const overlaid = fadedBody({ offsetWidth: 300, clientWidth: 300, scrollHeight: 600, clientHeight: 173 });
+check('a scrollbar drawn over the text takes no width: the fade runs to the edge', overlaid.wrap.style.getPropertyValue('--card-scrollbar-width') === '0px', overlaid.wrap.style.getPropertyValue('--card-scrollbar-width'));
 
 /**
  * A stub fetch Response carrying a JSON body.

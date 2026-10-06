@@ -1741,10 +1741,16 @@ function appendTruncationNotice(card, entry) {
 function attachScrollFade(bodyEl) {
   const wrapEl = bodyEl.parentElement;
   const SCROLL_END_EPSILON = 2; // sub-pixel/rounding tolerance
-  /** Shows the fade only while there is text below the visible area. */
+  /**
+   * Shows the fade only while there is text below the visible area, and
+   * stops it where the scrollbar begins: the body's width less its
+   * content-and-padding width is the scrollbar's, whatever the browser
+   * draws (0 where scrollbars overlay the content).
+   */
   function update() {
     const hasMore = bodyEl.scrollHeight - bodyEl.scrollTop - bodyEl.clientHeight > SCROLL_END_EPSILON;
     wrapEl.classList.toggle('has-more-below', hasMore);
+    wrapEl.style.setProperty('--card-scrollbar-width', `${Math.max(0, bodyEl.offsetWidth - bodyEl.clientWidth)}px`);
   }
   bodyEl.addEventListener('scroll', update);
   update();

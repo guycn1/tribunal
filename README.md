@@ -611,15 +611,16 @@ stub DOM — except
 - [`tests/render-cards.test.js`](tests/render-cards.test.js) —
   [`app.js`](public/app.js)'s agent cards, the banner above the judges, the call
   log, how it shortens model ids, how it reports a request that fails outright,
-  and that creating a trial, starting each agent and aborting all carry the
-  site-gate header.
+  that a card's bottom fade stops at its scrollbar, and that creating a trial,
+  starting each agent and aborting all carry the site-gate header.
 - [`tests/shared-constants.test.js`](tests/shared-constants.test.js) — values
   that are deliberately duplicated across files still agree, and the page's
   polling and "interrupted" timeouts stay above the server's time budget. The
   duplicated values: the markers, the fixed messages and the phrase that marks a
   truncation, the roles with their names and seats, the scrollbar's resting
-  opacity, the spinner's durations, the class that dims a call-log row, and the
-  sidebar's width where the loading overlay restates it.
+  opacity, the spinner's durations, the class that dims a call-log row, the
+  property that carries a card's scrollbar width to its fade, and the sidebar's
+  width where the loading overlay restates it.
 - [`tests/docs.test.js`](tests/docs.test.js) — this README, [`SPEC.md`](SPEC.md)
   and the requirement parts of [`CLAUDE.md`](CLAUDE.md) still say what the code
   does.

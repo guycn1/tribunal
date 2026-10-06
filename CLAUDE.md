@@ -4530,6 +4530,37 @@ where the per-IP limit sits. A last bullet lists the library modules not drawn.
   from the new section and a bullet describing the checks;
   `npm run check-render` passes, and `npm test` ran 659 checks.
 
+### 2026-10-06: the card fade and the card scrollbar
+
+**A card's bottom fade now stops where its scrollbar begins (2026-10-06,
+found by the user in a screenshot taken for README).** The fade covered all
+but the last 4px of the card body (`right: 4px`), so it also covered most of
+the card's scrollbar, about 10px wide in Chromium with `scrollbar-width: thin`.
+The scrollbar's ▼ arrow, half faded, read as a stray comma at the end of every
+card's last line, on the live site as in the capture.
+
+- `attachScrollFade()` in `app.js` measures each card's scrollbar as the
+  body's width less its content-and-padding width, and sets it as
+  `--card-scrollbar-width` on the wrapper; the fade's right edge in
+  `styles.css` reads it, 0px before that and wherever scrollbars overlay the
+  content.
+- Measured in headless Edge on a card with the real stylesheet and `app.js`:
+  a 10px scrollbar, the property set to 10px, and the fade's right edge at
+  the scrollbar's left edge, to the pixel.
+- Tests: `tests/render-cards.test.js` runs `attachScrollFade()` on a card
+  with a 10px scrollbar, one scrolled to its end and one whose scrollbar takes
+  no width, and the stub DOM in `tests/support/load-app.js` now keeps the
+  style properties set on it; `tests/shared-constants.test.js` checks that
+  the property `app.js` sets is the one the fade's right edge reads.
+- Proven both ways, every file restored byte for byte: the measurement
+  removed, a fixed 4px, the width measured with the padding, the property
+  renamed on either side, the fade's toggle inverted, the fade put back to
+  `right: 4px` and the stub's style made a no-op again were each caught by the
+  checks meant for them, and a different fallback value passed. The first run
+  let one rename through: a name the other only starts with
+  (`--card-scrollbar`) still matched, so the shared-name check now requires
+  the name to end where the property does.
+
 ## Operational notes
 
 ### Image and screenshot volume in long sessions

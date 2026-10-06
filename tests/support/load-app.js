@@ -26,12 +26,23 @@ function makeElement(tag = 'div') {
     tagName: String(tag).toUpperCase(),
     kids,
     dataset: {},
-    style: { setProperty() {}, removeProperty() {}, getPropertyValue: () => '' },
+    // Kept for real, so a check can read back a custom property app.js
+    // sets, as the card fade's scrollbar width.
+    style: (() => {
+      const props = new Map();
+      return {
+        setProperty: (name, value) => { props.set(name, String(value)); },
+        removeProperty: (name) => { props.delete(name); },
+        getPropertyValue: (name) => props.get(name) || '',
+      };
+    })(),
     className: '',
     textContent: '',
     scrollTop: 0,
     scrollHeight: 0,
     clientHeight: 0,
+    offsetWidth: 0,
+    clientWidth: 0,
     hidden: false,
     parentElement: null,
     // Tracked for real, not a no-op: the loading overlay, the sidebar lock

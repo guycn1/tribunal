@@ -653,12 +653,18 @@ body {
    text exists when there isn't any. pointer-events: none so it never
    blocks scrolling/selecting the text underneath it. The gradient's
    solid end matches .card's own background (--bg-card) so it blends
-   into the card rather than reading as its own separate block. */
+   into the card rather than reading as its own separate block.
+   It stops where the card's scrollbar begins, so the scrollbar's
+   bottom arrow stays fully visible rather than half faded into a stray
+   mark at the end of the last line. The scrollbar's width depends on
+   the browser and the OS (none at all where scrollbars overlay the
+   content), so attachScrollFade() in app.js measures it on each card
+   and sets --card-scrollbar-width; 0px is its value before that. */
 .card-body-scroll-wrap::after {
   content: '';
   position: absolute;
   left: 0;
-  right: 4px;
+  right: var(--card-scrollbar-width, 0px);
   bottom: 0;
   height: 42px;
   background: linear-gradient(to bottom, transparent, var(--bg-card));
