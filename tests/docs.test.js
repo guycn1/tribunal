@@ -93,7 +93,10 @@ const NUMBER_WORDS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'sev
  * @returns {number}
  */
 const wordToNumber = (word) => (word ? NUMBER_WORDS.indexOf(word.toLowerCase()) : -1) >= 0 ? NUMBER_WORDS.indexOf(word.toLowerCase()) : NaN;
-/** A count as README may write it, in digits or as a word, for a RegExp. */
+/**
+ * A count as README may write it, for a RegExp: in digits, or as a word from
+ * zero to ten (a larger count written as a word is not read).
+ */
 const COUNT = `\\d+|${NUMBER_WORDS.join('|')}`;
 /**
  * The number a count written in digits or as a word stands for, or NaN.
@@ -1011,23 +1014,6 @@ async function main() {
   // regression suites", in Status), and every statement of it is held to it.
   const suiteClaims = [...README.matchAll(new RegExp(`\\b(${COUNT})\\s+(?:offline\\s+)?regression\\s+suites`, 'gi'))].map((m) => m[1]);
   check(`every "N regression suites" in README uses ${suites.length}`, suiteClaims.length > 0 && suiteClaims.every((w) => countOf(w) === suites.length), suiteClaims.join(', '));
-
-  // ======================================================== README: anti-abuse layers
-  console.log('\n=== README: the anti-abuse layers are the ones the code has ===');
-  // Each layer, the words README names it by, and whether the code applies
-  // it: a handler calling the call-cap or site-gate check, or a rate limit on
-  // a redirect in netlify.toml.
-  const handlerSources = FUNCTION_SOURCES.filter(([f]) => !f.includes('/lib/')).map(([, src]) => src).join('\n');
-  const layers = [
-    { name: 'the site-wide call cap', words: /call cap/, inCode: /\bisGlobalCallCapExceeded\(/.test(handlerSources) },
-    { name: 'per-IP rate limiting', words: /rate limit/, inCode: /^\s*\[redirects\.rate_limit\]/m.test(TOML) },
-    { name: 'the site-gate header', words: /site-gate/, inCode: /\bisSiteGateOk\(/.test(handlerSources) },
-  ];
-  const layersInCode = layers.filter((l) => l.inCode);
-  const layerBullets = (section(README, '### Anti-abuse and cost controls').match(/^- .*$/gm) || []);
-  check('the anti-abuse section lists exactly the layers the code applies, one bullet each', layerBullets.length === layersInCode.length && layersInCode.every((l) => layerBullets.filter((b) => l.words.test(b)).length === 1), `code: ${layersInCode.map((l) => l.name).join(', ')}; README: ${layerBullets.length} bullets`);
-  const layerClaims = [...README.matchAll(new RegExp(`\\b(${COUNT})\\s+\\[?anti-abuse\\s+layers`, 'gi'))].map((m) => m[1]);
-  check(`every "N anti-abuse layers" in README uses ${layersInCode.length}`, layerClaims.length > 0 && layerClaims.every((w) => countOf(w) === layersInCode.length), layerClaims.join(', ') || 'not stated');
   const describedSuites = [...local.matchAll(/`(tests\/[\w.-]+\.test\.js)`/g)].map((m) => m[1]);
   check('the suite descriptions cover exactly the suites npm test runs', minus(suites, describedSuites).length === 0 && minus(describedSuites, suites).length === 0, `described: ${describedSuites}`);
   // Script names may hold hyphens (check-render), so match up to the spaces,
@@ -1052,6 +1038,26 @@ async function main() {
   check('README asks for exactly the required variables', required.length > 0 && minus(required, toFillIn).length === 0 && minus(toFillIn, required).length === 0, `required: ${required}, README: ${toFillIn}`);
   const threeTier = README.split('\n').find((line) => line.startsWith('Three-tier:')) || '';
   check('the bundler is esbuild, as the architecture line says', /bundled by esbuild/.test(threeTier) && /node_bundler = "esbuild"/.test(TOML), threeTier || 'no "Three-tier:" line in README');
+
+  // ======================================================== README: anti-abuse layers
+  console.log('\n=== README: the anti-abuse layers are the ones the code has ===');
+  // Each layer, the words README names it by, and whether the code applies
+  // it: a handler calling the call-cap or site-gate check, or a rate limit on
+  // a redirect in netlify.toml. Comments are left out of the handlers first,
+  // so a comment naming a check is not taken for a call to it.
+  const handlerSources = FUNCTION_SOURCES.filter(([f]) => !f.includes('/lib/'))
+    .map(([, src]) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')).join('\n');
+  const layers = [
+    { name: 'the site-wide call cap', words: /call cap/, inCode: /\bisGlobalCallCapExceeded\(/.test(handlerSources) },
+    { name: 'per-IP rate limiting', words: /rate limit/, inCode: /^\s*\[redirects\.rate_limit\]/m.test(TOML) },
+    { name: 'the site-gate header', words: /site-gate/, inCode: /\bisSiteGateOk\(/.test(handlerSources) },
+  ];
+  const layersInCode = layers.filter((l) => l.inCode);
+  const layerBullets = (section(README, '### Anti-abuse and cost controls').match(/^- .*$/gm) || []);
+  const layersNamed = (bullet) => layersInCode.filter((l) => l.words.test(bullet));
+  check('the anti-abuse section lists exactly the layers the code applies, one bullet each', layerBullets.length === layersInCode.length && layerBullets.every((b) => layersNamed(b).length === 1) && layersInCode.every((l) => layerBullets.some((b) => layersNamed(b)[0] === l)), `code: ${layersInCode.map((l) => l.name).join(', ')}; README: ${layerBullets.map((b) => layersNamed(b).map((l) => l.name).join(' + ') || 'no layer').join(' | ')}`);
+  const layerClaims = [...README.matchAll(new RegExp(`\\b(${COUNT})\\s+\\[?anti-abuse\\s+layers`, 'gi'))].map((m) => m[1]);
+  check(`every "N anti-abuse layers" in README uses ${layersInCode.length}`, layerClaims.length > 0 && layerClaims.every((w) => countOf(w) === layersInCode.length), layerClaims.join(', ') || 'not stated');
 
   // ======================================================== paths named anywhere
   console.log('\n=== README, SPEC.md and CLAUDE.md\'s requirement parts: every file and route they name exists ===');

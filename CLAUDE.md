@@ -4086,6 +4086,32 @@ the 2026-10-03 entry.
   loosened in turn, 10 cases: each either failed, or let through the defect it
   exists to catch, or raised a false alarm on correct text.
 
+**Those two checks rechecked (2026-10-06, on the user's request), and two gaps
+in the layer check closed.** Probing the committed check with defects its proof
+had not tried:
+
+- One bullet naming two layers, with another naming none, passed "one bullet
+  each". The check now requires as many bullets as layers, each naming exactly
+  one layer, and every layer named by a bullet of its own.
+- A handler's cap check removed with a comment naming
+  `isGlobalCallCapExceeded()` left behind still counted the cap as applied, the
+  comment read as a call. Checks that run the real handlers did fail, so the
+  suite caught it, but this check did not; comments are now left out before
+  the handlers are read.
+- The block also sat in the middle of the setup checks, so the checks after it
+  printed under its heading; it now has its own place after them. And a count
+  written as a word is read only from zero to ten, which the helper's comment
+  now says.
+- Each of the patterns matched only what it should on today's README, as did
+  the in-word cases ("often", "someone"). The 2026-10-03 note was checked
+  against that day's commit: "Status" then said "Five offline regression
+  suites" and "All three anti-abuse layers", and only the setup line's count
+  was checked.
+- The full proof run again on the result, 34 cases, every file restored byte
+  for byte: the 24 before, the two gaps (now caught, with both kinds of
+  comment), and each of the three bullet conditions and both comment strippers
+  removed in turn, each letting through the defect it exists to catch.
+
 ## Operational notes
 
 ### Image and screenshot volume in long sessions
