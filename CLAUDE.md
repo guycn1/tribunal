@@ -62,8 +62,8 @@ attempt (first attempt delivered no readable content at all, silently). Compared
 Rules 1 and 2 were restated explicitly by the user on 2026-08-27, specifically
 so they survive a context compaction; rule 3 was added by the user on
 2026-09-27, and applies retroactively as well as to new text; rules 4 and 5
-were added by the user on 2026-10-06, each after another project's rule of the
-same kind.
+were added by the user on 2026-10-06, each after a rule of the same kind in
+CineRank, another of the user's own projects.
 
 Together they govern almost every action taken in this repo and are not
 situational — they apply the same way regardless of how routine the action
@@ -3902,9 +3902,10 @@ descriptions, and left free they wrapped at every space, `aborted (N` / `of 7` /
 ### 2026-10-06: this file's and README's layout, and HARD RULES 4 and 5
 
 **This file restructured (2026-10-06, on the user's request, after the layout of
-another project's CLAUDE.md).** Before, many of its lines ran to thousands of
-characters, which made the file unreadable in GitHub's Code view without
-line-wrapping, and many entries were single dense paragraphs.
+the CLAUDE.md in CineRank, another of the user's own projects).** Before, many
+of its lines ran to thousands of characters, which made the file unreadable in
+GitHub's Code view without line-wrapping, and many entries were single dense
+paragraphs.
 
 - Lines are now wrapped at 80 characters, long entries are split into paragraphs
   and sub-items, and the status log has a heading per day or arc.
@@ -3922,8 +3923,8 @@ line-wrapping, and many entries were single dense paragraphs.
 
 **HARD RULE 4 added (2026-10-06, by the user): in every Markdown file but this
 one, a reference is a link** - see the HARD RULES block at the top, which adapts
-another project's rule in its broader reading. Applied the same day to the two
-files it covers, `README.md` and `SPEC.md`:
+the user's rule from their CineRank project in its broader reading. Applied the
+same day to the two files it covers, `README.md` and `SPEC.md`:
 
 - 50 links added: every file and directory they name, the other documents and
   the sections meant (`README.md#database`, `CLAUDE.md#status-log`), the two
@@ -3956,9 +3957,9 @@ files it covers, `README.md` and `SPEC.md`:
 **HARD RULE 5 added (2026-10-06, by the user): every Markdown file renders
 exactly as written** - see the HARD RULES block at the top. Prompted by HARD
 RULE 3's "until &lt;date&gt;", which GitHub had shown as "until ," from
-2026-09-27 until `27103e4` found it by chance. The idea is another project's
-Markdown checker; the rules and the code were built afresh, from what GitHub was
-seen to do.
+2026-09-27 until `27103e4` found it by chance. The idea is the Markdown checker
+in the user's CineRank project; the rules and the code were built afresh, from
+what GitHub was seen to do.
 
 - `tests/markdown.test.js`, now part of `npm test`, checks every Markdown file,
   this one included, for 15 known defects, each first rendered through GitHub in
@@ -4481,9 +4482,9 @@ now has 204 lines and 14 headings.
 ### 2026-10-06: README's architecture diagram
 
 **README's Architecture section gained a diagram, "What talks to what"
-(2026-10-06, on the user's request, after the one in another project's
-README).** It is a Mermaid flowchart, which GitHub draws in place of the code
-block:
+(2026-10-06, on the user's request, after the one in the README of CineRank,
+another of the user's own projects).** It is a Mermaid flowchart, which GitHub
+draws in place of the code block:
 
 - the browser, with one arrow, to the `/api/*` routes in `netlify.toml`;
 - the six functions in three nodes - the two that only read, the two that
