@@ -7,8 +7,8 @@
  * docs describe is compared against its source here, as are the endpoints'
  * status codes and site-gate requirement, the agent endpoints' order of
  * checks, which of their rejections are logged and their rate limit, the
- * case text, the fields every call logs and the verdict vocabulary, so
- * changing one without the other fails
+ * anti-abuse layers the code applies, the case text, the fields every call
+ * logs and the verdict vocabulary, so changing one without the other fails
  * this suite instead of leaving the docs quietly wrong. Where the fact is about
  * behaviour, it is checked by running the real code (the backend compiled
  * from its TypeScript, app.js against a stub DOM), not by reading its text.
@@ -1011,8 +1011,9 @@ async function main() {
   const suiteWord = (local.match(/npm test\s+# (\w+) regression suites/) || [])[1];
   check(`"${suiteWord} regression suites" is the right count`, wordToNumber(suiteWord) === suites.length, String(suites.length));
   // The count is also stated in prose, outside the setup block ("Six offline
-  // regression suites", in Status), and every statement of it is held to it.
-  const suiteClaims = [...README.matchAll(new RegExp(`\\b(${COUNT})\\s+(?:offline\\s+)?regression\\s+suites`, 'gi'))].map((m) => m[1]);
+  // regression suites", in Status), and every statement of it is held to it,
+  // with or without a link opening after the count.
+  const suiteClaims = [...README.matchAll(new RegExp(`\\b(${COUNT})\\s+\\[?(?:offline\\s+)?regression\\s+suites`, 'gi'))].map((m) => m[1]);
   check(`every "N regression suites" in README uses ${suites.length}`, suiteClaims.length > 0 && suiteClaims.every((w) => countOf(w) === suites.length), suiteClaims.join(', '));
   const describedSuites = [...local.matchAll(/`(tests\/[\w.-]+\.test\.js)`/g)].map((m) => m[1]);
   check('the suite descriptions cover exactly the suites npm test runs', minus(suites, describedSuites).length === 0 && minus(describedSuites, suites).length === 0, `described: ${describedSuites}`);
@@ -1042,15 +1043,19 @@ async function main() {
   // ======================================================== README: anti-abuse layers
   console.log('\n=== README: the anti-abuse layers are the ones the code has ===');
   // Each layer, the words README names it by, and whether the code applies
-  // it: a handler calling the call-cap or site-gate check, or a rate limit on
-  // a redirect in netlify.toml. Comments are left out of the handlers first,
-  // so a comment naming a check is not taken for a call to it.
-  const handlerSources = FUNCTION_SOURCES.filter(([f]) => !f.includes('/lib/'))
-    .map(([, src]) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')).join('\n');
+  // it to every call that spends quota: every agent handler calling the
+  // call-cap or site-gate check, or a rate limit on every agent route in
+  // netlify.toml. Comments are left out of the handlers first, so a comment
+  // naming a check is not taken for a call to it.
+  const agentCode = Object.fromEntries(topLevel.map(([f, src]) => [path.basename(f, '.ts'),
+    src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')]));
+  /** Whether `ok` holds for every agent function, and there is at least one. */
+  const everyAgent = (ok) => backgroundFns.length > 0 && backgroundFns.every(ok);
+  const agentCalls = (fn, check) => new RegExp(`\\b${check}\\(`).test(agentCode[fn] || '');
   const layers = [
-    { name: 'the site-wide call cap', words: /call cap/, inCode: /\bisGlobalCallCapExceeded\(/.test(handlerSources) },
-    { name: 'per-IP rate limiting', words: /rate limit/, inCode: /^\s*\[redirects\.rate_limit\]/m.test(TOML) },
-    { name: 'the site-gate header', words: /site-gate/, inCode: /\bisSiteGateOk\(/.test(handlerSources) },
+    { name: 'the site-wide call cap', words: /call cap/i, inCode: everyAgent((fn) => agentCalls(fn, 'isGlobalCallCapExceeded')) },
+    { name: 'per-IP rate limiting', words: /rate limit/i, inCode: everyAgent((fn) => redirectBlocks.some((b) => b.fn === fn && b.limit)) },
+    { name: 'the site-gate header', words: /site-gate/i, inCode: everyAgent((fn) => agentCalls(fn, 'isSiteGateOk')) },
   ];
   const layersInCode = layers.filter((l) => l.inCode);
   const layerBullets = (section(README, '### Anti-abuse and cost controls').match(/^- .*$/gm) || []);

@@ -4075,9 +4075,10 @@ the 2026-10-03 entry.
   README states it, against the suites `npm test` runs.
 - The layers are now derived from the code: the call cap and the site gate
   count when a handler calls their checks, the rate limit when `netlify.toml`
-  sets one. The "Anti-abuse and cost controls" list must name exactly those
-  layers, one bullet each, and every "N anti-abuse layers" must give their
-  number.
+  sets one. *(Every agent handler, and every agent route, since the second
+  recheck below.)* The "Anti-abuse and cost controls" list must name exactly
+  those layers, one bullet each, and every "N anti-abuse layers" must give
+  their number.
 - A count may be written in digits or as a word, and only a number is read as
   one.
 - Proven both ways, every file restored byte for byte: 11 breaks to README,
@@ -4093,9 +4094,9 @@ had not tried:
 - One bullet naming two layers, with another naming none, passed "one bullet
   each". The check now requires as many bullets as layers, each naming exactly
   one layer, and every layer named by a bullet of its own.
-- A handler's cap check removed with a comment naming
-  `isGlobalCallCapExceeded()` left behind still counted the cap as applied, the
-  comment read as a call. Checks that run the real handlers did fail, so the
+- With the cap check removed from both agent handlers and a comment naming
+  `isGlobalCallCapExceeded()` left behind, the cap still counted as applied,
+  the comment read as a call. Checks that run the real handlers did fail, so the
   suite caught it, but this check did not; comments are now left out before
   the handlers are read.
 - The block also sat in the middle of the setup checks, so the checks after it
@@ -4111,6 +4112,30 @@ had not tried:
   for byte: the 24 before, the two gaps (now caught, with both kinds of
   comment), and each of the three bullet conditions and both comment strippers
   removed in turn, each letting through the defect it exists to catch.
+
+**The same two checks scanned again (2026-10-06, on the user's request), and
+five more gaps closed.** Each was tried against the committed check, a0ff272:
+
+- The layer check counted a layer as applied when any handler called its check,
+  or any route had a rate limit. So the cap removed from one agent handler, the
+  site gate removed from both (`trials.ts` still calls it), or the rate limit
+  removed from one agent route all passed it; other checks caught each, this
+  one did not. A layer now counts only when every agent handler calls its
+  check, or every agent route has a rate limit, and only when there is at least
+  one agent function.
+- A wrong suite count in "Status" with the link opening after the number
+  ("Five [offline regression suites]") failed nothing at all: the suite pattern,
+  unlike the layer pattern, did not allow the bracket there. It does now.
+- Correct bullets written with a capital letter ("Per-IP rate limiting") failed
+  the section check; the words naming each layer are now read in any case.
+- README's description of the docs test, and the test's own header, now name
+  the anti-abuse layers among what it checks.
+- The full proof run again on the result, 47 cases, every file restored byte
+  for byte: the 34 before, each new gap now caught, controls for the bracketed
+  and capitalised forms, a renamed section heading, and each new part removed in
+  turn (every agent rather than any, the at-least-one guard, the bracket, the
+  case-insensitive words), each letting through the defect it exists to catch
+  or raising a false alarm on correct text.
 
 ## Operational notes
 

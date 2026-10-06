@@ -513,9 +513,9 @@ stub DOM — except
   does.
   - Every file, route, role, table, column, threshold, environment variable and
     badge they describe is checked against its source, as are the agent
-    endpoints' order of checks, the rate limit, the case text, the logged fields
-    and the verdict vocabulary, so changing one without the other fails the
-    suite.
+    endpoints' order of checks, the rate limit, the anti-abuse layers, the case
+    text, the logged fields and the verdict vocabulary, so changing one without
+    the other fails the suite.
   - It also holds every Markdown file but [`CLAUDE.md`](CLAUDE.md) to [HARD RULE
     4](CLAUDE.md#4-in-every-markdown-file-but-claudemd-a-reference-is-a-link):
     every link lands, and the first mention in each paragraph of a file, a
