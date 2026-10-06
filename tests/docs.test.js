@@ -360,11 +360,12 @@ async function main() {
     check(`the tree's note on ${fn}.ts is its route: "${expected}"`, expected.length > 0 && fnTree.comment === expected, fnTree.comment);
   }
 
-  // The agent endpoints' account runs from its bold lead to the end of the
-  // section, over several paragraphs; it is read as one run of text.
-  const agentStart = api.search(/^\*\*The \w+ agent endpoints/m);
+  // The agent endpoints' account is the section's last subsection, over
+  // several paragraphs; it is read as one run of text, from its heading to the
+  // end of the section.
+  const agentStart = api.search(/^#### The \w+ agent endpoints$/m);
   const agentPara = agentStart < 0 ? '' : api.slice(agentStart).replace(/\s*\n\s*/g, ' ');
-  check('the agent-endpoint paragraph is there', agentPara.length > 0);
+  check('the agent-endpoint subsection is there', agentPara.length > 0);
   const topLevel = FUNCTION_SOURCES.filter(([f]) => !f.includes('/lib/'));
   // A function written with a named `handler` export is a Background
   // Function by its -background filename and nothing else, locally and
@@ -379,7 +380,7 @@ async function main() {
   // read as in force and do nothing.
   const ignoredConfig = topLevel.filter(([, src]) => /^export const handler\b/m.test(src) && /^export const config\b/m.test(src)).map(([f]) => path.basename(f, '.ts'));
   check('no function exports a config its bundler ignores', ignoredConfig.length === 0, ignoredConfig.join(', '));
-  check(`"the ${(agentPara.match(/^\*\*The (\w+)/) || [])[1]} agent endpoints" is the right count`, wordToNumber((agentPara.match(/^\*\*The (\w+)/) || [])[1]) === backgroundFns.length, String(backgroundFns.length));
+  check(`"the ${(agentPara.match(/^#### The (\w+)/) || [])[1]} agent endpoints" is the right count`, wordToNumber((agentPara.match(/^#### The (\w+)/) || [])[1]) === backgroundFns.length, String(backgroundFns.length));
   const spenders = FUNCTION_SOURCES.filter(([f, src]) => !f.includes('/lib/') && /callOpenRouter\(/.test(src)).map(([f]) => path.basename(f, '.ts'));
   check('only the agent endpoints spend OpenRouter quota', minus(spenders, backgroundFns).length === 0 && minus(backgroundFns, spenders).length === 0, `callOpenRouter in: ${spenders}`);
 

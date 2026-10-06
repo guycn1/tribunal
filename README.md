@@ -177,11 +177,13 @@ description. Everything this app's own code returns is JSON.
   with the roles it recorded. The running calls check for it before every
   attempt and as each attempt ends, and stop.
 
-**The two agent endpoints behave differently from the rest.** They are the only
-ones that spend OpenRouter quota, and the only Background Functions: Netlify
-answers the POST with `202` as soon as the call is accepted and runs the handler
-afterwards, so nothing the handler returns ever reaches the browser, which
-learns the outcome by polling `GET /api/trials/:id`.
+#### The two agent endpoints
+
+They behave differently from the rest. They are the only ones that spend
+OpenRouter quota, and the only Background Functions: Netlify answers the POST
+with `202` as soon as the call is accepted and runs the handler afterwards, so
+nothing the handler returns ever reaches the browser, which learns the outcome
+by polling `GET /api/trials/:id`.
 
 The handler checks, in order, that the request is a POST naming a trial and a
 role, that the role is one it knows (`jon_snow`, `tyrion_lannister`,

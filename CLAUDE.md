@@ -4012,6 +4012,22 @@ characters and the longest 1,688, with 17 headings.
   its nine guards removed, the agent block cut to its first paragraph or left
   unflattened) each fail checks, both new ones included.
 
+**README's agent-endpoint text given a heading of its own (2026-10-06, on the
+user's request).** "API endpoints" was README's longest run of lines without a
+heading, 67 of them: the endpoint list and the six paragraphs on the two agent
+endpoints. Those paragraphs are now a `####` subsection, "The two agent
+endpoints", whose first sentence takes over from the bold lead it replaces.
+
+- `tests/docs.test.js` finds the subsection by that heading, which must be
+  exactly "The N agent endpoints", reads it to the end of the section, and
+  takes the count it checks from the heading.
+- 16 targeted breaks each failed the checks meant for them, every file restored
+  byte for byte: the count changed, the heading removed, demoted to bold text,
+  promoted out of the section or given extra words, five statements inside it
+  changed, and the test made to look for the bold lead, take the count from it,
+  read from the start of the section or leave the text unflattened. A reworded
+  first sentence, which no check reads, passes as it should.
+
 ## Operational notes
 
 ### Image and screenshot volume in long sessions
