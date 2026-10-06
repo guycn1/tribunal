@@ -4122,7 +4122,8 @@ five more gaps closed.** Each was tried against the committed check, a0ff272:
   removed from one agent route all passed it; other checks caught each, this
   one did not. A layer now counts only when every agent handler calls its
   check, or every agent route has a rate limit, and only when there is at least
-  one agent function.
+  one agent function. *(Settled by running the handlers since the third pass
+  below.)*
 - A wrong suite count in "Status" with the link opening after the number
   ("Five [offline regression suites]") failed nothing at all: the suite pattern,
   unlike the layer pattern, did not allow the bracket there. It does now.
@@ -4136,6 +4137,37 @@ five more gaps closed.** Each was tried against the committed check, a0ff272:
   turn (every agent rather than any, the at-least-one guard, the bracket, the
   case-insensitive words), each letting through the defect it exists to catch
   or raising a false alarm on correct text.
+
+**A third pass over everything from cb251be on (2026-10-06, on the user's
+request), looking for missed alarms only.** Fourteen suspected misses were tried
+against the committed checks, ca51fc8; seven were real:
+
+- **Layers present in the code but not enforced.** With the site gate's or the
+  call cap's answer ignored in both agent handlers, the layer check still
+  counted the layer, since it looked for the call rather than its effect. The
+  call cap and the site gate are now settled by running each real agent handler
+  with a request that fails only that check: it must be turned away with that
+  check's status, which also retires the comment stripping the source reading
+  needed.
+- **Weak or partial rate limits.** A judges route limited per domain only, or
+  with no request limit, and a second, unlimited route to the representatives
+  function, all counted as per-IP rate limiting. Every route to an agent
+  function must now be limited per IP, with a request limit and a window.
+- **Two wrong suite counts nothing caught:** "Five offline test suites" and
+  "Five offline [regression suites]" in "Status". The three count checks now
+  share one pattern: a count followed within two words by the noun, a link
+  opening anywhere in between. On today's README it reads exactly the claims it
+  read before, and nothing else.
+- **Three route counts nothing checked:** "the two routes" (twice) and "the two
+  agent routes", which every route to an agent function must now match.
+- The named-section link check held: an unlinked mention in README's intro, in
+  a table row, in a blockquote or in a SPEC.md list item, and a link to the
+  right anchor of the wrong file, were each caught.
+- Proven both ways, every file restored byte for byte: 66 cases on the count,
+  layer and route checks - 37 real defects each caught by its check, 6
+  controls that pass, and each of 23 parts removed or loosened in turn, each
+  then letting its defect through or raising a false alarm on correct text -
+  and cb251be's 24 cases on the named-section check, run again unchanged.
 
 ## Operational notes
 

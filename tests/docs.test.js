@@ -104,6 +104,15 @@ const COUNT = `\\d+|${NUMBER_WORDS.join('|')}`;
  * @returns {number}
  */
 const countOf = (count) => (/^\d+$/.test(count) ? Number(count) : wordToNumber(count));
+/**
+ * Every count a document states of something: a count followed within two
+ * words by `noun`, a link opening anywhere in between, so a rewording ("five
+ * offline test suites", "four [protective layers") is still read.
+ * @param {string} doc
+ * @param {string} noun Plural, as the document writes it.
+ * @returns {string[]} The counts, as written.
+ */
+const statedCounts = (doc, noun) => [...doc.matchAll(new RegExp(`\\b(${COUNT})\\s+(?:\\[?[\\w-]+\\s+){0,2}\\[?${noun}`, 'gi'))].map((m) => m[1]);
 
 /**
  * One section of a Markdown document: from its heading line up to the next
@@ -1011,9 +1020,8 @@ async function main() {
   const suiteWord = (local.match(/npm test\s+# (\w+) regression suites/) || [])[1];
   check(`"${suiteWord} regression suites" is the right count`, wordToNumber(suiteWord) === suites.length, String(suites.length));
   // The count is also stated in prose, outside the setup block ("Six offline
-  // regression suites", in Status), and every statement of it is held to it,
-  // with or without a link opening after the count.
-  const suiteClaims = [...README.matchAll(new RegExp(`\\b(${COUNT})\\s+\\[?(?:offline\\s+)?regression\\s+suites`, 'gi'))].map((m) => m[1]);
+  // regression suites", in Status), and every statement of it is held to it.
+  const suiteClaims = statedCounts(README, 'suites');
   check(`every "N regression suites" in README uses ${suites.length}`, suiteClaims.length > 0 && suiteClaims.every((w) => countOf(w) === suites.length), suiteClaims.join(', '));
   const describedSuites = [...local.matchAll(/`(tests\/[\w.-]+\.test\.js)`/g)].map((m) => m[1]);
   check('the suite descriptions cover exactly the suites npm test runs', minus(suites, describedSuites).length === 0 && minus(describedSuites, suites).length === 0, `described: ${describedSuites}`);
@@ -1043,26 +1051,36 @@ async function main() {
   // ======================================================== README: anti-abuse layers
   console.log('\n=== README: the anti-abuse layers are the ones the code has ===');
   // Each layer, the words README names it by, and whether the code applies
-  // it to every call that spends quota: every agent handler calling the
-  // call-cap or site-gate check, or a rate limit on every agent route in
-  // netlify.toml. Comments are left out of the handlers first, so a comment
-  // naming a check is not taken for a call to it.
-  const agentCode = Object.fromEntries(topLevel.map(([f, src]) => [path.basename(f, '.ts'),
-    src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')]));
-  /** Whether `ok` holds for every agent function, and there is at least one. */
-  const everyAgent = (ok) => backgroundFns.length > 0 && backgroundFns.every(ok);
-  const agentCalls = (fn, check) => new RegExp(`\\b${check}\\(`).test(agentCode[fn] || '');
+  // it to every call that spends quota. The call cap and the site gate are
+  // settled by running each real agent handler with a request that fails
+  // only that check: it must be turned away with that check's status, so a
+  // check that is called but whose answer is ignored does not count. The rate
+  // limit must be set per IP, with a request limit and a window, on every
+  // route to an agent function. None holds if there is no agent at all.
+  /** Whether every agent handler turns away a request failing only `step`. */
+  const everyAgentRejects = async (step) => {
+    for (const fn of backgroundFns) if ((await callAgent(fn, [step])).status !== STEP_CODE[step]) return false;
+    return true;
+  };
+  const agentRoutes = redirectBlocks.filter((b) => backgroundFns.includes(b.fn));
+  const everyAgentRouteLimited = backgroundFns.every((fn) => agentRoutes.some((b) => b.fn === fn))
+    && agentRoutes.every((b) => b.limit && b.limit.perIp && b.limit.windowLimit > 0 && b.limit.windowSize > 0);
+  const anyAgent = backgroundFns.length > 0;
   const layers = [
-    { name: 'the site-wide call cap', words: /call cap/i, inCode: everyAgent((fn) => agentCalls(fn, 'isGlobalCallCapExceeded')) },
-    { name: 'per-IP rate limiting', words: /rate limit/i, inCode: everyAgent((fn) => redirectBlocks.some((b) => b.fn === fn && b.limit)) },
-    { name: 'the site-gate header', words: /site-gate/i, inCode: everyAgent((fn) => agentCalls(fn, 'isSiteGateOk')) },
+    { name: 'the site-wide call cap', words: /call cap/i, inCode: anyAgent && await everyAgentRejects('cap') },
+    { name: 'per-IP rate limiting', words: /rate limit/i, inCode: anyAgent && everyAgentRouteLimited },
+    { name: 'the site-gate header', words: /site-gate/i, inCode: anyAgent && await everyAgentRejects('gate') },
   ];
   const layersInCode = layers.filter((l) => l.inCode);
   const layerBullets = (section(README, '### Anti-abuse and cost controls').match(/^- .*$/gm) || []);
   const layersNamed = (bullet) => layersInCode.filter((l) => l.words.test(bullet));
   check('the anti-abuse section lists exactly the layers the code applies, one bullet each', layerBullets.length === layersInCode.length && layerBullets.every((b) => layersNamed(b).length === 1) && layersInCode.every((l) => layerBullets.some((b) => layersNamed(b)[0] === l)), `code: ${layersInCode.map((l) => l.name).join(', ')}; README: ${layerBullets.map((b) => layersNamed(b).map((l) => l.name).join(' + ') || 'no layer').join(' | ')}`);
-  const layerClaims = [...README.matchAll(new RegExp(`\\b(${COUNT})\\s+\\[?anti-abuse\\s+layers`, 'gi'))].map((m) => m[1]);
+  const layerClaims = statedCounts(README, 'layers');
   check(`every "N anti-abuse layers" in README uses ${layersInCode.length}`, layerClaims.length > 0 && layerClaims.every((w) => countOf(w) === layersInCode.length), layerClaims.join(', ') || 'not stated');
+  // The rate limit is said to sit on "the two routes" that spend quota: the
+  // routes to agent functions in netlify.toml.
+  const routeClaims = statedCounts(README, 'routes');
+  check(`every "N routes" in README uses ${agentRoutes.length}, the routes to agent functions`, routeClaims.length > 0 && routeClaims.every((w) => countOf(w) === agentRoutes.length), routeClaims.join(', ') || 'not stated');
 
   // ======================================================== paths named anywhere
   console.log('\n=== README, SPEC.md and CLAUDE.md\'s requirement parts: every file and route they name exists ===');
