@@ -260,10 +260,15 @@ finding every quote of the old name, across line breaks too, and updating it.
   the text after it;
 - every hash is linked to its own commit, and the first mention in each
   paragraph of a file, a directory or another Markdown file, `npm test`, a table
-  or a route is linked to the right place.
+  or a route is linked to the right place;
+- the first mention in each paragraph of the thing a README section's heading
+  names - a heading of the form "The escalation chain" - is linked to that
+  section, outside the section itself.
 
-A prose mention of a commit, a badge label, an outside source, and whether a
-link's words describe its target are reading jobs no script can do.
+A prose mention of a commit, a badge label, an outside source, a section named
+in other words than its heading ("the reliability chain", "a Background
+Function"), and whether a link's words describe its target are reading jobs no
+script can do.
 
 A pass that adds links is proven to have changed nothing else by rendering each
 file through GitHub's markdown API before and after, stripping every `<a>` tag
@@ -3999,10 +4004,10 @@ characters and the longest 1,688, with 17 headings.
 - Rendered through GitHub's markdown API before and after, the text is the same
   apart from the headings added and sentences split for the bullets, and the
   wrapped and unwrapped files render identically.
-- `tests/docs.test.js` reads README through `unwrap()`, which joins wrapped lines
-  back into one, so a stated sentence is checked wherever the wrap broke it, and
-  reads the agent-endpoint text as one block from its bold lead to the end of
-  its section. Two new checks run `unwrap()` on a sample with each kind of line
+- `tests/docs.test.js` reads README through `unwrap()`, which joins wrapped
+  lines back into one, so a stated sentence is checked wherever the wrap broke
+  it, and reads the agent-endpoint text as one block from its bold lead to the
+  end of its section. Two new checks run `unwrap()` on a sample with each kind of line
   it must keep apart.
 - Proven both ways, every file restored byte for byte: 15 targeted README
   breaks - among them each of the seven checked phrases the wrap split across
@@ -4027,6 +4032,34 @@ endpoints", whose first sentence takes over from the bold lead it replaces.
   changed, and the test made to look for the bold lead, take the count from it,
   read from the start of the section or leave the text unflattened. A reworded
   first sentence, which no check reads, passes as it should.
+
+**README's mentions of its own sections linked, and the check for them added
+(2026-10-06, on the user's report).** The new headings gave several things a
+home in README, and HARD RULE 4 asks for a link where they are named; two
+mentions of "the escalation chain", in the representatives endpoint's
+description and in the retry-logic suite's, had none.
+
+- Linked: both of those, and "the reliability chain" in "Status", to "The
+  escalation chain"; the agent endpoints in "How a trial runs" to their
+  subsection; "Background Functions" in that bullet, in "Aborting a trial" and
+  in the agent endpoints' subsection to "Background Functions and polling"; the
+  offline suites in "Status" to "The test suites"; and the anti-abuse layers
+  there, and the anti-abuse measures in `SPEC.md`, to "Anti-abuse and cost
+  controls".
+- `tests/docs.test.js` now requires, in every Markdown file but this one, that
+  the first mention in each paragraph of a thing a README section's heading
+  names ("The escalation chain", "The test suites", "The two agent endpoints")
+  links to that section, outside the section itself; headings and code spans
+  stay plain. A section named in other words stays a reading job, which this
+  rule's "How it is checked" now says.
+- Proven both ways, every file restored byte for byte: 10 targeted breaks were
+  caught by that check - each of the two mentions unlinked again, one linked to
+  the wrong section or file, unlinked mentions in capitals, of the other two
+  sections or in `SPEC.md`, `SPEC.md` linking to its own file, a new "The ..."
+  heading, and a link to another file with the same anchor - and 5 controls
+  passed. Each part of the check was then removed or loosened in turn, and the
+  break it exists for either failed the check or, with that part gone, went
+  uncaught, 8 in all.
 
 ## Operational notes
 

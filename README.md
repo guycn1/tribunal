@@ -30,10 +30,11 @@ database stores:
 ### How a trial runs
 
 - Four representatives run concurrently — they don't depend on each other.
-  - Dispatch goes through a small worker pool, but because the agent endpoints
-    are Background Functions that return as soon as the work is accepted, a pool
-    slot frees at the trigger rather than at the end of the generation — so all
-    four are genuinely in flight at the same time.
+  - Dispatch goes through a small worker pool, but because the [agent
+    endpoints](#the-two-agent-endpoints) are [Background
+    Functions](#background-functions-and-polling) that return as soon as the
+    work is accepted, a pool slot frees at the trigger rather than at the end of
+    the generation — so all four are genuinely in flight at the same time.
   - That is measured from the call log's own timings rather than assumed: of the
     41 trials measured on 2026-09-21, 36 had all four in flight at once, and in
     the other 5 a fast call had finished before the last one began. It has been
@@ -114,11 +115,12 @@ updating as the chain escalates.
 
 ### Aborting a trial
 
-**Abort stops server-side work, not just the UI.** A Background Function can't
-be cancelled by the browser that started it, so the trial's abort is recorded in
-the database and each in-flight call checks for it before every attempt and as
-each attempt ends, and stops itself, rather than continuing to escalate through
-pricier models for a result nobody is waiting for.
+**Abort stops server-side work, not just the UI.** A [Background
+Function](#background-functions-and-polling) can't be cancelled by the browser
+that started it, so the trial's abort is recorded in the database and each
+in-flight call checks for it before every attempt and as each attempt ends, and
+stops itself, rather than continuing to escalate through pricier models for a
+result nobody is waiting for.
 
 A request already sent is left to finish: this app does not stream, and
 [OpenRouter's docs](https://openrouter.ai/docs/api/reference/streaming) say a
@@ -164,8 +166,9 @@ description. Everything this app's own code returns is JSON.
   open a past trial. `404` for an unknown id.
 - <code><b>POST</b> /api/trials/:id/representatives/:role</code>\
   [`representative-background.ts`](netlify/functions/representative-background.ts):
-  Runs one representative through the escalation chain and saves the argument,
-  unless the trial has been aborted meanwhile.
+  Runs one representative through [the escalation
+  chain](#the-escalation-chain) and saves the argument, unless the trial has
+  been aborted meanwhile.
 - <code><b>POST</b> /api/trials/:id/judges/:role</code>\
   [`judge-background.ts`](netlify/functions/judge-background.ts): Runs one judge
   on the case record plus whichever representative arguments were saved, and
@@ -180,8 +183,9 @@ description. Everything this app's own code returns is JSON.
 #### The two agent endpoints
 
 They behave differently from the rest. They are the only ones that spend
-OpenRouter quota, and the only Background Functions: Netlify answers the POST
-with `202` as soon as the call is accepted and runs the handler afterwards, so
+OpenRouter quota, and the only [Background
+Functions](#background-functions-and-polling): Netlify answers the POST with
+`202` as soon as the call is accepted and runs the handler afterwards, so
 nothing the handler returns ever reaches the browser, which learns the outcome
 by polling `GET /api/trials/:id`.
 
@@ -481,8 +485,8 @@ stub DOM — except
 [`tests/shared-constants.test.js`](tests/shared-constants.test.js) and
 [`tests/markdown.test.js`](tests/markdown.test.js), which read files as text:
 
-- [`tests/retry-logic.test.js`](tests/retry-logic.test.js) — the escalation
-  chain, driven against a mocked `fetch`.
+- [`tests/retry-logic.test.js`](tests/retry-logic.test.js) — [the escalation
+  chain](#the-escalation-chain), driven against a mocked `fetch`.
 - [`tests/trial-status.test.js`](tests/trial-status.test.js) — against an
   in-memory stand-in for Supabase, including the real agent and trial endpoints
   end to end:
@@ -515,7 +519,9 @@ stub DOM — except
   - It also holds every Markdown file but [`CLAUDE.md`](CLAUDE.md) to [HARD RULE
     4](CLAUDE.md#4-in-every-markdown-file-but-claudemd-a-reference-is-a-link):
     every link lands, and the first mention in each paragraph of a file, a
-    commit, [`npm test`](tests), a table or a route is linked to it.
+    commit, [`npm test`](tests), a table, a route, or the thing a section's
+    heading names ("[The escalation chain](#the-escalation-chain)") is linked
+    to it.
 - [`tests/markdown.test.js`](tests/markdown.test.js) — no Markdown file,
   [`CLAUDE.md`](CLAUDE.md) included, holds source GitHub is known to render
   wrongly: an HTML tag it would drop, a code span left open or holding an escape
@@ -566,15 +572,16 @@ independent rulings never combined) has been verified across many real
 end-to-end trials against real models, both locally and against the live
 deployed site.
 
-The reliability chain — tier escalation, degenerate-output detection, and
-recovery from truncated or transient failures — has been exercised repeatedly
-against the real OpenRouter API, including on the deployed site: one production
-trial caught a genuinely degenerate response, retried it on the same model, hit
-the token cap, escalated a tier, and finished cleanly, without anything being
-staged to provoke it. Six offline regression suites ([`npm test`](tests)) drive
-the real shipped source for the same paths.
+[The reliability chain](#the-escalation-chain) — tier escalation,
+degenerate-output detection, and recovery from truncated or transient
+failures — has been exercised repeatedly against the real OpenRouter API,
+including on the deployed site: one production trial caught a genuinely
+degenerate response, retried it on the same model, hit the token cap, escalated
+a tier, and finished cleanly, without anything being staged to provoke it. [Six
+offline regression suites](#the-test-suites) ([`npm test`](tests)) drive the
+real shipped source for the same paths.
 
-All three anti-abuse layers are in place:
+All three [anti-abuse layers](#anti-abuse-and-cost-controls) are in place:
 
 - the site-gate header is checked on every request that creates a trial or
   starts an agent call, and the site-wide call cap on every agent call — both

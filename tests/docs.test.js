@@ -1172,9 +1172,11 @@ function isCommit(hash) {
  * for the kinds of mention a script can recognise, that the first mention in
  * each paragraph is linked to the right place - a file or directory in the
  * repository, another Markdown file, a commit hash, `npm test`, a database
- * table outside its own README section, and an API route outside README's
- * endpoint list. Whether a prose mention of a commit is linked, or a link's
- * words describe its target, stays a reading job.
+ * table outside its own README section, an API route outside README's
+ * endpoint list, and the thing a README section's heading names ("The
+ * escalation chain") outside that section. Whether a prose mention of a
+ * commit is linked, or a link's words describe its target, stays a reading
+ * job.
  */
 function checkReferencesAreLinks() {
   console.log('\n=== Every Markdown file but CLAUDE.md: references are links (HARD RULE 4) ===');
@@ -1293,8 +1295,37 @@ function checkReferencesAreLinks() {
     check(`${doc}: the first \`npm test\` in each paragraph links to tests/`, unlinked.npmTest.length === 0, unlinked.npmTest.join(' | '));
     check(`${doc}: a database table named outside its own README section links there`, unlinked.tables.length === 0, unlinked.tables.join(' | '));
     check(`${doc}: an API route named outside README's endpoint list links to it`, unlinked.routes.length === 0, unlinked.routes.join(' | '));
+
+    // A README section whose heading names a thing ("The escalation chain")
+    // is that thing's home: outside the section, the first mention of it in
+    // each paragraph, with or without its article, links to the section.
+    const unlinkedSections = [];
+    for (const { heading, anchor, phrase } of NAMED_README_SECTIONS) {
+      const pattern = new RegExp(`\\b${phrase.split(' ').map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('\\s+')}\\b`, 'i');
+      for (const { text: unit, kind, headings } of units) {
+        if (kind === 'heading' || (doc === 'README.md' && headings.includes(heading))) continue;
+        const at = unit.search(pattern);
+        if (at < 0) continue;
+        const link = [...unit.matchAll(/\[((?:[^\]`]|`[^`]*`)*)\]\(([^)\s]*)\)/g)].find((m) => at > m.index && at < m.index + m[1].length + 1);
+        const to = link && landing(link[2]);
+        if (!to || to.file !== 'README.md' || to.anchor !== anchor) unlinkedSections.push(`"${unit.slice(at, at + phrase.length + 10).replace(/\s+/g, ' ')}"${link ? ` -> ${link[2]}` : ''}`);
+      }
+    }
+    check(`${doc}: a README section whose heading names a thing is linked where that thing is named`, unlinkedSections.length === 0, unlinkedSections.join(' | '));
   }
 }
+
+/**
+ * README's sections whose heading names a thing ("The escalation chain"):
+ * the heading line, its anchor, and the thing's name without its article.
+ */
+const NAMED_README_SECTIONS = (() => {
+  const anchors = [...headingAnchors(README)];
+  const units = markdownUnits(README).filter((u) => u.kind === 'heading');
+  return units.map((u, i) => ({ heading: u.text, anchor: anchors[i], m: u.text.match(/^#{2,6} The (.+)$/) }))
+    .filter((s) => s.m)
+    .map(({ heading, anchor, m }) => ({ heading, anchor, phrase: m[1].toLowerCase() }));
+})();
 
 main().then(
   () => {
