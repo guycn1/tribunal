@@ -4311,6 +4311,12 @@ main address (62 accepted, then `429`s), 30 more through the same route at
   `127.0.0.1` left nothing behind after 60 seconds, while the same request at
   `localhost` started its attempt within 5 seconds.
 
+**Merged to `main` (2026-10-06, on the user's explicit request), triggering a
+deploy: 2 commits, everything since `5d10bad`** - the main-address check
+(`b6a58b3`) and the commit that adds this entry. No database change. This entry
+was committed to `draft` ahead of the merge, so that right after it `main` and
+`draft` held identical trees.
+
 ## Operational notes
 
 ### Image and screenshot volume in long sessions
