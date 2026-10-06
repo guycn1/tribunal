@@ -4783,14 +4783,23 @@ and people and products.
 
 - Verbs are listed in neither. A verb can still be a reference: one that says
   what a commit did is a mention of that commit, and one describing today's
-  behaviour can link the commit that established it, where that commit is the
-  relevant destination.
+  behaviour can link what established it, the commit or the entry in this log
+  that records it, where that is the relevant destination.
+  - In README, "before that column existed", in the `api_call_logs` section,
+    now links `8b4f395`, the commit that added `duration_ms`.
 - Nor are settings and thresholds: a setting's description or a threshold's
   figure can link what established it, the commit or commits or the entry in
   this log that records it.
-- One such mention in README was linked the same day: "before that column
-  existed", in the `api_call_logs` section, to `8b4f395`, the commit that added
-  `duration_ms`.
+  - README's now link the entries that set them: the escalation chain's tiers
+    and the 12-minute polling window to "The 4-tier escalation chain", the
+    run-on detector to the 2026-09-01 entry, the repetition rules to "A
+    widened repeated-sentence detector", "Capped replies, clause-level rules,
+    and the detectors measured" and the 2026-09-28 entry, the 10-second
+    fast-failure line to the 2026-09-20 follow-up, the prompt-scaled timeouts
+    to the 2026-09-20 timeout fix, the 1,400-token cap to "Per-attempt
+    logging, timeouts, truncation, and the merge", the rate limit of 60 to
+    the 2026-10-04 entry, and the 40-minute "interrupted" line to the
+    frontend polish backlog of 2026-09-02.
 
 ## Operational notes
 

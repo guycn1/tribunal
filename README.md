@@ -192,19 +192,23 @@ as it begins](#agent_progress). The trial went on to finish 7 of 7.*
 
 **[A 4-tier model escalation chain](netlify/functions/lib/openrouter.ts)**
 guards against unusable output:
-`default model (2 attempts) → claude-haiku-4.5 (2 attempts) → a third model (2 attempts) → a last-resort model (1 attempt)`,
+[`default model (2 attempts) → claude-haiku-4.5 (2 attempts) → a third model (2 attempts) → a last-resort model (1 attempt)`](CLAUDE.md#the-4-tier-escalation-chain),
 escalating once a tier has used up its attempts. The escalation signals are:
 
 - `finish_reason === 'length'` (hit the token cap);
-- two independent degeneration heuristics (a long punctuation-less run-on, and
-  repetition, verbatim or near-verbatim: the same whole sentence twice in a row,
-  a sentence of 18+ words twice, any sentence 3+ times, a passage of 3+
-  sentences repeated word for word, the same clause twice in a row, a clause of
-  6+ words 3 times close together, 2+ consecutive sentences found again almost
-  word for word (80%+ alike, 10+ words), or a sentence in the last 10% that is
-  60%+ like one of the 4 before it (8+ words each) — a clause being any stretch
-  between commas, semicolons, colons or sentence ends, and two sentences'
-  likeness the share of words that need no change to turn one into the other);
+- two independent degeneration heuristics ([a long punctuation-less
+  run-on](CLAUDE.md#2026-09-01-to-2026-09-03-degeneration-detection-and-the-live-model-line),
+  and repetition, verbatim or near-verbatim: [the same whole sentence twice in a
+  row](CLAUDE.md#a-widened-repeated-sentence-detector), [a sentence of 18+ words
+  twice](CLAUDE.md#capped-replies-clause-level-rules-and-the-detectors-measured),
+  any sentence 3+ times, a passage of 3+ sentences repeated word for word, the
+  same clause twice in a row, a clause of 6+ words 3 times close together, [2+
+  consecutive sentences found again almost word for word (80%+ alike, 10+
+  words)](CLAUDE.md#2026-09-28-near-verbatim-loops-and-the-prosecution-seats),
+  or a sentence in the last 10% that is 60%+ like one of the 4 before it (8+
+  words each) — a clause being any stretch between commas, semicolons, colons or
+  sentence ends, and two sentences' likeness the share of words that need no
+  change to turn one into the other);
 - a plain HTTP failure such as a removed model id (which skips the tier's
   remaining attempts, since re-asking a model that just 404'd is pointless);
 - and transient failures (a timeout or network error, a 408, a 429, a 5xx, a 200
@@ -223,16 +227,20 @@ Three failures end the call at once instead, since no retry can fix them:
 Transient failures are split by **how long they took**, because the right
 response differs:
 
-- a call that bounces back in under 10 seconds (a burst rate limit, say) gets a
-  bounded number of same-model retries that don't count against the tier's
-  attempt budget — escalating to a costlier model within seconds of a rate limit
-  that clears on its own would be exactly the wrong move;
-- while one that takes 10 seconds or longer (a timeout that ran its whole
-  ceiling, say) counts as a real failure of that tier, spending one of its
-  attempts.
+- a call that bounces back in [under 10
+  seconds](CLAUDE.md#follow-up-the-same-day-the-escalation-fix-over-corrected-caught-by-the-user-in-real-use)
+  (a burst rate limit, say) gets a bounded number of same-model retries that
+  don't count against the tier's attempt budget — escalating to a costlier model
+  within seconds of a rate limit that clears on its own would be exactly the
+  wrong move;
+- while one that takes [10 seconds or
+  longer](CLAUDE.md#follow-up-the-same-day-the-escalation-fix-over-corrected-caught-by-the-user-in-real-use)
+  (a timeout that ran its whole ceiling, say) counts as a real failure of that
+  tier, spending one of its attempts.
 
-Per-attempt timeouts scale with both prompt size and the token cap, so a judge's
-much larger prompt gets a larger ceiling.
+[Per-attempt timeouts scale with both prompt size and the token
+cap](CLAUDE.md#2-the-per-attempt-timeout-ignored-prompt-size-entirely), so a
+judge's much larger prompt gets a larger ceiling.
 
 Every tier in the chain is a paid model; none of them runs on a free tier. Tier
 2 is significantly pricier than the default tier, which is why the chain is
@@ -356,7 +364,7 @@ Because of the `202`, a rejection at any of those steps never reaches the
 browser: the site-gate and call-cap rejections are written to Netlify's function
 logs, the others are not logged at all, and in the browser that role never
 resolves — its card says so once [polling](#background-functions-and-polling)
-gives up, after about 12 minutes.
+gives up, [after about 12 minutes](CLAUDE.md#the-4-tier-escalation-chain).
 
 The last check turns away only requests the page never sends, since it triggers
 each role once per trial: a second call for a role, which would save over a
@@ -365,11 +373,12 @@ discarded attempts logged has no outcome yet, so it is not turned away.
 
 [Netlify's per-IP rate
 limit](https://docs.netlify.com/manage/security/secure-access-to-sites/rate-limiting/#set-limits-for-redirects)
-(60 requests per 3 minutes from one IP, counted across the two routes together,
-set on their redirects in [`netlify.toml`](netlify.toml)) is enforced by the
-platform ahead of the handler, so a rejection there reaches the browser
-directly, as a `429`. It is a backstop far above normal use, since a full trial
-sends 7 requests.
+([60 requests per 3
+minutes](CLAUDE.md#2026-10-04-inclusive-and-comparative-claims-and-the-rate-limit-raised)
+from one IP, counted across the two routes together, set on their redirects in
+[`netlify.toml`](netlify.toml)) is enforced by the platform ahead of the
+handler, so a rejection there reaches the browser directly, as a `429`. It is a
+backstop far above normal use, since a full trial sends 7 requests.
 
 Netlify also [serves each function at its own
 address](https://docs.netlify.com/build/functions/configuration/#routing), under
@@ -548,9 +557,11 @@ row](screenshots/readme-3-call-log.png)
 
 *The same trial's ten attempts. [Jon Snow](SPEC.md#representatives)'s first
 reply repeated a 26-word sentence and was retried on the same model; Grey Worm's
-hit the 1,400-token cap, then closed on a near-copy of an earlier sentence, and
-was escalated to `claude-haiku-4.5`, whose one call cost 0.41¢ of the trial's
-0.56¢. The totals count every attempt, discarded ones included.*
+hit [the 1,400-token
+cap](CLAUDE.md#per-attempt-logging-timeouts-truncation-and-the-merge), then
+closed on a near-copy of an earlier sentence, and was escalated to
+`claude-haiku-4.5`, whose one call cost 0.41¢ of the trial's 0.56¢. The totals
+count every attempt, discarded ones included.*
 
 | Badge | Colour | What triggered it |
 | --- | --- | --- |
@@ -558,13 +569,13 @@ was escalated to `claude-haiku-4.5`, whose one call cost 0.41¢ of the trial's
 | `failed` | red | The row that ended the call (the agent's card reads "call failed") — [every tier](#the-escalation-chain) or the time budget used up, a failure no retry can fix ([not enough credit for the request](https://openrouter.ai/docs/api_reference/limits#handling-402-errors), a rate limit that outlasts the time budget, or no OpenRouter key on the server, the one case with no attempt behind the row), or a judge reply with no `VERDICT` line and reasoning after it. |
 | <code>abort&nbsp;requested</code> | grey | The row [the abort endpoint](#api-endpoints) writes, the moment [Abort](#aborting-a-trial) is clicked, for each role still pending. It records the request to stop, not a model call: the model reads `n/a`, with no tokens or duration, and it does not count against [the site-wide call cap](#anti-abuse-and-cost-controls). Dimmed, like a discarded attempt. The running calls look for it and stop; the role's own `aborted` row, if its call was still running, follows. |
 | `truncated` | amber | `finish_reason === 'length'` on a reply with text — the model was still writing when it hit [that tier](#the-escalation-chain)'s token cap. Retried or escalated; the caption says which. |
-| `degenerated` | amber | [A detector](#the-escalation-chain) fired on a reply that did *not* hit the token cap: a 40+ word run with no punctuation, or repetition, verbatim or near-verbatim (the same whole sentence twice in a row, a sentence of 18+ words twice, any sentence 3+ times, a passage of 3+ sentences repeated word for word, the same clause twice in a row, a clause of 6+ words 3 times close together, 2+ consecutive sentences found again almost word for word (80%+ alike, 10+ words), or a sentence in the last 10% that is 60%+ like one of the 4 before it (8+ words each)). Retried or escalated; the caption says which. |
+| `degenerated` | amber | [A detector](#the-escalation-chain) fired on a reply that did *not* hit the token cap: [a 40+ word run with no punctuation](CLAUDE.md#2026-09-01-to-2026-09-03-degeneration-detection-and-the-live-model-line), or repetition, verbatim or near-verbatim ([the same whole sentence twice in a row](CLAUDE.md#a-widened-repeated-sentence-detector), [a sentence of 18+ words twice](CLAUDE.md#capped-replies-clause-level-rules-and-the-detectors-measured), any sentence 3+ times, a passage of 3+ sentences repeated word for word, the same clause twice in a row, a clause of 6+ words 3 times close together, [2+ consecutive sentences found again almost word for word (80%+ alike, 10+ words)](CLAUDE.md#2026-09-28-near-verbatim-loops-and-the-prosecution-seats), or a sentence in the last 10% that is 60%+ like one of the 4 before it (8+ words each)). Retried or escalated; the caption says which. |
 | `truncated` | red | The same cap hit, with nothing left to fall back to: on [the final tier](#the-escalation-chain), or with no time budget left for another. Nothing was saved. |
 | `degenerated` | red | [The same detector](#the-escalation-chain) hit, with nothing left to fall back to. Nothing was saved. |
 | `escalated` | amber | A plain HTTP failure from [that tier](#the-escalation-chain)'s own model (e.g. a removed model id returning 404). Skips the tier's remaining attempts, since re-asking a model that just 404'd is pointless. On the last tier there is nowhere to escalate, so the same failure ends the call and shows as `failed`. |
-| <code>no&nbsp;response</code> | amber | [A transient failure](#the-escalation-chain) — a timeout or network error, [HTTP 408 or 429](https://openrouter.ai/docs/api_reference/errors-and-debugging#error-codes), a 5xx, a 200 carrying no text (including a reasoning model that spent its whole token cap reasoning), or [a reply an upstream error cut short](https://openrouter.ai/docs/api_reference/errors-and-debugging#skin-specific-error-formats) (`finish_reason` `error`), which is never kept. Retried on the same model, or escalated once the tier's attempts are used up; the caption says which. Coming back in under 10 seconds *can* make the retry free — not counted against the tier's attempts — but only for the first few at each tier, and only with enough time budget left to try again; past that a fast failure costs an attempt like any other. |
+| <code>no&nbsp;response</code> | amber | [A transient failure](#the-escalation-chain) — a timeout or network error, [HTTP 408 or 429](https://openrouter.ai/docs/api_reference/errors-and-debugging#error-codes), a 5xx, a 200 carrying no text (including a reasoning model that spent its whole token cap reasoning), or [a reply an upstream error cut short](https://openrouter.ai/docs/api_reference/errors-and-debugging#skin-specific-error-formats) (`finish_reason` `error`), which is never kept. Retried on the same model, or escalated once the tier's attempts are used up; the caption says which. Coming back in [under 10 seconds](CLAUDE.md#follow-up-the-same-day-the-escalation-fix-over-corrected-caught-by-the-user-in-real-use) *can* make the retry free — not counted against the tier's attempts — but only for the first few at each tier, and only with enough time budget left to try again; past that a fast failure costs an attempt like any other. |
 | `aborted` | amber | The call's last row when the trial was aborted while it was running server-side, in one of three ways: it stopped before starting an attempt (no tokens, no duration); an attempt that failed as [the abort](#aborting-a-trial) landed is not retried; or a reply that finished after the abort is not saved. The last two keep that attempt's real tokens, cost and reply, since it ran and was paid for. |
-| `truncated` | amber | Legacy only: a second badge shown *next to* a green `success` on a row logged before [truncation became a real failure, on 2026-08-29](https://github.com/guycn1/tribunal/commit/298d2fab14a71f3be6a13c5235e7150edcb7eacf), whose completion is a whole multiple of the 1,400-token cap. New trials never produce it. |
+| `truncated` | amber | Legacy only: a second badge shown *next to* a green `success` on a row logged before [truncation became a real failure, on 2026-08-29](https://github.com/guycn1/tribunal/commit/298d2fab14a71f3be6a13c5235e7150edcb7eacf), whose completion is a whole multiple of [the 1,400-token cap](CLAUDE.md#per-attempt-logging-timeouts-truncation-and-the-merge). New trials never produce it. |
 
 The two labels record how an attempt ended, not what the text was like:
 
@@ -579,8 +590,10 @@ In practice a truncated reply is usually degenerate too — a repetition loop th
 ran until the cap stopped it. [Measured on
 2026-09-27](CLAUDE.md#capped-replies-clause-level-rules-and-the-detectors-measured),
 every capped reply from the default model whose text was stored was a loop, and
-every tier-1 reply kept as sound had finished well short of the 1,400 tokens the
-default model is given; a loop that stops on its own [can come much
+every tier-1 reply kept as sound had finished well short of [the 1,400 tokens
+the default model is
+given](CLAUDE.md#per-attempt-logging-timeouts-truncation-and-the-merge); a loop
+that stops on its own [can come much
 closer](CLAUDE.md#2026-10-03-absolute-and-conditional-claims-checked).
 
 ### Run history sidebar
@@ -593,8 +606,8 @@ One badge per trial, summarising the whole run.
 | <code>completed&nbsp;— missing&nbsp;N&nbsp;of&nbsp;7</code> | amber | Finished, but fewer than 7 results were saved: some agent's call failed for good ([every tier](#the-escalation-chain) or the time budget used up, a failure no retry can fix, or a judge reply with no `VERDICT` line and reasoning after it), or a representative's call never ran (its trigger request rejected or never sent, or the call turned away by [the site gate](#anti-abuse-and-cost-controls) or the call cap). |
 | `aborted` | grey | Stopped by the user before the trial reached completion. |
 | <code>aborted (N&nbsp;of&nbsp;7&nbsp;completed)</code> | grey | Stopped by the user, but the trial had already been marked complete — the count says how much survived. |
-| <code>in&nbsp;progress…</code> | slate | Not finished, not aborted, and under 40 minutes old — presumably still running. |
-| `interrupted` | red | Not finished, not aborted, and over 40 minutes old, so it is treated as never going to finish — a dev-server restart mid-run, say, the page closed before [the judges](SPEC.md#judges) were started (the browser starts each phase), or a judge whose call never ran (its trigger request rejected, or the call turned away by [the site gate](#anti-abuse-and-cost-controls) or the call cap), since a trial is finished once every judge has an outcome logged. The threshold is sized well above the genuine worst case: the page waiting on the representatives for as long as it polls, then every judge running out its full time budget. |
+| <code>in&nbsp;progress…</code> | slate | Not finished, not aborted, and [under 40 minutes old](CLAUDE.md#frontend-polish-backlog-flagged-2026-09-02-all-7-items-done-as-of-2026-09-03) — presumably still running. |
+| `interrupted` | red | Not finished, not aborted, and [over 40 minutes old](CLAUDE.md#frontend-polish-backlog-flagged-2026-09-02-all-7-items-done-as-of-2026-09-03), so it is treated as never going to finish — a dev-server restart mid-run, say, the page closed before [the judges](SPEC.md#judges) were started (the browser starts each phase), or a judge whose call never ran (its trigger request rejected, or the call turned away by [the site gate](#anti-abuse-and-cost-controls) or the call cap), since a trial is finished once every judge has an outcome logged. The threshold is sized well above the genuine worst case: the page waiting on the representatives for as long as it polls, then every judge running out its full time budget. |
 
 "Missing N" counts results that were actually saved, **not** whether any
 individual attempt failed along the way.
@@ -851,7 +864,8 @@ All three [anti-abuse layers](#anti-abuse-and-cost-controls) are in place:
   address](https://tribunal-t001.netlify.app); both were [verified on the live
   site on
   2026-10-06](CLAUDE.md#2026-10-06-the-agent-functions-accept-requests-only-through-their-routes),
-  at the limit of 60.
+  at [the limit of
+  60](CLAUDE.md#2026-10-04-inclusive-and-comparative-claims-and-the-rate-limit-raised).
 
 The frontend (layout, live status display, [call log](#call-log) transparency, a
 responsive card view for narrow screens, [cross-browser scrollbar and
