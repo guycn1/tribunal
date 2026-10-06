@@ -4588,8 +4588,8 @@ history.
   1300-pixel capture; a viewport as tall as the page, so the sidebar, one
   viewport tall, runs its full height; and, injected from the Console for the
   capture only, the page's scrollbar hidden and each card's text area cut to
-  eight whole lines (`calc(0.9rem * 1.5 * 8)`), since 170px sliced the eighth
-  line through its letters.
+  eight whole lines (`calc(0.9rem * 1.5 * 8)`, 155.5px at the 14.4px root),
+  since 170px, 8.74 lines, sliced the ninth line through its letters.
 - Before it, the five trials still `interrupted` from that day's route and
   address probes were deleted from the database on the user's request, with
   their 14 dependent rows; a backup of every deleted row was kept in that
@@ -4638,6 +4638,21 @@ exit code.
   caught offline; README cut into 7 pieces rendered through GitHub as
   written; and a dropped `<date>` tag in CLAUDE.md's first piece and in its
   last were each caught, labelled with the piece.
+
+**A card's text area is now a whole number of lines tall (same day, found by
+the user in a close-up of the judges' cards taken for README).** The area
+was capped at 340px, and card text is 12.96px at a line height of 1.5 - the
+root is 90%, 14.4px by default - so a line is 19.44px and 340px is 17.49
+lines: the box cut the 18th line about halfway down its letters, a row of
+letter tops under the fade, plain in a close-up at reading size.
+
+- `.card-body-scroll` is now capped at `18lh`, the element's own line height
+  times 18 (349.6px by default, measured in headless Edge as 18.00 lines),
+  with 340px kept before it for a browser without `lh`. 18 is the whole
+  number nearest 340px that shows no less text.
+- `tests/shared-constants.test.js` checks that the cap set last is a whole
+  number of `lh`. Caught: the cap back in pixels, 17.5lh, 0lh, and the
+  fallback set after the `lh` value; 17lh passed.
 
 ## Operational notes
 

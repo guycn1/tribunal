@@ -684,9 +684,17 @@ body {
    wildly inconsistent across a grid otherwise, forcing a lot of scrolling
    just to reach the call log below. A capped height with its own scrollbar
    keeps every card a predictable size while still showing a real, readable
-   chunk of text before scrolling is needed. */
+   chunk of text before scrolling is needed.
+   The cap is a whole number of lines (lh is the element's own line height:
+   0.9rem at 1.5, 19.44px at the default root size), so the box ends between
+   two lines. A cap in pixels that is not a multiple of the line height, such
+   as 340px (17.49 lines), cuts the last visible line through its letters,
+   which shows under the fade as a row of letter tops. 18 lines is the whole
+   number nearest 340px that shows no less text. A browser without lh keeps
+   the 340px. */
 .card-body-scroll {
   max-height: 340px;
+  max-height: 18lh;
   overflow-y: auto;
   padding-right: 4px;
 }

@@ -626,8 +626,9 @@ stub DOM — except
   that a card's bottom fade stops at its scrollbar, and that creating a trial,
   starting each agent and aborting all carry the site-gate header.
 - [`tests/shared-constants.test.js`](tests/shared-constants.test.js) — values
-  that are deliberately duplicated across files still agree, and the page's
-  polling and "interrupted" timeouts stay above the server's time budget. The
+  that are deliberately duplicated across files still agree, the page's polling
+  and "interrupted" timeouts stay above the server's time budget, and a card's
+  text area is a whole number of lines tall, so no line is cut in half. The
   duplicated values: the markers, the fixed messages and the phrase that marks a
   truncation, the roles with their names and seats, the scrollbar's resting
   opacity, the spinner's durations, the class that dims a call-log row, the

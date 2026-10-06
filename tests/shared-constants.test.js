@@ -1,6 +1,7 @@
 /**
  * @file Asserts that values deliberately duplicated across files still agree,
- * and that the page's timeouts outlast the server's time budget.
+ * that the page's timeouts outlast the server's time budget, and that a
+ * card's text area ends between two lines.
  *
  * Run with `npm test`. No framework, no network, no build: every check
  * reads the real source files as text and compares what it finds.
@@ -344,6 +345,18 @@ check(
   Boolean(fadeVar) && new RegExp(`\\.card-body-scroll-wrap::after\\s*\\{[^}]*\\bright:\\s*var\\(${fadeVar}\\s*[,)]`).test(css),
   `app.js sets '${fadeVar}', but no '.card-body-scroll-wrap::after { right: var(${fadeVar}...) }' was found in styles.css`
 );
+
+// --- 11. A card's text area ends between two lines ----------------------
+console.log("\n=== A card's text area is a whole number of lines tall ===");
+
+// A cap in pixels that is not a multiple of the line height cuts the last
+// visible line through its letters, a row of letter tops under the fade; in
+// lh, the element's own line height, it ends between two lines whatever the
+// font size. The px value before it is the fallback for a browser without lh.
+const cardScroll = (css.match(/\.card-body-scroll\s*\{([^}]*)\}/) || [])[1] || '';
+const caps = [...cardScroll.matchAll(/max-height:\s*([^;]+);/g)].map((m) => m[1].trim());
+check('the card text area has a height cap', caps.length > 0, cardScroll.trim().slice(0, 80));
+check('its cap is a whole number of lines (lh), set last', caps.length > 0 && /^[1-9]\d*lh$/.test(caps[caps.length - 1]), caps.join(', '));
 
 console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} check(s) failed.`);
 process.exit(failures === 0 ? 0 : 1);
