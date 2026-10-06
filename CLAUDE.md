@@ -3891,7 +3891,7 @@ descriptions, and left free they wrapped at every space, `aborted (N` / `of 7` /
   it starts with, and any dash - and fails on any other; 14 targeted breaks were
   each caught by the checks meant for them.
 
-### 2026-10-06: this file's layout, and HARD RULES 4 and 5
+### 2026-10-06: this file's and README's layout, and HARD RULES 4 and 5
 
 **This file restructured (2026-10-06, on the user's request, after the layout of
 another project's CLAUDE.md).** Before, many of its lines ran to thousands of
@@ -3979,6 +3979,38 @@ seen to do.
   names README gives, and the three script descriptions - fails under a targeted
   break, and every kind of defect the render check reports was proven again on
   the committed script.
+
+**README spaced out and wrapped at 80 characters (2026-10-06, on the user's
+request, in the manner of this file).** It had 244 lines, 114 of them over 80
+characters and the longest 1,688, with 17 headings.
+
+- It now has 25: Architecture is split under "How a trial runs", "Background
+  Functions and polling", "The escalation chain", "Aborting a trial" and
+  "Anti-abuse and cost controls", and Local development under "The test
+  suites", "Checking the rendered page" and "Local costs".
+- Long sentences listing several things - the escalation signals, the fast and
+  slow transient failures, the call-log rows with no attempt, the labels, the
+  suites' coverage - are now bullets, and the agent-endpoint text in the API
+  section is six paragraphs rather than one.
+- Prose is wrapped at 80 characters. Lines still longer are the 16 table rows
+  and 22 code-block lines (the layout tree and the setup block), which cannot
+  wrap without changing what they show, and three lines that are one
+  unbreakable span each: a commit URL, a code span and a link.
+- Rendered through GitHub's markdown API before and after, the text is the same
+  apart from the headings added and sentences split for the bullets, and the
+  wrapped and unwrapped files render identically.
+- `tests/docs.test.js` reads README through `unwrap()`, which joins wrapped lines
+  back into one, so a stated sentence is checked wherever the wrap broke it, and
+  reads the agent-endpoint text as one block from its bold lead to the end of
+  its section. Two new checks run `unwrap()` on a sample with each kind of line
+  it must keep apart.
+- Proven both ways, every file restored byte for byte: 15 targeted README
+  breaks - among them each of the seven checked phrases the wrap split across
+  two lines, the agent text's later paragraphs, and a route line's hard break -
+  were each caught by the checks meant for them; and 13 breaks to the test
+  itself (README read without `unwrap()`, `unwrap()` joining nothing, each of
+  its nine guards removed, the agent block cut to its first paragraph or left
+  unflattened) each fail checks, both new ones included.
 
 ## Operational notes
 

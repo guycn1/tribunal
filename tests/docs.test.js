@@ -53,7 +53,31 @@ function check(name, condition, detail) {
  */
 const read = (...parts) => fs.readFileSync(path.join(ROOT, ...parts), 'utf8').replace(/\r\n/g, '\n');
 
-const README = read('README.md');
+/**
+ * A Markdown file with each paragraph's and list item's wrapped lines joined
+ * back into one line, the inverse of wrapping it at 80 columns: headings,
+ * table rows, list-item starts, fenced code and blank lines stay as they are,
+ * and a line after a hard break (one ending in a backslash) is not joined to
+ * it. README is wrapped for its Code view; the checks below read the
+ * sentences it states whole, wherever the wrapping broke them.
+ * @param {string} doc
+ * @returns {string}
+ */
+function unwrap(doc) {
+  const out = [];
+  let fence = false;
+  const blockStart = (line) => !line.trim() || /^#{1,6}\s/.test(line) || /^\s*\|/.test(line) || /^\s*([-*+]|\d+[.)])\s/.test(line);
+  for (const line of doc.split('\n')) {
+    if (/^\s*(```|~~~)/.test(line)) { fence = !fence; out.push(line); continue; }
+    const prev = out[out.length - 1];
+    if (!fence && !blockStart(line) && prev !== undefined && prev.trim() && !/^#{1,6}\s/.test(prev) && !/^\s*\|/.test(prev) && !/^\s*(```|~~~)/.test(prev) && !/\\$/.test(prev)) {
+      out[out.length - 1] = `${prev} ${line.trim()}`;
+    } else out.push(line);
+  }
+  return out.join('\n');
+}
+
+const README = unwrap(read('README.md'));
 const SPEC = read('SPEC.md');
 const CLAUDE = read('CLAUDE.md');
 const SCHEMA = read('supabase', 'schema.sql');
@@ -197,6 +221,26 @@ async function main() {
   const backend = compileBackend(['lib/openrouter.ts', 'lib/representatives.ts', 'lib/judges.ts', 'lib/pricing.ts', 'trials.ts', 'trial.ts', 'case.ts', 'abort.ts', 'representative-background.ts', 'judge-background.ts']);
   useFakeSupabase(backend.outDir);
 
+  // ====================================================== README: unwrapping
+  // Every check below reads README through unwrap(), so it is checked first,
+  // on a sample with each kind of line it must keep apart, set directly
+  // after a wrapped paragraph line.
+  console.log('\n=== README: wrapped lines are joined, and nothing else ===');
+  const wrapped = [
+    'A paragraph', 'wrapped here.', '# Heading', 'after a heading', '| a | b |',
+    'after a table row', '```', 'inside', 'a fence', '```', 'after a fence',
+    '- an item', '  wrapped', '- another', '', 'route\\', 'after a hard break', '',
+    'after a blank line',
+  ].join('\n');
+  const joined = [
+    'A paragraph wrapped here.', '# Heading', 'after a heading', '| a | b |',
+    'after a table row', '```', 'inside', 'a fence', '```', 'after a fence',
+    '- an item wrapped', '- another', '', 'route\\', 'after a hard break', '',
+    'after a blank line',
+  ].join('\n');
+  check('unwrap() joins wrapped lines and keeps every other line apart', unwrap(wrapped) === joined, JSON.stringify(unwrap(wrapped)));
+  check('unwrap() leaves an unwrapped file as it is', unwrap(joined) === joined, JSON.stringify(unwrap(joined)));
+
   // ======================================================== README: layout
   console.log('\n=== README: the project layout lists every file, and only real ones ===');
   const layout = section(README, '## Project layout');
@@ -316,7 +360,10 @@ async function main() {
     check(`the tree's note on ${fn}.ts is its route: "${expected}"`, expected.length > 0 && fnTree.comment === expected, fnTree.comment);
   }
 
-  const agentPara = (api.match(/^\*\*The (\w+) agent endpoints[^\n]*$/m) || [''])[0];
+  // The agent endpoints' account runs from its bold lead to the end of the
+  // section, over several paragraphs; it is read as one run of text.
+  const agentStart = api.search(/^\*\*The \w+ agent endpoints/m);
+  const agentPara = agentStart < 0 ? '' : api.slice(agentStart).replace(/\s*\n\s*/g, ' ');
   check('the agent-endpoint paragraph is there', agentPara.length > 0);
   const topLevel = FUNCTION_SOURCES.filter(([f]) => !f.includes('/lib/'));
   // A function written with a named `handler` export is a Background
