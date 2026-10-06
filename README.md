@@ -235,6 +235,16 @@ non-streamed request is billed in full even if it is cancelled (as read on
 [`aborted`](#call-log) — a failed one is not retried, and a finished reply is
 not saved.
 
+![An aborted trial: the four representatives' cards marked aborted, and its
+call log of four abort-requested rows and four aborted attempts with their
+tokens and costs](screenshots/readme-4-aborted-trial.png)
+
+*Abort was clicked about four seconds in, while all four representatives' first
+attempts were generating. The four grey rows record the request to stop. Each
+attempt then ran to its end and is logged with its real tokens and cost - two
+repeated a sentence, two hit the token cap - and none was retried or saved. No
+judge ever started.*
+
 ### Anti-abuse and cost controls
 
 **Anti-abuse / cost controls**, layered since the deployed site runs on a paid
@@ -572,7 +582,8 @@ Every file tracked in the repository. Not tracked, and git-ignored:
 ├── screenshots/                      the images in this README, captured from the running app
 │   ├── readme-1-hero-split-rulings.png
 │   ├── readme-2-judges.png
-│   └── readme-3-call-log.png
+│   ├── readme-3-call-log.png
+│   └── readme-4-aborted-trial.png
 ├── tests/                            npm test — no network, spends no quota
 │   ├── retry-logic.test.js           the escalation chain, from the real TypeScript
 │   ├── trial-status.test.js          when a trial is completed; aborts; calls the page never sends; the call cap and the failure flag; replies kept for audit, off the page

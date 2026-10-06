@@ -4674,6 +4674,19 @@ two decimals of a cent) and the totals (27,210 tokens, 0.56¢ of a stored
 reasons against their stored error messages. The status captions wrap with
 "model)" on a line of its own; that is the app at its widest layout.
 
+**README's fourth screenshot: an aborted trial (same day).**
+`screenshots/readme-4-aborted-trial.png`, taken by the user, shows trial
+`298f38b4` (2026-09-27) at the end of README's "Aborting a trial": four
+`aborted` cards, the four `abort requested` rows written about 4.5 seconds
+in, and the four first attempts that were already generating, each run to its
+end, logged with its real tokens and cost and not retried or saved - two
+repeated a sentence, two hit the token cap. The trial ran at 19:57 UTC, after
+that day's abort fixes (`82f7c97`, `a3fe0d8`, `e464938`), so its rows are what
+the app writes today; every figure was checked against them (8,054 tokens,
+0.05¢ of a stored 0.0521¢, 81,869 ms). The user had earlier deleted two other
+aborted trials from 2026-09-27, `4c2177d2` and `062b10b6`, among others, so
+that the hero's run history did not show three aborted trials in a row.
+
 ## Operational notes
 
 ### Image and screenshot volume in long sessions
