@@ -4313,9 +4313,29 @@ main address (62 accepted, then `429`s), 30 more through the same route at
 
 **Merged to `main` (2026-10-06, on the user's explicit request), triggering a
 deploy: 2 commits, everything since `5d10bad`** - the main-address check
-(`b6a58b3`) and the commit that adds this entry. No database change. This entry
-was committed to `draft` ahead of the merge, so that right after it `main` and
-`draft` held identical trees.
+(`b6a58b3`) and the commit that adds this entry. No database change. Merge
+commit `45fde59`. This entry was committed to `draft` ahead of the merge, so
+that right after it `main` and `draft` held identical trees.
+
+**Confirmed live the same day**, from 03:56 UTC, three minutes after the push:
+
+- gated requests for a real trial through both agent routes at
+  `main--tribunal-t001.netlify.app` left no call-log row and no attempt after
+  60 seconds, while the same representative request through its route at the
+  main address started its attempt within 5 seconds - which also shows the
+  live site gives a request at the main address the `Host` the check expects;
+- gated requests sent straight to both agent functions' own addresses still
+  left nothing behind after 60 seconds;
+- a full 7-agent trial (`fe4a2137`) completed in 100 seconds, 7 of 7: two fast
+  `429`s on `grey_worm` were retried on the same model without spending an
+  attempt, two near-copy closings were caught and retried on the same model,
+  and `shamgar` escalated to `anthropic/claude-haiku-4.5` after two
+  repeated-sentence catches and finished cleanly; 13 calls, $0.0102.
+
+README and the representatives handler's comment give these results, and
+reached `main` in a further merge the same day that changes only
+documentation and comments, whose message carries Netlify's `[skip netlify]`
+marker.
 
 ## Operational notes
 

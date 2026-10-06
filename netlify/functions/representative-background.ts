@@ -36,11 +36,12 @@ const rawHandler: Handler = async (event) => {
   // separately on each. So the first check refuses any request that did not
   // come through the route on the site's main address, before anything else
   // is read or written: every request this handler acts on has passed the
-  // one count. Not logged, like the method and
-  // role checks below - refusing costs nothing. On the live site on
-  // 2026-10-06, gated requests for a real trial sent to this address and to
-  // judge-background's left nothing behind, while the same request through
-  // the route started its attempt within 5 seconds.
+  // one count. Not logged, like the method and role checks below - refusing
+  // costs nothing. On the live site on 2026-10-06, gated requests for a real
+  // trial sent to this function's own address and to judge-background's, or
+  // through both routes to main--tribunal-t001.netlify.app, left nothing
+  // behind, while the same request through the route on the main address
+  // started its attempt within 5 seconds.
   if (!cameThroughApiRoute(event) || !sentToMainAddress(event)) {
     return json(403, { error: "Only accepted through /api/trials/:id/representatives/:role on the site's main address" });
   }
