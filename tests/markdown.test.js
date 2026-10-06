@@ -239,5 +239,30 @@ for (const file of markdownFiles()) {
   check(`${file}: no image at a data: or javascript: address, which GitHub strips`, !found.imageSrc.length, found.imageSrc.join(' | '));
 }
 
+// The render check sends a file too large for GitHub's API in pieces, each
+// cut just before a level-2 or level-3 heading outside a code block. Cut
+// small here, so every file is cut wherever it can be: the pieces must join
+// back into the file, and each piece after the first must start with such a
+// heading, or a piece would render differently from the same text inside the
+// whole file.
+const { pieces } = require('../scripts/check-render');
+console.log("\n=== The render check's pieces of a large file ===");
+// A heading-shaped line inside a code block is code, not a place to cut.
+const fencedSample = ['# Title', 'intro', '', '```text', '## not a heading', '```', 'after', '', '## Real', 'body'].join('\n');
+check('a "## " line inside a code block is not cut before', JSON.stringify(pieces(fencedSample, 1)) === JSON.stringify(['# Title\nintro\n\n```text\n## not a heading\n```\nafter\n', '## Real\nbody']), JSON.stringify(pieces(fencedSample, 1)));
+for (const file of markdownFiles()) {
+  const text = fs.readFileSync(path.join(ROOT, file), 'utf8').replace(/\r\n/g, '\n');
+  const cut = pieces(text, 2000);
+  let fence = false;
+  const headingsOutsideCode = new Set();
+  text.split('\n').forEach((line) => {
+    if (/^\s*(```|~~~)/.test(line)) fence = !fence;
+    else if (!fence && /^#{2,3} /.test(line)) headingsOutsideCode.add(line);
+  });
+  check(`${file}: cut into pieces, it joins back into the file`, cut.length > 1 && cut.join('\n') === text, `${cut.length} piece(s)`);
+  const badStarts = cut.slice(1).map((p) => p.split('\n')[0]).filter((first) => !headingsOutsideCode.has(first));
+  check(`${file}: every piece after the first starts at a heading outside a code block`, badStarts.length === 0, badStarts.join(' | '));
+}
+
 console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} check(s) failed.`);
 process.exit(failures === 0 ? 0 : 1);

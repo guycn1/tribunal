@@ -22,7 +22,8 @@
  * It needs the network, so it is not part of `npm test`: run it before every
  * commit that touches a Markdown file, and before every merge to main. It
  * uses GitHub's unauthenticated API (60 requests an hour), one request per
- * file, and spends no quota of this project's. Exits 1 on a defect, and 2
+ * file, or per piece of one too large for the API (see pieces() below), and
+ * spends no quota of this project's. Exits 1 on a defect, and 2
  * when GitHub could not be reached, so an unreachable API never passes.
  */
 
@@ -213,24 +214,66 @@ async function render(text) {
   return res.text();
 }
 
+/**
+ * The most characters sent to GitHub in one request. Its Markdown API renders
+ * at most 400 KB of text - a larger file was refused on 2026-10-06 with a 403,
+ * "too_large" - and CLAUDE.md has grown past that.
+ */
+const PIECE_LIMIT = 200000;
+
+/**
+ * A file cut into pieces small enough to render, each ending just before a
+ * level-2 or level-3 heading outside a code block, so the pieces joined are
+ * the file. Nothing in this repository's Markdown carries across a heading -
+ * every link is written inline, and a heading ends any paragraph, list, table
+ * or quote - so each piece renders as it does inside the whole file, and is
+ * compared with its own source. A file within the limit is one piece.
+ * @param {string} source With LF line endings.
+ * @param {number} [limit]
+ * @returns {string[]}
+ */
+function pieces(source, limit = PIECE_LIMIT) {
+  const sections = [];
+  let current = [];
+  let fence = false;
+  for (const line of source.split('\n')) {
+    if (/^\s*(```|~~~)/.test(line)) fence = !fence;
+    if (!fence && /^#{2,3} /.test(line) && current.length) { sections.push(current.join('\n')); current = []; }
+    current.push(line);
+  }
+  sections.push(current.join('\n'));
+  const out = [];
+  for (const section of sections) {
+    if (out.length && out[out.length - 1].length + 1 + section.length <= limit) out[out.length - 1] += `\n${section}`;
+    else out.push(section);
+  }
+  return out;
+}
+
 async function main() {
   const args = process.argv.slice(2);
   const files = args.length ? args : execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard'], { cwd: ROOT, encoding: 'utf8' })
     .trim().split('\n').filter((f) => /\.md$/i.test(f));
   let defects = 0;
   for (const file of files) {
-    const source = fs.readFileSync(path.resolve(ROOT, file), 'utf8');
-    let html;
-    try {
-      html = await render(source);
-    } catch (error) {
-      console.error(`\ncheck-render: could not render ${file}: ${error.message}`);
-      // process.exitCode, not process.exit(): on Windows, exiting while a
-      // fetch is still closing its handle aborts Node with code 127.
-      process.exitCode = 2;
-      return;
+    // GitHub stores the file with LF line endings, whatever the working copy
+    // has, so that is what it renders.
+    const source = fs.readFileSync(path.resolve(ROOT, file), 'utf8').replace(/\r\n/g, '\n');
+    const parts = pieces(source);
+    const found = [];
+    for (const [i, part] of parts.entries()) {
+      let html;
+      try {
+        html = await render(part);
+      } catch (error) {
+        console.error(`\ncheck-render: could not render ${file}${parts.length > 1 ? ` (part ${i + 1} of ${parts.length})` : ''}: ${error.message}`);
+        // process.exitCode, not process.exit(): on Windows, exiting while a
+        // fetch is still closing its handle aborts Node with code 127.
+        process.exitCode = 2;
+        return;
+      }
+      found.push(...compare(part, html).map((d) => (parts.length > 1 ? `part ${i + 1} of ${parts.length}: ${d}` : d)));
     }
-    const found = compare(source, html);
     defects += found.length;
     console.log(found.length ? `\n${file}: ${found.length} defect(s)` : `${file}: renders as written`);
     for (const d of found) console.log(`  DEFECT  ${d}`);
@@ -244,4 +287,4 @@ async function main() {
 }
 
 if (require.main === module) main();
-module.exports = { compare, expectFromSource, readRendered };
+module.exports = { compare, expectFromSource, readRendered, pieces, PIECE_LIMIT };

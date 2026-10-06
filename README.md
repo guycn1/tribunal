@@ -676,7 +676,8 @@ file through GitHub's own Markdown API and compares the page with its source:
 
 That is what catches a defect nobody has thought of yet. Run it before every
 commit that touches a Markdown file; it uses one unauthenticated GitHub request
-per file.
+per file, or per piece of a file too large for GitHub's API, which renders at
+most 400 KB: such a file is sent in pieces cut before its headings.
 
 ### Local costs
 

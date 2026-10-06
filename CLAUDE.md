@@ -306,8 +306,11 @@ tag it does not know.
   text, and the page must have as many headings, tables, table cells, rules,
   code blocks, list items, quotes, line breaks, links, images and bold spans as
   the source asks for. This is the check that catches a defect nobody has listed
-  yet. It needs the network - one unauthenticated GitHub request per file, 60 an
-  hour, and none of this project's quota - so it is not part of `npm test`.
+  yet. It needs the network - one unauthenticated GitHub request per file, or
+  per piece of a file over 200,000 characters, 60 an hour, and none of this
+  project's quota - so it is not part of `npm test`. GitHub's API renders at
+  most 400 KB, so a larger file is sent in pieces cut before its `##` and `###`
+  headings, each compared with its own source.
 
 #### When to run them
 
@@ -4612,6 +4615,29 @@ the image as a link the page lacked.
   files or let the stripped images through. The offline rule fails on a
   `data:` and a `JavaScript:` image appended to `SPEC.md` and passes the hero
   image.
+
+**The render check sends a large file in pieces (same day).** With that
+entry added, `npm run check-render` could not render CLAUDE.md: GitHub's
+Markdown API renders at most 400 KB and answered 403, "too_large", so the
+script exited 2 - the check had not run. The commit that added the entry,
+`f168021`, went to `draft` all the same, its message saying the check passed;
+the command chain that ran the check went on to commit without stopping on its
+exit code.
+
+- `scripts/check-render.js` now renders a file over 200,000 characters in
+  pieces, each cut just before a `##` or `###` heading outside a code block,
+  and compares each piece with its own source; a defect names its piece
+  ("part 3 of 3: ..."). It also sends a file with LF line endings, as GitHub
+  stores it, whatever the working copy has. CLAUDE.md goes in three pieces.
+- `tests/markdown.test.js` cuts every Markdown file as small as it can be cut
+  and checks that the pieces join back into the file, that each piece after
+  the first starts at such a heading, and that a heading-shaped line inside a
+  code block is not cut before.
+- Proven both ways, every file restored byte for byte: never splitting,
+  ignoring code blocks and packing pieces without their line break were each
+  caught offline; README cut into 7 pieces rendered through GitHub as
+  written; and a dropped `<date>` tag in CLAUDE.md's first piece and in its
+  last were each caught, labelled with the piece.
 
 ## Operational notes
 
