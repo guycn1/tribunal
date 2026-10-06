@@ -7,7 +7,7 @@ import { REPRESENTATIVES } from './lib/representatives';
 import { buildRepresentativeMessages } from './lib/prompts';
 import { callOpenRouter, finishedAfterAbort } from './lib/openrouter';
 import { getModelForRole, AGENT_MAX_TOKENS } from './lib/models';
-import { getTrial, upsertRepresentativeArgument, logApiCall, upsertAgentProgress, isGlobalCallCapExceeded, isTrialAborted, GLOBAL_CALL_CAP } from './lib/db';
+import { getTrial, upsertRepresentativeArgument, logApiCall, upsertAgentProgress, isGlobalCallCapExceeded, isTrialAborted, agentCallRefusal, GLOBAL_CALL_CAP } from './lib/db';
 import { isSiteGateOk } from './lib/siteGate';
 import type { RepresentativeRole } from './lib/types';
 
@@ -55,7 +55,10 @@ const rawHandler: Handler = async (event) => {
     return json(400, { error: 'Missing trial id or role' });
   }
 
-  if (!(role in REPRESENTATIVES)) {
+  // An own key only: `in` would also accept a name every object inherits,
+  // such as constructor or toString, and run a call for a role that is not
+  // one of the four.
+  if (!Object.prototype.hasOwnProperty.call(REPRESENTATIVES, role)) {
     return json(400, { error: `Unknown representative role: ${role}` });
   }
   const repRole = role as RepresentativeRole;
@@ -97,6 +100,20 @@ const rawHandler: Handler = async (event) => {
   const trial = await getTrial(id);
   if (!trial) {
     return json(404, { error: 'Trial not found' });
+  }
+
+  // The page triggers each role once per trial, so a role that already has
+  // a final outcome, or a trial the user aborted, is a request the page
+  // never sends: running it would save over a result already kept, or
+  // spend on a trial nobody is waiting for. Not logged, like the checks
+  // above other than the site gate and the call cap.
+  const refusal = await agentCallRefusal(id, repRole);
+  if (refusal) {
+    return json(409, {
+      role: repRole,
+      status: 'failed',
+      error: refusal === 'aborted' ? 'This trial was aborted.' : 'This role already has a final outcome in this trial.',
+    });
   }
 
   const caseDef = await getChargeSheet();

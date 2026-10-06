@@ -4337,6 +4337,87 @@ reached `main` in a further merge the same day that changes only
 documentation and comments, whose message carries Netlify's `[skip netlify]`
 marker.
 
+### 2026-10-06: the abort endpoint, and agent calls the page never sends
+
+**The abort endpoint and the agent handlers now accept only the requests the
+page sends (2026-10-06, on the user's go-ahead).** Read from the code that day:
+
+- the abort endpoint needed no site-gate header, and wrote one row for every
+  role named in the request, however many times it was named, for any trial,
+  a completed one included, where an abort row relabels it `aborted` in the run
+  history;
+- an agent handler ran a role however many times it was called for one trial,
+  and a later run saved over the result already kept;
+- and the role checks used `in`, which also accepts a name every object
+  inherits: `constructor` passed both agent handlers' role check, and the call
+  then stopped with a `500` before any model call or write, while the abort
+  endpoint wrote an abort row for it.
+
+The change:
+
+- `abort.ts` needs the site-gate header (`401` without it, as `trials.ts`'s
+  POST), answers `409` for a trial already `completed`, and writes at most one
+  row per role per trial: a role named twice gets one row, and a role that
+  already has an abort row gets none (`getAbortedRoles()` in `db.ts`).
+  - A failed lookup of the trial or of its abort rows does not stop the abort,
+    since its rows are what stops the running calls.
+  - `app.js` sends the header with the abort request.
+- Each agent handler's last check, after the trial lookup, is
+  `agentCallRefusal()` in `db.ts`: `409`, unlogged, for a trial with an abort
+  row, or a role that already has a final outcome - the rows
+  `markTrialCompletedIfJudgingDone()` counts.
+  - A role with only discarded attempts logged is not refused, so a call that
+    died mid-chain can still run, and a failed lookup lets the call start.
+  - An abort that lands after this check and before the first attempt still
+    ends the call with its "Stopped before attempt 1" row.
+- Every role check is an own-key check
+  (`Object.prototype.hasOwnProperty.call`), in both agent handlers and the
+  abort endpoint.
+- The page triggers each role once per trial and aborts only roles still
+  pending, so its requests are refused only around an abort:
+  - a trigger sent just before an abort and arriving after it is refused, and
+    the role's abort row already records it as aborted, where it used to log a
+    "Stopped before attempt 1" row as well;
+  - an abort clicked in the moments after the last judge finished, before the
+    next poll shows it, gets a `409` with nothing left running. The page shows
+    those cards as aborted, as before, and the run history shows the trial as
+    `completed`, with its real outcomes, where it showed
+    `aborted (N of 7 completed)`.
+- README's endpoint list, the agent handlers' order of checks and the
+  test-suite descriptions say so; `.env.example` and `app.js` list the abort
+  among the requests the site gate covers.
+
+**Tests:**
+
+- `tests/trial-status.test.js` runs the real handlers: each kind of final
+  outcome refused (a success, a final failure, an abort's own row), an abort
+  for another role refusing every role, discarded attempts and another role's
+  outcome not refusing, a failed lookup letting the call start, `constructor`,
+  `toString` and `hasOwnProperty` refused by both handlers with a `400`, and
+  the abort endpoint's one row per role, its `409`, its site gate and its two
+  failed lookups. The check on an abort landing before the first attempt
+  injects it after the handler's checks, when it reads the case.
+  `tests/support/fake-supabase.js` gained `failReadsOf`, failing reads of the
+  tables it names only.
+- `tests/render-cards.test.js` runs a trial and aborts it at its first poll:
+  the abort request carries the site-gate header, says its body is JSON, and
+  names the four representatives still running.
+- `tests/docs.test.js` checks the new step's place in the order README gives,
+  its `409` and that it is unlogged, and observes the abort endpoint's `409`
+  by calling it for a completed trial.
+- Proven both ways, every file restored byte for byte, in 30 cases: 20 breaks
+  to the code (each refusal removed, either of its two conditions dropped or
+  widened, its lookup failing closed, the step moved before the trial check or
+  logged, `in` put back in each of the three places, and in the abort endpoint
+  the gate, the de-duplication, the skip of recorded roles, the completed-trial
+  refusal and each fail-open lookup removed, and the page's header or content
+  type dropped) and 4 to README were each caught by the checks meant for them;
+  each of the 5 new parts of the tests, removed in turn, raised an alarm on
+  correct code or let its defect through; and a control rewording passed.
+- The two new queries were also run read-only against the real database on a
+  completed trial (`finished` for its roles, no abort rows), an aborted one
+  (`aborted`, its four abort rows) and an unknown id (no refusal).
+
 ## Operational notes
 
 ### Image and screenshot volume in long sessions
@@ -5727,7 +5808,8 @@ exactly the 2 functions that call OpenRouter), declared via the function's own
 ### Site-gate header
 
 **Site-gate header** (`isSiteGateOk` in `siteGate.ts`, `X-Site-Gate` header,
-checked in `trials.ts`'s POST too): explicitly NOT real access control - the
+checked in `trials.ts`'s POST too, and in `abort.ts` since 2026-10-06):
+explicitly NOT real access control - the
 token is a plain constant in the publicly-downloadable `app.js`, so anyone who
 looks defeats it trivially.
 

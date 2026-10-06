@@ -15,6 +15,7 @@ import {
   markTrialCompletedIfJudgingDone,
   isGlobalCallCapExceeded,
   isTrialAborted,
+  agentCallRefusal,
   GLOBAL_CALL_CAP,
 } from './lib/db';
 import { isSiteGateOk } from './lib/siteGate';
@@ -65,7 +66,9 @@ const rawHandler: Handler = async (event) => {
     return json(400, { error: 'Missing trial id or role' });
   }
 
-  if (!(role in JUDGES)) {
+  // An own key only - see the matching check in
+  // representative-background.ts.
+  if (!Object.prototype.hasOwnProperty.call(JUDGES, role)) {
     return json(400, { error: `Unknown judge role: ${role}` });
   }
   const judgeRole = role as JudgeRole;
@@ -93,6 +96,18 @@ const rawHandler: Handler = async (event) => {
   const full = await getFullTrial(id);
   if (!full) {
     return json(404, { error: 'Trial not found' });
+  }
+
+  // A judge that already has a final outcome, or any judge in a trial the
+  // user aborted, is not run - see the matching check in
+  // representative-background.ts.
+  const refusal = await agentCallRefusal(id, judgeRole);
+  if (refusal) {
+    return json(409, {
+      role: judgeRole,
+      status: 'failed',
+      error: refusal === 'aborted' ? 'This trial was aborted.' : 'This role already has a final outcome in this trial.',
+    });
   }
 
   const caseDef = await getChargeSheet();

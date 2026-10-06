@@ -255,15 +255,17 @@ const TRANSIENT_RETRIED_MARKER = '[transient-retried]';
 const ABORTED_MID_CALL_MARKER = '[aborted-mid-call]';
 
 /**
- * Sent as the X-Site-Gate header on every call that creates a trial or
- * spends OpenRouter quota (see isSiteGateOk in
+ * Sent as the X-Site-Gate header on every call that creates a trial,
+ * spends OpenRouter quota or aborts a trial (see isSiteGateOk in
  * netlify/functions/lib/siteGate.ts). This is NOT a real secret and isn't
  * meant to be one - it's shipped in this public, unauthenticated file, so
  * anyone who looks can read it. Its only job is to reject automated
  * traffic that never loaded this page at all. Must match the SITE_GATE_TOKEN environment
  * variable configured on the Netlify Functions side exactly, or every
  * gated request is rejected (creating a trial with a 401; an agent call
- * silently, visible only in Netlify's function logs) - if that env var is
+ * silently, visible only in Netlify's function logs; an abort with a 401
+ * the page does not show, so the running calls are not told to stop) - if
+ * that env var is
  * left unset there,
  * isSiteGateOk() fails open (allows everything through) rather than
  * locking out real users, so this constant being "wrong" server-side is a
@@ -271,8 +273,8 @@ const ABORTED_MID_CALL_MARKER = '[aborted-mid-call]';
  */
 const SITE_GATE_TOKEN = 'g8YdtIo_-n2zLFDsgWqqfuQmVKaNsHQaQtruTybqlvY';
 /**
- * Headers for every request that creates a trial or triggers an agent
- * call.
+ * Headers for every request that creates a trial, triggers an agent call
+ * or aborts a trial.
  */
 const SITE_GATE_HEADERS = { 'X-Site-Gate': SITE_GATE_TOKEN };
 
@@ -775,7 +777,7 @@ async function abortCurrentTrial() {
     try {
       await fetch(`/api/trials/${state.trialId}/abort`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { ...SITE_GATE_HEADERS, 'Content-Type': 'application/json' },
         body: JSON.stringify({ roles: pendingRoles }),
       });
     } catch {

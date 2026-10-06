@@ -177,9 +177,11 @@ description. Everything this app's own code returns is JSON.
   completed once every judge has a final outcome.
 - <code><b>POST</b> /api/trials/:id/abort</code>\
   [`abort.ts`](netlify/functions/abort.ts): Takes `{ "roles": [...] }` — the
-  roles still pending — records an abort for each one it recognises, and replies
-  with the roles it recorded. The running calls check for it before every
-  attempt and as each attempt ends, and stop.
+  roles still pending — records an abort for each one it recognises, at most
+  once per role per trial, and replies with the roles it recorded. The running
+  calls check for it before every attempt and as each attempt ends, and stop.
+  Needs the site-gate header. `409` for a trial already completed, which has
+  nothing left running to stop.
 
 #### The two agent endpoints
 
@@ -195,12 +197,18 @@ route on the site's main address, rather than at the function's own address or
 another of the site's addresses, that it is a POST naming a trial and a role,
 that the role is one it knows (`jon_snow`, `tyrion_lannister`,
 `daenerys_targaryen` or `grey_worm`; `barak`, `elon` or `shamgar`), the
-site-gate header, the site-wide call cap, and that the trial exists.
+site-gate header, the site-wide call cap, that the trial exists, and that the
+trial has not been aborted and the role has no final outcome yet.
 
 Because of the `202`, a rejection at any of those steps never reaches the
 browser: the site-gate and call-cap rejections are written to Netlify's function
 logs, the others are not logged at all, and in the browser that role never
 resolves — its card says so once polling gives up, after about 12 minutes.
+
+The last check turns away only requests the page never sends, since it triggers
+each role once per trial: a second call for a role, which would save over a
+result already kept, or a call for a trial the user aborted. A role with only
+discarded attempts logged has no outcome yet, so it is not turned away.
 
 Netlify's per-IP rate limit (60 requests per 3 minutes from one IP, counted
 across the two routes together, set on their redirects in
@@ -447,7 +455,7 @@ Every file tracked in the repository. Not tracked, and git-ignored:
 ├── scripts/check-render.js           npm run check-render — renders each Markdown file through GitHub and compares the page with its source
 ├── tests/                            npm test — no network, spends no quota
 │   ├── retry-logic.test.js           the escalation chain, from the real TypeScript
-│   ├── trial-status.test.js          when a trial is completed; aborts; the call cap and the failure flag; replies kept for audit, off the page
+│   ├── trial-status.test.js          when a trial is completed; aborts; calls the page never sends; the call cap and the failure flag; replies kept for audit, off the page
 │   ├── render-cards.test.js          app.js: cards, the judges' banner, the call log, model ids, failed requests
 │   ├── shared-constants.test.js      values duplicated across files still agree; the page's timeouts outlast the server's
 │   ├── docs.test.js                  README, SPEC.md and CLAUDE.md agree with the code
@@ -507,14 +515,18 @@ stub DOM — except
   - when a trial is marked completed, and that an aborted trial is never
     completed and never gains a result;
   - that abort rows do not count against the call cap, and the abort endpoint
-    replies with only the rows it wrote;
+    writes at most one per role, refuses a completed trial and replies with
+    only the rows it wrote;
+  - that the agent endpoints turn away a call the page never sends: a role that
+    already has an outcome, a trial that was aborted, or a role that is not one
+    of the seven;
   - what the run history's failure flag counts;
   - and that every model reply is kept in the call log but never sent to the
     page.
 - [`tests/render-cards.test.js`](tests/render-cards.test.js) —
   [`app.js`](public/app.js)'s agent cards, the banner above the judges, the call
-  log, how it shortens model ids, and how it reports a request that fails
-  outright.
+  log, how it shortens model ids, how it reports a request that fails outright,
+  and that an abort carries the site-gate header.
 - [`tests/shared-constants.test.js`](tests/shared-constants.test.js) — values
   that are deliberately duplicated across files still agree, and the page's
   polling and "interrupted" timeouts stay above the server's time budget. The

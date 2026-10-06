@@ -344,13 +344,14 @@ async function main() {
    * @param {string} fn The function file's name, without .ts.
    * @param {string} method
    * @param {string} urlPath
-   * @param {{headers?: Record<string, string>, body?: string}} [request]
+   * @param {{headers?: Record<string, string>, body?: string, trialStatus?: string}} [request]
+   *   trialStatus is the status the one trial holds.
    * @returns {Promise<number>}
    */
-  const invoke = async (fn, method, urlPath, { headers = {}, body } = {}) => {
+  const invoke = async (fn, method, urlPath, { headers = {}, body, trialStatus = 'created' } = {}) => {
     global.fakeSupabase = fakeSupabase({
       case_definitions: [{ ...caseRow }],
-      trials: [{ id: TRIAL_ID, case_code: 'T-001', status: 'created', created_at: '1', updated_at: '1' }],
+      trials: [{ id: TRIAL_ID, case_code: 'T-001', status: trialStatus, created_at: '1', updated_at: '1' }],
       representative_arguments: [], judge_rulings: [], api_call_logs: [], agent_progress: [],
     }).client;
     const response = await backend.load(`${fn}.js`).handler({ httpMethod: method, path: urlPath, headers, queryStringParameters: {}, body }, {});
@@ -362,8 +363,9 @@ async function main() {
     const correct = await invoke(row.fn, row.method, row.path.replace(':id', TRIAL_ID), { headers: { 'x-site-gate': GATE }, body });
     const withoutGate = await invoke(row.fn, row.method, row.path.replace(':id', TRIAL_ID), { body });
     const unknownTrial = row.path.includes(':id') ? await invoke(row.fn, row.method, row.path.replace(':id', UNKNOWN_ID), { headers: { 'x-site-gate': GATE }, body }) : null;
+    const completedTrial = row.path.includes(':id') ? await invoke(row.fn, row.method, row.path.replace(':id', TRIAL_ID), { headers: { 'x-site-gate': GATE }, body, trialStatus: 'completed' }) : null;
     delete process.env.SITE_GATE_TOKEN;
-    const observed = [correct, withoutGate, unknownTrial].filter((c) => c !== null);
+    const observed = [correct, withoutGate, unknownTrial, completedTrial].filter((c) => c !== null);
     check(`${row.method} ${row.path} succeeds when called correctly`, correct >= 200 && correct < 300, String(correct));
     for (const code of [...row.text.matchAll(/`(\d{3})`/g)].map((m) => Number(m[1]))) {
       check(`${row.method} ${row.path}: it really answers ${code}`, observed.includes(code), observed.join(', '));
@@ -435,13 +437,13 @@ async function main() {
   // real handlers with requests that fail one check, or two at once - two
   // at once answer with the status of whichever check runs first.
   const { GLOBAL_CALL_CAP } = backend.load('lib/db.js');
-  const STEP_CODE = { route: 403, post: 405, role: 400, gate: 401, cap: 429, trial: 404, address: 403 };
+  const STEP_CODE = { route: 403, post: 405, role: 400, gate: 401, cap: 429, trial: 404, done: 409, address: 403 };
   // A test value for Netlify's URL variable, the site's main address; a
   // request failing 'address' comes through its route to another address
   // of the same site. 'address' is part of the route step in README.
   const MAIN_HOST = 'tribunal.example';
   const orderClause = (agentPara.match(/The handler checks, in order, (.*?)\. Because/) || [])[1] || '';
-  const stepAt = { route: orderClause.indexOf('came through its rate-limited route'), post: orderClause.indexOf('a POST naming a trial and a role'), role: orderClause.indexOf('role is one it knows'), gate: orderClause.indexOf('site-gate header'), cap: orderClause.indexOf('call cap'), trial: orderClause.indexOf('trial exists') };
+  const stepAt = { route: orderClause.indexOf('came through its rate-limited route'), post: orderClause.indexOf('a POST naming a trial and a role'), role: orderClause.indexOf('role is one it knows'), gate: orderClause.indexOf('site-gate header'), cap: orderClause.indexOf('call cap'), trial: orderClause.indexOf('trial exists'), done: orderClause.indexOf('no final outcome yet') };
   check('the order of the agent handlers\' checks is stated, naming each one', Object.values(stepAt).every((i) => i >= 0), JSON.stringify(stepAt));
   const documentedOrder = Object.keys(stepAt).sort((a, b) => stepAt[a] - stepAt[b]);
   /**
@@ -456,11 +458,14 @@ async function main() {
     const role = fails.has('role') ? 'nobody' : fn === 'judge-background' ? 'barak' : 'jon_snow';
     const id = fails.has('trial') ? UNKNOWN_ID : TRIAL_ID;
     const recent = new Date().toISOString();
+    // Failing 'done': the role already has a final outcome, a success - in
+    // whichever trial the request names, so the order against 'trial' shows.
+    const finished = fails.has('done') ? [{ trial_id: id, agent_role: role, call_type: fn === 'judge-background' ? 'judge' : 'representative', status: 'success', error_message: null, model_used: 'vendor/a-model', timestamp: recent }] : [];
     global.fakeSupabase = fakeSupabase({
       case_definitions: [{ ...caseRow }],
       trials: [{ id: TRIAL_ID, case_code: 'T-001', status: 'created', created_at: '1', updated_at: '1' }],
       representative_arguments: [], judge_rulings: [], agent_progress: [],
-      api_call_logs: fails.has('cap') ? Array.from({ length: GLOBAL_CALL_CAP }, () => ({ trial_id: TRIAL_ID, model_used: 'vendor/a-model', timestamp: recent })) : [],
+      api_call_logs: [...(fails.has('cap') ? Array.from({ length: GLOBAL_CALL_CAP }, () => ({ trial_id: TRIAL_ID, model_used: 'vendor/a-model', timestamp: recent })) : []), ...finished],
     }).client;
     global.fetch = async () => { throw new Error('no model call expected'); };
     process.env.SITE_GATE_TOKEN = GATE;

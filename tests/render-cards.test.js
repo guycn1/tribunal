@@ -68,7 +68,7 @@ console.log('\n=== app.js executes cleanly (catches a TDZ-class load crash) ==='
 let app;
 try {
   // Hand back exactly the pieces under test from app.js's own top-level scope.
-  app = loadApp(['state', 'el', 'renderRepresentatives', 'renderJudges', 'renderCallLog', 'agentCardSignature', 'shortModelName', 'REPRESENTATIVE_ROLES', 'JUDGE_ROLES', 'beginTrial', 'loadTrial', 'buildAgentStatusBody', 'appendTruncationNotice', 'triggerAgent', 'deriveRoleStates', 'isTruncated']);
+  app = loadApp(['state', 'el', 'renderRepresentatives', 'renderJudges', 'renderCallLog', 'agentCardSignature', 'shortModelName', 'REPRESENTATIVE_ROLES', 'JUDGE_ROLES', 'beginTrial', 'loadTrial', 'buildAgentStatusBody', 'appendTruncationNotice', 'triggerAgent', 'deriveRoleStates', 'isTruncated', 'abortCurrentTrial', 'SITE_GATE_TOKEN']);
   check('top-level code ran with no error', true);
 } catch (error) {
   check('top-level code ran with no error', false, error.message);
@@ -545,6 +545,47 @@ async function requestFailureChecks() {
   check('the run history is still refreshed after it', historyReads === 1, String(historyReads));
   check('every result from the run stays on screen', [...Object.values(state.representatives), ...Object.values(state.judges)].every((e) => e.status === 'success') && Object.keys(state.judges).length === JUDGE_ROLES.length);
   check('the controls, overlay and sidebar are restored', isIdle());
+
+  console.log('\n=== Aborting sends the site-gate header the abort endpoint needs ===');
+  // A whole trial on the same virtual clock, aborted at its first poll,
+  // while every representative is still running.
+  let abortVirtualMs = 0;
+  Date.now = () => realNow() + abortVirtualMs;
+  global.setTimeout = (fn, ms = 0) => { abortVirtualMs += ms; setImmediate(fn); return 0; };
+  const running = { trial: { id: 'run-2' }, caseDef, agentProgress: {}, apiCallLogs: [], representativeArguments: [], judgeRulings: [] };
+  let abortRequest = null;
+  let aborting = null;
+  resetToIdle();
+  alerts.length = 0;
+  global.fetch = async (url, options = {}) => {
+    const method = options.method || 'GET';
+    if (method === 'POST' && url === '/api/trials') return jsonReply(201, { trial: { id: 'run-2' }, caseDef });
+    if (method === 'POST' && url === '/api/trials/run-2/abort') { abortRequest = options; return jsonReply(200, { ok: true, logged: [] }); }
+    if (method === 'POST') return jsonReply(202, {});
+    if (url === '/api/trials') return jsonReply(200, { trials: [] });
+    if (url === '/api/trials/run-2') {
+      if (!aborting) aborting = app.abortCurrentTrial();
+      return jsonReply(200, running);
+    }
+    throw new Error(`unexpected request: ${method} ${url}`);
+  };
+  rejection = null;
+  try {
+    state.trialPromise = beginTrial();
+    await state.trialPromise;
+    await aborting;
+  } catch (error) {
+    rejection = error;
+  }
+  global.setTimeout = realSetTimeout;
+  Date.now = realNow;
+  const abortHeaders = (abortRequest && abortRequest.headers) || {};
+  check('the run and the abort do not reject', rejection === null, String(rejection));
+  check('an abort request is sent', abortRequest !== null);
+  check("it carries the page's site-gate header", abortHeaders['X-Site-Gate'] === app.SITE_GATE_TOKEN, JSON.stringify(abortHeaders));
+  check('and still says its body is JSON', abortHeaders['Content-Type'] === 'application/json', JSON.stringify(abortHeaders));
+  check('naming the four representatives still running', abortRequest !== null && JSON.stringify(JSON.parse(abortRequest.body).roles) === JSON.stringify(REPRESENTATIVE_ROLES), abortRequest && abortRequest.body);
+  check('the controls, overlay and sidebar are restored after the abort', isIdle());
 
   console.log('\n=== A trigger the per-IP rate limit rejects is reported as that ===');
   // Netlify answers a rate-limited trigger with a bare 429 and an empty

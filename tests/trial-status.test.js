@@ -24,9 +24,10 @@
  *      ones included, so they can be audited in full - and the trial
  *      endpoint never sends that text to the page. A database the column
  *      has not reached still gets every row, without the text.
- *   4. An aborted trial gains nothing: a ruling or argument that finishes
- *      after the abort is logged once, as aborted, and never saved; the
- *      trial is not marked completed; and a call aborted before it starts
+ *   4. An aborted trial gains nothing: a call for it is refused before any
+ *      model call; a ruling or argument that finishes after the abort is
+ *      logged once, as aborted, and never saved; the trial is not marked
+ *      completed; and a call the abort reaches before its first attempt
  *      logs a row with no duration.
  *   5. The abort endpoint's rows do not count against the site-wide call
  *      cap, while real calls still reach it.
@@ -34,7 +35,15 @@
  *      any call-log row stored as failed, an abort's included.
  *   7. The abort endpoint replies with the roles whose rows it wrote, and
  *      only those: a role it does not recognise, or whose row the
- *      database rejects, is left out.
+ *      database rejects, is left out. It writes at most one row per role
+ *      per trial, needs the site-gate header, refuses a completed trial,
+ *      and still records the abort when the trial cannot be looked up.
+ *   8. An agent call the page never sends is refused before any model
+ *      call, unlogged: a role that already has a final outcome, a role
+ *      that is not one of the seven (a name every object inherits, such
+ *      as constructor, included), and a trial the user aborted. A role
+ *      with only discarded attempts still runs, and a failed lookup lets
+ *      the call start.
  */
 
 const { compileBackend } = require('./support/compile-backend');
@@ -144,13 +153,17 @@ const GOOD_RULING = 'VERDICT: justified\n\nThe record shows a surrendered city b
  * @param {boolean} [scenario.aborted] Whether the trial was aborted first.
  * @param {boolean} [scenario.abortDuringCall] Whether the abort lands while
  *   the model is generating its reply, as in trial a02b8215.
+ * @param {boolean} [scenario.abortAfterDoor] Whether the abort lands after
+ *   the handler's own checks have passed, before the first attempt starts:
+ *   it is recorded the moment the handler reads the case.
+ * @param {object[]} [scenario.barakRows] Rows barak already has in the log.
  * @param {Record<string, string[]>} [scenario.missingColumns] Columns the
  *   database does not have yet - see fakeSupabase.
- * @returns {Promise<{status: number, tables: object, writes: object[]}>}
+ * @returns {Promise<{status: number, tables: object, writes: object[], modelCalls: number}>}
  */
-async function runJudge({ reply, aborted = false, abortDuringCall = false, missingColumns }) {
+async function runJudge({ reply, aborted = false, abortDuringCall = false, abortAfterDoor = false, barakRows = [], missingColumns }) {
   const replies = Array.isArray(reply) ? [...reply] : [reply];
-  const logs = [judgeRow('elon', null, TRIAL_ID), judgeRow('shamgar', null, TRIAL_ID)];
+  const logs = [judgeRow('elon', null, TRIAL_ID), judgeRow('shamgar', null, TRIAL_ID), ...barakRows];
   if (aborted) logs.push({ ...judgeRow('barak', ABORTED_BY_USER_MESSAGE, TRIAL_ID) });
   const fake = fakeSupabase({
     case_definitions: [CASE_ROW],
@@ -160,8 +173,17 @@ async function runJudge({ reply, aborted = false, abortDuringCall = false, missi
     api_call_logs: logs,
     agent_progress: [],
   }, { missingColumns });
+  if (abortAfterDoor) {
+    const from = fake.client.from;
+    fake.client.from = (table) => {
+      if (table === 'case_definitions') fake.tables.api_call_logs.push({ ...judgeRow('barak', ABORTED_BY_USER_MESSAGE, TRIAL_ID) });
+      return from(table);
+    };
+  }
   global.fakeSupabase = fake.client;
+  let modelCalls = 0;
   global.fetch = async (_url, request) => {
+    modelCalls++;
     if (abortDuringCall) fake.tables.api_call_logs.push({ ...judgeRow('barak', ABORTED_BY_USER_MESSAGE, TRIAL_ID) });
     return {
       ok: true, status: 200, headers: new Map(),
@@ -175,7 +197,7 @@ async function runJudge({ reply, aborted = false, abortDuringCall = false, missi
   const response = await quietly(() => judgeHandler({
     httpMethod: 'POST', path: `/api/trials/${TRIAL_ID}/judges/barak`, headers: {}, queryStringParameters: {},
   }, {}));
-  return { status: response.statusCode, tables: fake.tables, writes: fake.writes };
+  return { status: response.statusCode, tables: fake.tables, writes: fake.writes, modelCalls };
 }
 
 process.env.OPENROUTER_API_KEY = 'test-key';
@@ -322,6 +344,7 @@ async function main() {
   j = await runJudge({ reply: GOOD_RULING, aborted: true });
   check('no ruling is written into it', j.tables.judge_rulings.length === 0, JSON.stringify(j.tables.judge_rulings));
   check('it is not marked completed', j.tables.trials[0].status === 'created', j.tables.trials[0].status);
+  check('the call is refused (409) before any model call, and nothing is logged', j.status === 409 && j.modelCalls === 0 && j.writes.length === 0, `${j.status}, ${j.modelCalls} model call(s), ${j.writes.length} write(s)`);
 
   say('\n=== The judge endpoint: a ruling that finishes after the abort ===');
   // Trial a02b8215 (2026-09-21): replies that finished after the abort were
@@ -364,8 +387,9 @@ async function main() {
     check('and no argument is saved', fake.tables.representative_arguments.length === 0, JSON.stringify(fake.tables.representative_arguments));
   }
 
-  say('\n=== The judge endpoint: a call aborted before it starts ===');
-  j = await runJudge({ reply: GOOD_RULING, aborted: true });
+  say('\n=== The judge endpoint: an abort that lands before the first attempt ===');
+  j = await runJudge({ reply: GOOD_RULING, abortAfterDoor: true });
+  check('no model call is made', j.modelCalls === 0, String(j.modelCalls));
   const stopRows = j.tables.api_call_logs.filter((row) => row.agent_role === 'barak' && row.error_message !== ABORTED_BY_USER_MESSAGE);
   check('its row says it stopped before attempt 1', stopRows.length === 1 && /Stopped before attempt 1/.test(stopRows[0].error_message), JSON.stringify(stopRows.map((r) => r.error_message)));
   check('and carries no duration, since no attempt ran', stopRows.length === 1 && stopRows[0].duration_ms === null, stopRows.length ? String(stopRows[0].duration_ms) : 'no row');
@@ -397,6 +421,87 @@ async function main() {
   check('without the text', unmigrated.every((row) => !('response_text' in row)));
   check('and the ruling is still saved', j.tables.judge_rulings.length === 1);
 
+  say('\n=== An agent call the page never sends is refused before any model call ===');
+  /**
+   * Calls one real agent handler for a role, in a trial whose call log
+   * already holds the given rows.
+   * @param {'representative' | 'judge'} kind
+   * @param {string} role
+   * @param {object[]} rows
+   * @param {object} [options] Passed to fakeSupabase.
+   * @returns {Promise<{status: number, modelCalls: number, writes: object[], tables: object}>}
+   */
+  const callFor = async (kind, role, rows, options) => {
+    const fake = fakeSupabase({
+      case_definitions: [CASE_ROW],
+      trials: [{ id: TRIAL_ID, case_code: 'T-001', status: 'created' }],
+      representative_arguments: [], judge_rulings: [], api_call_logs: rows, agent_progress: [],
+    }, options);
+    global.fakeSupabase = fake.client;
+    let modelCalls = 0;
+    const content = kind === 'judge' ? GOOD_RULING : 'Honorable Tribunal, the bells had rung before the fire, and he acted to stop the next one.';
+    global.fetch = async (_url, request) => {
+      modelCalls++;
+      return {
+        ok: true, status: 200, headers: new Map(),
+        json: async () => ({
+          model: JSON.parse(request.body).model,
+          choices: [{ message: { content }, finish_reason: 'stop' }],
+          usage: { prompt_tokens: 1000, completion_tokens: 60, total_tokens: 1060 },
+        }),
+      };
+    };
+    const handler = kind === 'judge' ? judgeHandler : representativeHandler;
+    const response = await quietly(() => handler({
+      httpMethod: 'POST', path: `/api/trials/${TRIAL_ID}/${kind}s/${role}`, headers: {}, queryStringParameters: {},
+    }, {}));
+    return { status: response.statusCode, modelCalls, writes: fake.writes, tables: fake.tables };
+  };
+  /**
+   * Whether a call was turned away before any model call, with nothing
+   * written.
+   * @param {{status: number, modelCalls: number, writes: object[]}} result
+   * @param {number} status The status it must answer.
+   * @returns {boolean}
+   */
+  const refused = (result, status) => result.status === status && result.modelCalls === 0 && result.writes.length === 0;
+  /**
+   * Prints what a call did, for a failed check.
+   * @param {{status: number, modelCalls: number, writes: object[]}} result
+   * @returns {string}
+   */
+  const describe = (result) => `${result.status}, ${result.modelCalls} model call(s), ${result.writes.length} write(s)`;
+  const repRow = (role, message) => judgeRow(role, message, TRIAL_ID, 'representative');
+
+  let c = await callFor('representative', 'jon_snow', [repRow('jon_snow', null)]);
+  check('a representative that already succeeded is refused (409)', refused(c, 409), describe(c));
+  c = await callFor('representative', 'jon_snow', [repRow('jon_snow', 'OpenRouter returned HTTP 400: bad request.')]);
+  check('one whose call already failed for good is refused', refused(c, 409), describe(c));
+  c = await callFor('representative', 'jon_snow', [repRow('jon_snow', `${ABORTED_MID_CALL_MARKER} Stopped before attempt 2.`)]);
+  check('one whose call stopped for an abort is refused', refused(c, 409), describe(c));
+  c = await callFor('judge', 'barak', [judgeRow('barak', null, TRIAL_ID)]);
+  check('a judge that already ruled is refused', refused(c, 409), describe(c));
+  c = await callFor('representative', 'jon_snow', [judgeRow('barak', ABORTED_BY_USER_MESSAGE, TRIAL_ID)]);
+  check('a representative in a trial aborted for another role is refused', refused(c, 409), describe(c));
+  c = await callFor('judge', 'elon', [repRow('grey_worm', ABORTED_BY_USER_MESSAGE)]);
+  check('so is a judge', refused(c, 409), describe(c));
+
+  c = await callFor('representative', 'jon_snow', [repRow('jon_snow', retried(TRANSIENT_RETRIED_MARKER)), repRow('jon_snow', retried(DEGENERATE_RETRIED_SAME_MODEL_MARKER))]);
+  check('a representative with only discarded attempts still runs, and its argument is saved', c.status === 200 && c.modelCalls === 1 && c.tables.representative_arguments.length === 1, describe(c));
+  j = await runJudge({ reply: GOOD_RULING, barakRows: [judgeRow('barak', retried(HTTP_ERROR_ESCALATED_MARKER), TRIAL_ID)] });
+  check('so does a judge, and its ruling is saved', j.status === 200 && j.modelCalls === 1 && j.tables.judge_rulings.length === 1, `${j.status}, ${j.modelCalls} model call(s)`);
+  c = await callFor('representative', 'jon_snow', [repRow('tyrion_lannister', null), repRow('grey_worm', 'OpenRouter returned HTTP 400: bad request.')]);
+  check("another role's outcome does not stop a representative", c.status === 200 && c.modelCalls === 1, describe(c));
+  c = await callFor('representative', 'jon_snow', [repRow('jon_snow', null)], { failReadsOf: ['api_call_logs'] });
+  check('a failed call-log lookup lets the call start', c.status === 200 && c.modelCalls === 1, describe(c));
+
+  for (const name of ['constructor', 'toString', 'hasOwnProperty']) {
+    c = await callFor('representative', name, []);
+    check(`"${name}", a name every object inherits, is not a representative (400)`, refused(c, 400), describe(c));
+    c = await callFor('judge', name, []);
+    check(`nor is "${name}" a judge`, refused(c, 400), describe(c));
+  }
+
   say('\n=== The abort endpoint reports the rows it wrote, and only those ===');
   /**
    * Calls the real abort handler against an in-memory database holding
@@ -404,15 +509,19 @@ async function main() {
    * the foreign key, as in the real schema.
    * @param {string} trialId
    * @param {string[]} roles
-   * @returns {Promise<{status: number, logged: string[], rows: object[]}>}
+   * @param {{status?: string, rows?: object[], headers?: Record<string, string>, failReadsOf?: string[]}} [setup]
+   *   The trial's status, the call-log rows it already has, the request's
+   *   headers, and tables whose reads fail.
+   * @returns {Promise<{status: number, logged: string[] | undefined, rows: object[]}>}
    */
-  const abortWith = async (trialId, roles) => {
-    const fake = fakeSupabase({ trials: [{ id: TRIAL_ID, case_code: 'T-001', status: 'created' }], api_call_logs: [] }, {
+  const abortWith = async (trialId, roles, { status = 'created', rows = [], headers = {}, failReadsOf } = {}) => {
+    const fake = fakeSupabase({ trials: [{ id: TRIAL_ID, case_code: 'T-001', status }], api_call_logs: [...rows] }, {
       rejectInsert: (table, row) => (table === 'api_call_logs' && row.trial_id !== TRIAL_ID ? 'insert or update on table "api_call_logs" violates foreign key constraint "api_call_logs_trial_id_fkey"' : undefined),
+      failReadsOf,
     });
     global.fakeSupabase = fake.client;
     const response = await quietly(() => abortHandler({
-      httpMethod: 'POST', path: `/api/trials/${trialId}/abort`, headers: {}, queryStringParameters: {}, body: JSON.stringify({ roles }),
+      httpMethod: 'POST', path: `/api/trials/${trialId}/abort`, headers, queryStringParameters: {}, body: JSON.stringify({ roles }),
     }, {}));
     return { status: response.statusCode, logged: JSON.parse(response.body).logged, rows: fake.tables.api_call_logs };
   };
@@ -420,6 +529,28 @@ async function main() {
   check('every row written is reported', known.status === 200 && JSON.stringify(known.logged) === JSON.stringify(['barak', 'jon_snow']) && known.rows.length === 2, JSON.stringify(known));
   const unknown = await abortWith('9e8d7c6b-5a4f-4e3d-8c2b-1a0f9e8d7c6b', ['barak', 'jon_snow']);
   check('a row the database rejects is not reported', unknown.status === 200 && unknown.logged.length === 0 && unknown.rows.length === 0, JSON.stringify(unknown));
+
+  say('\n=== The abort endpoint writes at most one row per role, and only for a running trial ===');
+  const twice = await abortWith(TRIAL_ID, ['barak', 'barak', 'jon_snow', 'jon_snow', 'barak']);
+  check('a role named more than once gets one row', twice.status === 200 && JSON.stringify(twice.logged) === JSON.stringify(['barak', 'jon_snow']) && twice.rows.length === 2, JSON.stringify(twice));
+  const again = await abortWith(TRIAL_ID, ['barak', 'elon'], { rows: [judgeRow('barak', ABORTED_BY_USER_MESSAGE, TRIAL_ID)] });
+  check('a role whose abort is already recorded gets no second row', again.status === 200 && JSON.stringify(again.logged) === JSON.stringify(['elon']) && again.rows.length === 2, JSON.stringify(again));
+  const inherited = await abortWith(TRIAL_ID, ['constructor', 'toString', 'hasOwnProperty']);
+  check('names every object inherits are not roles', inherited.status === 200 && inherited.logged.length === 0 && inherited.rows.length === 0, JSON.stringify(inherited));
+  const completed = await abortWith(TRIAL_ID, ['barak', 'jon_snow'], { status: 'completed' });
+  check('a completed trial is refused (409), with nothing written', completed.status === 409 && completed.rows.length === 0, JSON.stringify(completed));
+  const noTrialRead = await abortWith(TRIAL_ID, ['barak'], { failReadsOf: ['trials'] });
+  check('a failed trial lookup still records the abort', noTrialRead.status === 200 && JSON.stringify(noTrialRead.logged) === JSON.stringify(['barak']) && noTrialRead.rows.length === 1, JSON.stringify(noTrialRead));
+  const noLogRead = await abortWith(TRIAL_ID, ['barak'], { failReadsOf: ['api_call_logs'] });
+  check('so does a failed lookup of the abort rows already written', noLogRead.status === 200 && JSON.stringify(noLogRead.logged) === JSON.stringify(['barak']) && noLogRead.rows.length === 1, JSON.stringify(noLogRead));
+
+  say('\n=== The abort endpoint needs the site-gate header ===');
+  process.env.SITE_GATE_TOKEN = 'trial-status-gate';
+  const ungated = await abortWith(TRIAL_ID, ['barak']);
+  check('without it: 401, with nothing written', ungated.status === 401 && ungated.rows.length === 0, JSON.stringify(ungated));
+  const gated = await abortWith(TRIAL_ID, ['barak'], { headers: { 'x-site-gate': 'trial-status-gate' } });
+  check('with it: the abort is recorded', gated.status === 200 && gated.rows.length === 1, JSON.stringify(gated));
+  delete process.env.SITE_GATE_TOKEN;
 }
 
 main().then(

@@ -23,9 +23,10 @@ const path = require('node:path');
  * test can read the tables back afterwards to see what the backend wrote.
  *
  * @param {Record<string, object[]>} tables Initial rows, by table name.
- * @param {{failReads?: boolean, missingColumns?: Record<string, string[]>, rejectInsert?: (table: string, row: object) => (string | undefined)}} [options]
+ * @param {{failReads?: boolean, failReadsOf?: string[], missingColumns?: Record<string, string[]>, rejectInsert?: (table: string, row: object) => (string | undefined)}} [options]
  *   failReads makes every select return an error, to exercise the backend's
- *   failure paths. missingColumns names columns a table does not have yet,
+ *   failure paths, and failReadsOf does so only for the tables it names,
+ *   whose writes still go through. missingColumns names columns a table does not have yet,
  *   as in a database a migration has not reached: a write naming one is
  *   rejected whole, with the error Supabase gives. rejectInsert is asked
  *   about each insert, and a message it returns rejects that insert with
@@ -124,7 +125,7 @@ function fakeSupabase(tables, options = {}) {
             rowsOf(table).filter(matches).forEach((row) => Object.assign(row, payload));
             writes.push({ table, op, values: payload });
             result = { error: null };
-          } else if (options.failReads) {
+          } else if (options.failReads || (options.failReadsOf || []).includes(table)) {
             result = { data: null, count: null, error: { message: 'simulated outage' } };
           } else {
             let rows = rowsOf(table).filter(matches);

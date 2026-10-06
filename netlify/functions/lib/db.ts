@@ -479,6 +479,61 @@ export async function isTrialAborted(trialId: string): Promise<boolean> {
 }
 
 /**
+ * Why an agent call for this role must not start, or null if it may:
+ * 'aborted' when the trial has been aborted (an abort row for any role),
+ * 'finished' when this role already has a final outcome logged - a
+ * success, a failure the chain gave up on, or an abort, the same rows
+ * markTrialCompletedIfJudgingDone counts. A row carrying a retried marker
+ * is not an outcome, so a role with only those, or none, may start.
+ *
+ * The page triggers each role once per trial, so this refuses only a
+ * request the page never sends: one that would run a role again, saving
+ * over a result already kept, or run one in a trial the user stopped.
+ *
+ * Fails open, like isTrialAborted: a lookup error returns null, so a
+ * transient Supabase failure never stops a wanted call.
+ */
+export async function agentCallRefusal(trialId: string, role: string): Promise<'aborted' | 'finished' | null> {
+  const supabase = getSupabaseClient();
+  const { data, error } = await supabase
+    .from('api_call_logs')
+    .select('agent_role, error_message')
+    .eq('trial_id', trialId);
+
+  if (error) {
+    console.error('agentCallRefusal: lookup failed, letting the call start:', error.message);
+    return null;
+  }
+
+  const rows = data ?? [];
+  if (rows.some((row) => row.error_message === ABORTED_BY_USER_MESSAGE)) return 'aborted';
+  if (rows.some((row) => row.agent_role === role && !isRetriedAttemptMessage(row.error_message))) return 'finished';
+  return null;
+}
+
+/**
+ * The roles that already have an abort row in this trial, so abort.ts
+ * writes at most one per role however often it is called. Fails open: a
+ * lookup error returns an empty set, and the rows are written anyway,
+ * since they are what stops the running calls.
+ */
+export async function getAbortedRoles(trialId: string): Promise<Set<string>> {
+  const supabase = getSupabaseClient();
+  const { data, error } = await supabase
+    .from('api_call_logs')
+    .select('agent_role')
+    .eq('trial_id', trialId)
+    .eq('error_message', ABORTED_BY_USER_MESSAGE);
+
+  if (error) {
+    console.error('getAbortedRoles: lookup failed, treating no role as aborted yet:', error.message);
+    return new Set();
+  }
+
+  return new Set((data ?? []).map((row) => row.agent_role as string));
+}
+
+/**
  * Writes one call-log row, and returns whether it was written. A write the
  * database rejects is reported on the function's console rather than
  * thrown, so it never masks the outcome of the call it records. abort.ts
