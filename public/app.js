@@ -14,7 +14,8 @@
  * INTERRUPTED_THRESHOLD_MS against the server's time budget. It also checks
  * the values this file shares with styles.css: the scrollbar's resting
  * opacity, which styles.css repeats as a fallback, the spinner's two
- * durations, and the class that dims a call-log row. The types below mirror netlify/functions/lib/types.ts for the same reason. They
+ * durations, the class that dims a call-log row, and the custom property
+ * that carries a card's scrollbar width to its fade. The types below mirror netlify/functions/lib/types.ts for the same reason. They
  * document the JSON this page receives, for readers and editors - nothing
  * type-checks this file (tsconfig.json covers netlify/functions only).
  */

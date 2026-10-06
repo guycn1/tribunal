@@ -147,11 +147,11 @@ const rawHandler: Handler = async (event) => {
         responseText: discarded.responseText,
       }),
     // Overwrites the one agent_progress row for this role the moment each
-    // attempt starts - see the "currently in flight" comment on
-    // upsertAgentProgress in db.ts. This is what a client polling mid-call
-    // actually reads to show the real current model/attempt, rather than
-    // only learning about escalation once an attempt is discarded (which
-    // is always one step behind the attempt that's actually running).
+    // attempt starts - see the comment on upsertAgentProgress in db.ts. This
+    // is what a client polling mid-call actually reads to show the real
+    // current model/attempt, rather than only learning about escalation once
+    // an attempt is discarded (which is always one step behind the attempt
+    // that's actually running).
     (info) =>
       upsertAgentProgress({
         trialId: id,

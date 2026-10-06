@@ -329,7 +329,7 @@ async function main() {
 
   const documentedFns = [...new Set(rows.map((r) => r.fn))];
   // Checked first, and the rest of this section only looks at functions that
-  // exist: a README row naming a missing file must fail here, not crash the
+  // exist: a README entry naming a missing file must fail here, not crash the
   // suite on the read or require of a file that is not there.
   const missingFns = documentedFns.filter((fn) => !fs.existsSync(path.join(ROOT, 'netlify', 'functions', `${fn}.ts`)));
   check('every function the list names exists', missingFns.length === 0, missingFns.join(', '));
@@ -562,7 +562,7 @@ async function main() {
     const badMarkers = named.filter((n) => n.startsWith('[') && !markerValues.includes(n));
     check(`${table}: every marker named is a real one`, badMarkers.length === 0, badMarkers.join(', '));
     for (const [column, allowed] of Object.entries(info.checks)) {
-      if (column === 'role') continue; // the roles are checked against the code below, in the endpoint paragraph
+      if (column === 'role') continue; // the roles are checked against the code below, in the agent-endpoint subsection
       const missing = allowed.filter((v) => !named.includes(v));
       check(`${table}: every allowed ${column} value is listed`, missing.length === 0, missing.join(', '));
     }

@@ -1520,10 +1520,10 @@ unverified claim):
     26](https://answers.netlify.com/t/synchronous-function-timeout-raised-to-26/164676),
     [Netlify support forum - 10 second
     timeout](https://answers.netlify.com/t/10-seconds-timeout/115315).
-- **This directly contradicts the "~30s, observed" figure logged above** (under
-  "Production deployment" in the bug log below, and baked into
-  `TOTAL_BUDGET_MS = 26000` and every constant derived from it in
-  `openrouter.ts`).
+- **This directly contradicts the "~30s, observed" figure logged above** (in
+  the 2026-08-26/27 entries; the bug log below has it too, under
+  "Production deployment"), and baked into `TOTAL_BUDGET_MS = 26000` and every
+  constant derived from it in `openrouter.ts`.
   - That figure came from two calls to the deployed site on 2026-08-26 that hung
     for about 30 seconds before the platform cut them off (commit `786cbc4`),
     and it was taken to be the platform's limit.
@@ -2233,7 +2233,7 @@ has also truncated.
     are repetition loops, and of 687 tier-1 replies that finished on their own,
     the longest was 1,147 of the 1,400 tokens. A truncation here has been a loop
     run to the cap, not a sound argument cut short. The bigger caps were kept as
-    a safeguard; see the 2026-09-27 entry.)*
+    a safeguard; see the 2026-09-27 entry on capped replies.)*
 - `TOTAL_BUDGET_MS` raised 250000 -> 650000 (real margin above the ~498s
   worst-case sum of every tier's attempt ceilings, including backoff delays,
   while staying comfortably under the real 900s background-function wall).
@@ -2788,8 +2788,9 @@ other.
 
 Much of what was wrong was stale rather than false-when-written, so this log
 kept its entries and gained inline *(italic)* notes where a later change made
-one misleading, plus a paragraph at the top of this section saying that a dated
-entry's numbers and "now" are that day's. The findings that went beyond wording:
+one misleading, plus a paragraph at the top of the log (see
+"How to read this log") saying that a dated entry's numbers and "now" are that
+day's. The findings that went beyond wording:
 
 - **Chromium ignores the whole `::-webkit-scrollbar` block here.** Measured in
   headless Edge 153 and Chrome 154: on an element that also sets the standard
@@ -3668,7 +3669,8 @@ full trial sends 7 requests".
 - Every other number in README is either already checked or a dated measurement.
   *(Not so: two counts in README's "Status" were checked by nothing - how many
   offline regression suites `npm test` runs, and how many anti-abuse layers are
-  in place. Found, and checks added, on 2026-10-06; see that day's entry.)*
+  in place. Found, and checks added, on 2026-10-06; see that day's entry on
+  those two counts.)*
 
 **Conditional claims ("X only happens when Y") checked across every tracked file
 (2026-10-03, on the user's request), and the ones whose conditions are wider
@@ -3802,8 +3804,8 @@ log (whose last row was then from 2026-10-03).
 - each claim about an outside platform (Netlify, OpenRouter, Firefox, the
   installed netlify-cli) names the date it was read, and its source where one
   exists.
-- Dates across the docs and comments follow the convention stated at the top of
-  this section.
+- Dates across the docs and comments follow the convention stated under
+  "How to read this log" above.
 
 **Numeric claims checked across every tracked file (2026-10-05, on the user's
 request), and the ones the record did not bear out restated.** Every count,
@@ -4906,6 +4908,18 @@ file into pieces.
   checks; `package.json` still running the script from there failed the check
   of the setup block's `npm run check-render` line; and `tests/markdown.test.js`
   still requiring it from there stopped that suite on a missing module.
+
+### 2026-10-06: cross-references checked again
+
+**Cross-references checked again across every tracked file (2026-10-06, on the
+user's request), for the work since the last such check, `b3e6d75`.** That work
+gave this file a new layout, README and SPEC.md new sections, and the render
+check a new folder. Every pointer in the docs, the code comments and the tests -
+to a file, a function or constant, a section or heading, a log entry, or a
+position such as "above" or "the next entry" - was followed to its target, and
+the few that did not land where they said were corrected. Every anchor that a
+README link names on an outside page was found on that page. The details are in
+the commit message.
 
 ## Operational notes
 
@@ -6292,7 +6306,8 @@ exactly the 2 functions that call OpenRouter), declared via the function's own
   to the function's own address, `/.netlify/functions/<name>`, or to any
   address of the site but its main one, so every request an agent function
   acts on has come through its route on the main address and passed the one
-  count - see that day's entries.)*
+  count - see "2026-10-06: the agent functions accept requests only through
+  their routes" under "Status log".)*
 
 ### Site-gate header
 
