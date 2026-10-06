@@ -456,7 +456,7 @@ Every file tracked in the repository. Not tracked, and git-ignored:
 ├── tests/                            npm test — no network, spends no quota
 │   ├── retry-logic.test.js           the escalation chain, from the real TypeScript
 │   ├── trial-status.test.js          when a trial is completed; aborts; calls the page never sends; the call cap and the failure flag; replies kept for audit, off the page
-│   ├── render-cards.test.js          app.js: cards, the judges' banner, the call log, model ids, failed requests
+│   ├── render-cards.test.js          app.js: cards, the judges' banner, the call log, model ids, failed requests, the site-gate header
 │   ├── shared-constants.test.js      values duplicated across files still agree; the page's timeouts outlast the server's
 │   ├── docs.test.js                  README, SPEC.md and CLAUDE.md agree with the code
 │   ├── markdown.test.js              no Markdown file holds source GitHub is known to render wrongly
@@ -526,7 +526,8 @@ stub DOM — except
 - [`tests/render-cards.test.js`](tests/render-cards.test.js) —
   [`app.js`](public/app.js)'s agent cards, the banner above the judges, the call
   log, how it shortens model ids, how it reports a request that fails outright,
-  and that an abort carries the site-gate header.
+  and that creating a trial, starting each agent and aborting all carry the
+  site-gate header.
 - [`tests/shared-constants.test.js`](tests/shared-constants.test.js) — values
   that are deliberately duplicated across files still agree, and the page's
   polling and "interrupted" timeouts stay above the server's time budget. The

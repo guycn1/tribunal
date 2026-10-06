@@ -4418,6 +4418,24 @@ The change:
   completed trial (`finished` for its roles, no abort rows), an aborted one
   (`aborted`, its four abort rows) and an unknown id (no refusal).
 
+**The page's site-gate header put under test on every request the gate checks
+(2026-10-06, on the user's go-ahead).** Only the abort request's header was
+checked; a trial created, or an agent started, without it would have passed
+every check, while the live site turned the first away with a `401` and dropped
+the second silently.
+
+- `tests/render-cards.test.js` records every POST of its whole-trial run: the
+  trial is created once with the page's token, each of the seven agents is
+  started once, and every agent request carries the token. Header names are
+  matched in any case, as `isSiteGateOk()` reads them.
+- Proven both ways, every file restored byte for byte, in 8 cases: the header
+  dropped from trial creation, from the agent requests or from the shared
+  headers, a stale token, another header name, and one judge never started
+  were each caught by the check meant for them; with the POSTs not recorded,
+  the checks raised an alarm on correct code; and the header name in
+  lowercase, which the server accepts, passed. The abort-header cases of the
+  commit before were run again on the changed check and caught as before.
+
 ## Operational notes
 
 ### Image and screenshot volume in long sessions

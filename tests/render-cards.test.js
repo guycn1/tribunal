@@ -1,7 +1,7 @@
 /**
  * @file Regression tests for public/app.js: its agent-card and call-log
- * render paths, how it shortens model ids, and how it reports a request
- * that fails outright.
+ * render paths, how it shortens model ids, how it reports a request that
+ * fails outright, and the site-gate header on the requests the gate checks.
  *
  * Run with `npm test`. No framework and no browser: app.js's real source is
  * executed against a minimal DOM stub, and the functions under test are
@@ -39,6 +39,11 @@
  *      lowercase in the text itself.
  *   6. The banner above the judges names each representative whose
  *      argument is missing, and is hidden when none is.
+ *   7. Every request the server's site gate checks carries the page's
+ *      token: creating a trial, starting each of the seven agents, and
+ *      aborting, whose request also names the roles still running. Without
+ *      it the gate turns trial creation and the abort away with a 401, and
+ *      drops an agent call silently.
  */
 
 const { installDom, loadApp } = require('./support/load-app');
@@ -527,8 +532,12 @@ async function requestFailureChecks() {
   };
   let trialReads = 0;
   let historyReads = 0;
+  // Every POST the run sends, with its headers, for the site-gate checks
+  // below.
+  const posts = [];
   rejection = await run(beginTrial, async (url, options = {}) => {
     const method = options.method || 'GET';
+    if (method === 'POST') posts.push({ url, headers: options.headers || {} });
     if (method === 'POST') return url === '/api/trials' ? jsonReply(201, { trial: { id: 'run-1' }, caseDef }) : jsonReply(202, {});
     if (url === '/api/trials') { historyReads++; return jsonReply(200, { trials: [] }); }
     // One poll resolves every representative, the next every judge; the
@@ -545,6 +554,22 @@ async function requestFailureChecks() {
   check('the run history is still refreshed after it', historyReads === 1, String(historyReads));
   check('every result from the run stays on screen', [...Object.values(state.representatives), ...Object.values(state.judges)].every((e) => e.status === 'success') && Object.keys(state.judges).length === JUDGE_ROLES.length);
   check('the controls, overlay and sidebar are restored', isIdle());
+
+  console.log('\n=== Creating a trial and starting each agent send the site-gate header ===');
+  // Without it the site gate turns both away: trial creation with a 401,
+  // and an agent call silently, after Netlify's 202.
+  // Header names are case-insensitive in HTTP, and isSiteGateOk() reads them
+  // so; only the value has to be the page's token.
+  const carriesGate = (post) => Object.entries(post.headers).some(([name, value]) => name.toLowerCase() === 'x-site-gate' && value === app.SITE_GATE_TOKEN);
+  const creates = posts.filter((p) => p.url === '/api/trials');
+  const expectedTriggers = [
+    ...REPRESENTATIVE_ROLES.map((role) => `/api/trials/run-1/representatives/${role}`),
+    ...JUDGE_ROLES.map((role) => `/api/trials/run-1/judges/${role}`),
+  ];
+  const triggers = posts.filter((p) => p.url !== '/api/trials');
+  check('the trial is created once, with the header', creates.length === 1 && carriesGate(creates[0]), JSON.stringify(creates));
+  check('each of the seven agents is started once', JSON.stringify(triggers.map((p) => p.url).sort()) === JSON.stringify([...expectedTriggers].sort()), JSON.stringify(triggers.map((p) => p.url)));
+  check('every agent request carries the header', triggers.length > 0 && triggers.every(carriesGate), JSON.stringify(triggers.filter((p) => !carriesGate(p)).map((p) => p.url)));
 
   console.log('\n=== Aborting sends the site-gate header the abort endpoint needs ===');
   // A whole trial on the same virtual clock, aborted at its first poll,
@@ -582,7 +607,7 @@ async function requestFailureChecks() {
   const abortHeaders = (abortRequest && abortRequest.headers) || {};
   check('the run and the abort do not reject', rejection === null, String(rejection));
   check('an abort request is sent', abortRequest !== null);
-  check("it carries the page's site-gate header", abortHeaders['X-Site-Gate'] === app.SITE_GATE_TOKEN, JSON.stringify(abortHeaders));
+  check("it carries the page's site-gate header", carriesGate({ headers: abortHeaders }), JSON.stringify(abortHeaders));
   check('and still says its body is JSON', abortHeaders['Content-Type'] === 'application/json', JSON.stringify(abortHeaders));
   check('naming the four representatives still running', abortRequest !== null && JSON.stringify(JSON.parse(abortRequest.body).roles) === JSON.stringify(REPRESENTATIVE_ROLES), abortRequest && abortRequest.body);
   check('the controls, overlay and sidebar are restored after the abort', isIdle());
