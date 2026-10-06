@@ -198,11 +198,22 @@ ask what "see `schema.sql`" means; a link answers it in one click.
 
 #### What counts as a reference
 
+The kinds below are the ones met so far, not a closed list: the sentence in
+bold above is the rule, and a thing with a home counts however the prose names
+it - by its own name, by its path, or in other words.
+
 - **Another document, or a section of one:** `README.md`, or the map of the
   tables in its "Database" section, `README.md#database`.
+  - A section named in other words than its heading links there too: "the
+    chain" or "an escalation" to "The escalation chain", "an abort" to
+    "Aborting a trial", "the offline suites" to "The test suites".
 - **A file or directory in the repository,** named by its path or by a file name
   only one file has: `netlify.toml`, `case.ts`, `netlify/functions/`. The link
   is relative.
+  - So does code a mention names without its path: a mechanism links to the
+    file that holds it (the escalation chain to `openrouter.ts`, the worker
+    pool to `app.js`), "the schema" to `schema.sql`, and a tier of the
+    architecture to its directory or section.
 - **A commit.** A quoted hash links to its commit page by the full hash,
   `https://github.com/guycn1/tribunal/commit/<full hash>`, the one kind of link
   into this repository that is absolute.
@@ -215,14 +226,24 @@ ask what "see `schema.sql`" means; a link answers it in one click.
     `compare/<base>...<head>`, by full hashes, the base being the commit just
     before the run. A set that is not contiguous stays plain.
 - **`npm test`** links to `tests/`, and an `npm run` script to `package.json`.
-- **A database table named outside its own section of README** links to that
-  section, `#api_call_logs` (or `README.md#api_call_logs` from another file).
-- **An API route named outside README's endpoint list** links to the list,
-  `#api-endpoints`.
+- **A database table named outside its own section of README,** by its name or
+  in other words ("the case record", "a call-log row"), links to that section,
+  `#api_call_logs` (or `README.md#api_call_logs` from another file).
+- **An API route named outside README's endpoint list,** by its path or in
+  other words ("the abort endpoint"), links to the list, `#api-endpoints`.
 - **A badge label named outside its own table** links to that table's section,
   `#call-log` or `#run-history-sidebar`.
+- **An agent, the case or the question for judgment.** In README a
+  representative or a judge, by name or as a group, links to its section of
+  SPEC.md, the case to SPEC.md's charge sheet and the question to its own
+  section; in SPEC.md an agent's name links to its profile in Part 2 or Part 3
+  of this file.
+- **The live site,** named as "the deployed site", "the site's main address"
+  and the like, links to `https://tribunal-t001.netlify.app`.
 - **An outside source a claim rests on,** such as a vendor's documentation page,
-  links to that page.
+  links to that page, read first to confirm it says what the sentence rests on.
+- **A dated measurement or verification** ("measured on 2026-09-21") links the
+  entry in this file's status log that records it.
 
 #### Once per paragraph
 
@@ -237,8 +258,15 @@ targets.
 - Headings and fenced code blocks, which cannot hold a link: the project-layout
   tree in README is one.
 - A file's mention of itself, and a mention inside the section it would link to.
+  Inside a section, the parts of what it documents stay plain too; its opening
+  may link the code that holds them.
+- What names nothing with a home: an indefinite noun ("a judge", "no judge"),
+  and a word used generically ("the backend", "the browser", "the page").
 - What has no home a reader can open: `.env` and other git-ignored paths, a
   model id, a column name or a status value, a command-line tool.
+- A setting or a threshold (the token cap, the 10-second line), which is a
+  value like a column name; and a person or a product (the three jurists,
+  Netlify, Supabase), unless a claim rests on a page about it.
 - A mention quoted as an example of an unlinked reference.
 
 #### Why this file is exempt
@@ -267,7 +295,8 @@ finding every quote of the old name, across line breaks too, and updating it.
 
 A prose mention of a commit, a badge label, an outside source, a section named
 in other words than its heading ("the reliability chain", "a Background
-Function"), and whether a link's words describe its target are reading jobs no
+Function"), a table, route, agent, measurement or piece of code named in other
+words, and whether a link's words describe its target are reading jobs no
 script can do.
 
 A pass that adds links is proven to have changed nothing else by rendering each
@@ -4729,8 +4758,8 @@ page's current address, to which the old one redirects.
   and found to say what its sentence rests on.
 - **A dated measurement or verification:** linked to the entry in this log
   that records it.
-- **Plain:** what is not a name - a verb ("was aborted", "escalated"), an
-  indefinite "a judge" - and generic uses of "the backend", "the browser" and
+- **Left plain in this pass:** a verb ("was aborted", "escalated"), an
+  indefinite "a judge", and generic uses of "the backend", "the browser" and
   "the page", as well as settings and thresholds, the three jurists and the
   products named.
 
@@ -4745,6 +4774,21 @@ Verification:
   for byte: a field dropped from the linked line and a wrong count in the
   linked sentence were each caught, both sentences written plainly passed, and
   the old patterns, put back, failed on the linked sentences.
+
+**HARD RULE 4 itself sets out this reading (same day, on the user's
+direction).** Its "What counts as a reference" opens by saying that its kinds
+are not a closed list, and adds sections, tables and routes named in other
+words, code named without its path, the agents and the case, the live site and
+dated measurements; "What stays plain" adds indefinite nouns and generic words,
+settings and thresholds, and people and products.
+
+- Verbs are listed in neither. A verb can still be a reference: one that says
+  what a commit did is a mention of that commit, and one describing today's
+  behaviour can link the commit that established it, where that commit is the
+  relevant destination.
+- One such mention in README was linked the same day: "before that column
+  existed", in the `api_call_logs` section, to `8b4f395`, the commit that added
+  `duration_ms`.
 
 ## Operational notes
 

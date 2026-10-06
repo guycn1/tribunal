@@ -495,7 +495,8 @@ judges](SPEC.md#judges)), `verdict` (`justified` or `not justified`),
     [`aborted`](#call-log) row when it stopped for [an
     abort](#aborting-a-trial), or a `failed` one when the server has no
     OpenRouter key;
-  - and rows logged before that column existed.
+  - and rows logged [before that column
+    existed](https://github.com/guycn1/tribunal/commit/8b4f395fb9a3ad2ef4b8dc041ff26b2be339df6d).
 - [An abort](#aborting-a-trial) is recorded here too, as a `failed` row with the
   model `n/a` for each pending role; that row is what running calls look for to
   know they should stop.
