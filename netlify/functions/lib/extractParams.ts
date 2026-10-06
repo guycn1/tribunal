@@ -24,6 +24,18 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
  * finds id correctly under either layout. role, when expected, is always
  * the final segment in both layouts.
  */
+/**
+ * Whether a request reached its function through one of the /api routes in
+ * netlify.toml, rather than at the function's own address,
+ * /.netlify/functions/<name>, which Netlify serves as well. event.path is
+ * the address the request was sent to (see extractParams below), so a caller
+ * cannot make it start with /api/ without going through a route - and the
+ * routes are where netlify.toml sets the per-IP rate limit.
+ */
+export function cameThroughApiRoute(event: HandlerEvent): boolean {
+  return event.path.startsWith('/api/');
+}
+
 export function extractParams(event: HandlerEvent, paramCount: 1 | 2): { id?: string; role?: string } {
   const qs = event.queryStringParameters || {};
   if (qs.id) {

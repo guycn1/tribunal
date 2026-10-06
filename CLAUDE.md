@@ -4169,6 +4169,47 @@ against the committed checks, ca51fc8; seven were real:
   then letting its defect through or raising a false alarm on correct text -
   and cb251be's 24 cases on the named-section check, run again unchanged.
 
+### 2026-10-06: the agent functions accept requests only through their routes
+
+**Each agent handler now accepts a request only when it came through its
+rate-limited route (2026-10-06).** Netlify serves every function at its own
+address, `/.netlify/functions/<name>`, as well as through the `/api` redirects
+in `netlify.toml`, and the per-IP rate limit is set on the redirects. Measured
+on the live site at 02:20 UTC that day, from one IP, with POSTs carrying no
+site-gate header, each turned away before any database or OpenRouter call:
+
+- 80 sent to `/.netlify/functions/representative-background/<id>/jon_snow` all
+  answered `202`, with no `429`;
+- 70 sent straight after to `/api/trials/<id>/representatives/jon_snow`
+  answered `202` 32 times and then `429`: the deployed limit of 30 (the raise
+  to 60 was then on `draft` only) plus Netlify's short enforcement delay, as on
+  2026-10-02.
+
+The change:
+
+- `cameThroughApiRoute()` in `extractParams.ts` is each agent handler's first
+  check: a request whose path does not start with `/api/` is answered `403`,
+  and nothing else is read or written. `event.path` is the address the request
+  was sent to - the `/api/...` path through the route, `/.netlify/functions/...`
+  sent straight to the function - as seen in production on 2026-08-26 and
+  confirmed locally on 2026-10-06 with a probe line that was not kept.
+- README's order of the handler's checks, its rate-limit paragraphs and its
+  anti-abuse list say so, and `tests/trial-status.test.js` calls the agent
+  handlers through their routes, as the page does.
+- `tests/docs.test.js` runs both handlers with a request sent to their own
+  address, which must be answered `403`, unlogged, before the method is
+  checked; and it counts per-IP rate limiting as applied only when every agent
+  handler refuses such a request.
+- Proven both ways, every file restored byte for byte, in 14 cases. Eleven
+  defects were each caught by the check meant for it: in the code, the check
+  missing from either handler, placed after the method check in either, logged
+  in either, letting every address through or none, or answering `404`; in
+  README, the check left out of the order or put second. And each of the
+  tests' three new or changed parts, removed in turn, let its defect through or
+  raised an alarm on correct code. The 66-case proof of the count, layer and
+  route checks, run again on the changed test, had every case behave as it
+  should.
+
 ## Operational notes
 
 ### Image and screenshot volume in long sessions
@@ -5550,6 +5591,10 @@ exactly the 2 functions that call OpenRouter), declared via the function's own
   the `: Config` annotation on that export rather than fighting a wrong type,
   since TS types are erased at build time and have zero effect on what the
   platform reads.
+- *(Since 2026-10-06 each agent handler's first check refuses a request sent
+  to the function's own address, `/.netlify/functions/<name>`, so every
+  request an agent function acts on has come through its route and passed the
+  limit - see that day's entry.)*
 
 ### Site-gate header
 

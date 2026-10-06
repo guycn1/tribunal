@@ -1,7 +1,7 @@
 import type { Handler } from '@netlify/functions';
 import { safeHandler } from './lib/safeHandler';
 import { json } from './lib/response';
-import { extractParams } from './lib/extractParams';
+import { extractParams, cameThroughApiRoute } from './lib/extractParams';
 import { getChargeSheet } from './lib/chargeSheet';
 import { JUDGES } from './lib/judges';
 import { buildJudgeMessages, parseJudgeOutput } from './lib/prompts';
@@ -48,6 +48,13 @@ const MAX_TOKENS = AGENT_MAX_TOKENS;
  * completed once every judge has a final outcome.
  */
 const rawHandler: Handler = async (event) => {
+  // Only requests that came through this function's rate-limited route
+  // are accepted, never one sent to its own address - see the matching
+  // check in representative-background.ts.
+  if (!cameThroughApiRoute(event)) {
+    return json(403, { error: 'Only accepted through /api/trials/:id/judges/:role' });
+  }
+
   if (event.httpMethod !== 'POST') {
     return json(405, { error: 'Method not allowed' });
   }
@@ -230,5 +237,6 @@ const rawHandler: Handler = async (event) => {
 export const handler = safeHandler(rawHandler);
 
 // A Background Function by its "-background" filename, with no `config`
-// export and its per-IP rate limit on its redirect in netlify.toml - see
-// the comment at the end of representative-background.ts for why.
+// export and its per-IP rate limit on its redirect in netlify.toml, the
+// only way its first check lets a request in - see the comment at the end
+// of representative-background.ts for why.

@@ -173,7 +173,7 @@ async function runJudge({ reply, aborted = false, abortDuringCall = false, missi
     };
   };
   const response = await quietly(() => judgeHandler({
-    httpMethod: 'POST', path: `/.netlify/functions/judge-background/${TRIAL_ID}/barak`, headers: {}, queryStringParameters: {},
+    httpMethod: 'POST', path: `/api/trials/${TRIAL_ID}/judges/barak`, headers: {}, queryStringParameters: {},
   }, {}));
   return { status: response.statusCode, tables: fake.tables, writes: fake.writes };
 }
@@ -357,7 +357,7 @@ async function main() {
       };
     };
     await quietly(() => representativeHandler({
-      httpMethod: 'POST', path: `/.netlify/functions/representative-background/${TRIAL_ID}/grey_worm`, headers: {}, queryStringParameters: {},
+      httpMethod: 'POST', path: `/api/trials/${TRIAL_ID}/representatives/grey_worm`, headers: {}, queryStringParameters: {},
     }, {}));
     const rows = fake.tables.api_call_logs.filter((row) => row.agent_role === 'grey_worm' && row.error_message !== ABORTED_BY_USER_MESSAGE);
     check('it is logged once, as aborted rather than success', rows.length === 1 && rows[0].status === 'failed' && /^\[aborted-mid-call\] Finished after the user aborted this trial/.test(rows[0].error_message), JSON.stringify(rows.map((r) => [r.status, r.error_message])));

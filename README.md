@@ -135,7 +135,8 @@ not saved.
 model with no login:
 
 - a site-wide rolling call cap;
-- per-IP rate limiting on the two routes that spend OpenRouter quota;
+- per-IP rate limiting on the two routes that spend OpenRouter quota, the only
+  way the agent functions accept a request;
 - and a lightweight site-gate header that filters traffic that never loaded the
   page at all.
 
@@ -189,8 +190,9 @@ Functions](#background-functions-and-polling): Netlify answers the POST with
 nothing the handler returns ever reaches the browser, which learns the outcome
 by polling `GET /api/trials/:id`.
 
-The handler checks, in order, that the request is a POST naming a trial and a
-role, that the role is one it knows (`jon_snow`, `tyrion_lannister`,
+The handler checks, in order, that the request came through its rate-limited
+route rather than the function's own address, that it is a POST naming a trial
+and a role, that the role is one it knows (`jon_snow`, `tyrion_lannister`,
 `daenerys_targaryen` or `grey_worm`; `barak`, `elon` or `shamgar`), the
 site-gate header, the site-wide call cap, and that the trial exists.
 
@@ -204,6 +206,11 @@ across the two routes together, set on their redirects in
 [`netlify.toml`](netlify.toml)) is enforced by the platform ahead of the
 handler, so a rejection there reaches the browser directly, as a `429`. It is a
 backstop far above normal use, since a full trial sends 7 requests.
+
+Netlify also serves each function at its own address, under
+`/.netlify/functions/`, where no redirect applies. The handler's first check
+refuses every request that arrives that way, so each request an agent function
+acts on has come through its route and passed the limit.
 
 It was verified on the live site on 2026-10-02, at the 30 requests it then
 allowed: bursts from one IP were cut off with `429`s after 32 requests to one

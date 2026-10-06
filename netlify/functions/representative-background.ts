@@ -1,7 +1,7 @@
 import type { Handler } from '@netlify/functions';
 import { safeHandler } from './lib/safeHandler';
 import { json } from './lib/response';
-import { extractParams } from './lib/extractParams';
+import { extractParams, cameThroughApiRoute } from './lib/extractParams';
 import { getChargeSheet } from './lib/chargeSheet';
 import { REPRESENTATIVES } from './lib/representatives';
 import { buildRepresentativeMessages } from './lib/prompts';
@@ -28,6 +28,17 @@ const MAX_TOKENS = AGENT_MAX_TOKENS;
  * unless the call failed or the trial was aborted meanwhile.
  */
 const rawHandler: Handler = async (event) => {
+  // Netlify serves this function at its own address,
+  // /.netlify/functions/representative-background/..., as well as through
+  // its route in netlify.toml, and the per-IP rate limit is set on the
+  // route. So the first check refuses any request that did not come through
+  // the route, before anything else is read or written: every request this
+  // handler acts on has passed the limit. Not logged, like the method and
+  // role checks below - refusing costs nothing.
+  if (!cameThroughApiRoute(event)) {
+    return json(403, { error: 'Only accepted through /api/trials/:id/representatives/:role' });
+  }
+
   if (event.httpMethod !== 'POST') {
     return json(405, { error: 'Method not allowed' });
   }
@@ -234,7 +245,8 @@ export const handler = safeHandler(rawHandler);
 // and none of the three ever took effect: the 202s come from the filename,
 // routing comes from netlify.toml, and the rate limit was never applied -
 // 75 requests in 80 seconds from one IP on 2026-10-02 all got through. The
-// per-IP rate limit is on this function's redirect in netlify.toml.
+// per-IP rate limit is on this function's redirect in netlify.toml, and the
+// handler's first check accepts only requests that came that way.
 //
 // The filename and the redirect target in netlify.toml must name the same
 // function. When this file was renamed from representative.ts, every call

@@ -435,9 +435,9 @@ async function main() {
   // real handlers with requests that fail one check, or two at once - two
   // at once answer with the status of whichever check runs first.
   const { GLOBAL_CALL_CAP } = backend.load('lib/db.js');
-  const STEP_CODE = { post: 405, role: 400, gate: 401, cap: 429, trial: 404 };
+  const STEP_CODE = { route: 403, post: 405, role: 400, gate: 401, cap: 429, trial: 404 };
   const orderClause = (agentPara.match(/The handler checks, in order, (.*?)\. Because/) || [])[1] || '';
-  const stepAt = { post: orderClause.indexOf('a POST naming a trial and a role'), role: orderClause.indexOf('role is one it knows'), gate: orderClause.indexOf('site-gate header'), cap: orderClause.indexOf('call cap'), trial: orderClause.indexOf('trial exists') };
+  const stepAt = { route: orderClause.indexOf('came through its rate-limited route'), post: orderClause.indexOf('a POST naming a trial and a role'), role: orderClause.indexOf('role is one it knows'), gate: orderClause.indexOf('site-gate header'), cap: orderClause.indexOf('call cap'), trial: orderClause.indexOf('trial exists') };
   check('the order of the agent handlers\' checks is stated, naming each one', Object.values(stepAt).every((i) => i >= 0), JSON.stringify(stepAt));
   const documentedOrder = Object.keys(stepAt).sort((a, b) => stepAt[a] - stepAt[b]);
   /**
@@ -467,7 +467,7 @@ async function main() {
     try {
       const response = await backend.load(`${fn}.js`).handler({
         httpMethod: fails.has('post') ? 'GET' : 'POST',
-        path: `/api/trials/${id}/${fn === 'judge-background' ? 'judges' : 'representatives'}/${role}`,
+        path: fails.has('route') ? `/.netlify/functions/${fn}/${id}/${role}` : `/api/trials/${id}/${fn === 'judge-background' ? 'judges' : 'representatives'}/${role}`,
         headers: fails.has('gate') ? {} : { 'x-site-gate': GATE },
         queryStringParameters: {},
       }, {});
@@ -1056,7 +1056,9 @@ async function main() {
   // only that check: it must be turned away with that check's status, so a
   // check that is called but whose answer is ignored does not count. The rate
   // limit must be set per IP, with a request limit and a window, on every
-  // route to an agent function. None holds if there is no agent at all.
+  // route to an agent function, and every agent handler must refuse a
+  // request sent to its own address, which no route covers. None holds if
+  // there is no agent at all.
   /** Whether every agent handler turns away a request failing only `step`. */
   const everyAgentRejects = async (step) => {
     for (const fn of backgroundFns) if ((await callAgent(fn, [step])).status !== STEP_CODE[step]) return false;
@@ -1068,7 +1070,7 @@ async function main() {
   const anyAgent = backgroundFns.length > 0;
   const layers = [
     { name: 'the site-wide call cap', words: /call cap/i, inCode: anyAgent && await everyAgentRejects('cap') },
-    { name: 'per-IP rate limiting', words: /rate limit/i, inCode: anyAgent && everyAgentRouteLimited },
+    { name: 'per-IP rate limiting', words: /rate limit/i, inCode: anyAgent && everyAgentRouteLimited && await everyAgentRejects('route') },
     { name: 'the site-gate header', words: /site-gate/i, inCode: anyAgent && await everyAgentRejects('gate') },
   ];
   const layersInCode = layers.filter((l) => l.inCode);
