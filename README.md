@@ -212,9 +212,11 @@ Netlify also serves each function at its own address, under
 refuses every request that arrives that way, so each request an agent function
 acts on has come through its route and passed the limit.
 
-It was verified on the live site on 2026-10-02, at the 30 requests it then
-allowed: bursts from one IP were cut off with `429`s after 32 requests to one
-route, and after 31 split between the two.
+Both were verified on the live site on 2026-10-06. Bursts from one IP were cut
+off with `429`s after 62 requests to one route, and after 63 split between the
+two (40 to one, 23 to the other). Gated requests for a real trial sent straight
+to both agent functions' own addresses left nothing behind, while the same
+request through its route started its attempt within 5 seconds.
 
 A judge's reply must contain a `VERDICT: justified` or `VERDICT: not justified`
 line with its reasoning after it, and one without them is logged as a failure
@@ -596,8 +598,9 @@ All three [anti-abuse layers](#anti-abuse-and-cost-controls) are in place:
   agent handlers against each;
 - the third, per-IP rate limiting, is set on the two agent routes in
   [`netlify.toml`](netlify.toml) and enforced by Netlify's own platform, as a
-  backstop far above normal use; it was verified on the live site on 2026-10-02,
-  at the 30-request limit of the time.
+  backstop far above normal use, and the agent functions accept requests only
+  through those routes; both were verified on the live site on 2026-10-06, at
+  the limit of 60.
 
 The frontend (layout, live status display, call log transparency, a responsive
 card view for narrow screens, cross-browser scrollbar and interaction details)

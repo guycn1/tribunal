@@ -45,13 +45,16 @@
 # representative-background.ts). As documented when checked that day,
 # Netlify allows at most 180 seconds per window, and two rules on this
 # plan - these two. The two rules count one IP's requests together, not
-# separately: measured on the
-# live site on 2026-10-02, at the 30-request limit of the time, 20
-# requests to the first route left 11 for the second before the 429s
-# began. A full trial sends 7, so 60 per 3 minutes (about 8 full trials)
-# is a backstop against a single source hammering them, not a limit
-# normal use comes near; the site-wide call cap in db.ts is what bounds
-# spend.
+# separately: measured on the live site on 2026-10-06, 40 requests to the
+# first route left 23 for the second before the 429s began. A full trial
+# sends 7, so 60 per 3 minutes (about 8 full trials) is a backstop against
+# a single source hammering them, not a limit normal use comes near; the
+# site-wide call cap in db.ts is what bounds spend.
+# Netlify also serves each function at its own address,
+# /.netlify/functions/<name>, which no rule here covers; each agent
+# handler's first check refuses a request that arrives there (see
+# representative-background.ts), so every request they act on has passed
+# this limit.
 # Keep the two limits equal, so the shared count means one thing.
 [[redirects]]
   from = "/api/trials/:id/representatives/:role"
