@@ -1,10 +1,10 @@
 # Tribunal — Specification
 
-**Case T-001: The Realm v. Jon Snow.** A fixed, canonical trial — not a
-general-purpose "submit any charge" tool — argued and ruled on by [seven
-independent AI agents](#2-the-seven-agents): four representatives (two
-defense, two prosecution) and three judges, each modelled on a distinct real
-judicial reasoning method.
+**[Case T-001: The Realm v. Jon Snow](#1-the-charge-sheet).** A fixed, canonical
+trial — not a general-purpose "submit any charge" tool — argued and ruled on by
+[seven independent AI agents](#2-the-seven-agents): [four
+representatives](#representatives) (two defense, two prosecution) and [three
+judges](#judges), each modelled on a distinct real judicial reasoning method.
 
 This is the ASE course's shared "running project": every submission
 implements the same fixed specification, graded on directing discipline shown,
@@ -27,8 +27,9 @@ This document is the functional/requirements spec, sourced from the ASE Book
 - **Act alleged:** Jon intentionally killed Daenerys by stabbing her during a
   private meeting in the throne room after the fall of King's Landing.
 
-This section is the case exactly as the app serves it — word for word the
-record seeded into [the database](README.md#database) by
+This section is the case exactly as [the app](https://tribunal-t001.netlify.app)
+serves it — word for word [the record](README.md#case_definitions) seeded into
+[the database](README.md#database) by
 [`supabase/schema.sql`](supabase/schema.sql). [The stipulated
 facts](#stipulated-facts) in particular are quoted, not paraphrased: they are
 what both sides accept, and a restatement can shift what was agreed.
@@ -104,41 +105,50 @@ verdict.
 Each agent's full system prompt (real depth, not a one-line trait) lives in
 [`netlify/functions/lib/representatives.ts`](netlify/functions/lib/representatives.ts)
 or [`judges.ts`](netlify/functions/lib/judges.ts), and
-[`prompts.ts`](netlify/functions/lib/prompts.ts) pairs it with the case record
-(for a judge, with the representatives' arguments too). This section states
-identity and required reasoning approach, not the prompts themselves.
+[`prompts.ts`](netlify/functions/lib/prompts.ts) pairs it with [the case
+record](#1-the-charge-sheet) (for a judge, with [the
+representatives](#representatives)' arguments too). This section states identity
+and required reasoning approach, not the prompts themselves.
 
 ### Representatives
 
-- **Jon Snow** (defense) — plain-spoken, duty- and protection-driven; accepts
-  blame readily; changes position when honor or evidence requires it.
-- **Tyrion Lannister** (defense) — quick, ironic, skeptical of purity and
-  inherited power; favors persuasion and outcomes that leave people alive.
-- **Daenerys Targaryen** (prosecution) — commanding, morally intense; prizes
-  liberation and loyalty; reacts sharply to betrayal but can be reached by
-  genuine respect; interprets the record herself, including evidence against
-  her.
-- **Grey Worm** (prosecution) — terse, disciplined; weighs witnessed conduct
-  and sequence of events over rhetoric or speculation.
+- **[Jon Snow](CLAUDE.md#jon-snow--defense-seat)** (defense) — plain-spoken,
+  duty- and protection-driven; accepts blame readily; changes position when
+  honor or evidence requires it.
+- **[Tyrion Lannister](CLAUDE.md#tyrion-lannister--defense-seat)** (defense) —
+  quick, ironic, skeptical of purity and inherited power; favors persuasion and
+  outcomes that leave people alive.
+- **[Daenerys Targaryen](CLAUDE.md#daenerys-targaryen--prosecution-seat)**
+  (prosecution) — commanding, morally intense; prizes liberation and loyalty;
+  reacts sharply to betrayal but can be reached by genuine respect; interprets
+  the record herself, including evidence against her.
+- **[Grey Worm](CLAUDE.md#grey-worm--prosecution-seat)** (prosecution) — terse,
+  disciplined; weighs witnessed conduct and sequence of events over rhetoric or
+  speculation.
 
 ### Judges
 
 Each is modelled on a real jurist's documented reasoning method, not a
 persona.
 
-- **Judge 1 — the Aharon Barak model.** Systematic and rights-centered:
+- **Judge 1 — [the Aharon Barak
+  model](CLAUDE.md#judge-1--the-aharon-barak-model).** Systematic and
+  rights-centered:
   - purposive interpretation (text read against a rule's function, structure,
     and democratic values);
   - tests a rights claim through lawful authority, proper purpose, rational
     fit, less harmful means, and proportionality;
   - builds an explicit doctrinal structure before resolving the dispute.
-- **Judge 2 — the Menachem Elon model.** Tradition-minded:
+- **Judge 2 — [the Menachem Elon
+  model](CLAUDE.md#judge-2--the-menachem-elon-model).** Tradition-minded:
   - treats Jewish law as a working legal source alongside comparative and
     historical material;
   - insists courts have limited authority — identifying illegality is not
     license to supervise every political or social choice;
   - comfortable dissenting on the merits.
-- **Judge 3 — the Meir Shamgar model.** Institutional and fact-heavy:
+- **Judge 3 — [the Meir Shamgar
+  model](CLAUDE.md#judge-3--the-meir-shamgar-model).** Institutional and
+  fact-heavy:
   - identifies offices, powers, duties, and remedies before moral intuition;
   - treats constitutional development as reasoned legal development from
     text, precedent, and institutional structure rather than proclamation;
@@ -185,10 +195,13 @@ persona.
   completion tokens, total tokens, cost, status, and timestamp. Token counts
   are read from the API response's own usage data; cost is computed from
   [per-token pricing](netlify/functions/lib/pricing.ts).
-- **Architecture:** [three-tier](README.md#architecture) — browser / backend /
-  [database](README.md#database). The backend alone holds the API key and
-  orchestrates every model call; the database stores the case record, every
-  argument and ruling, and the full per-call log.
+- **Architecture:** [three-tier](README.md#architecture) — [browser](public) /
+  [backend](netlify/functions) / [database](README.md#database). The backend
+  alone holds the API key and orchestrates every model call; the database stores
+  [the case record](README.md#case_definitions), every
+  [argument](README.md#representative_arguments) and
+  [ruling](README.md#judge_rulings), and [the full per-call
+  log](README.md#api_call_logs).
 
 ## How this repository implements it
 
@@ -201,4 +214,4 @@ How this repository actually satisfies the above is documented in
 - the [anti-abuse measures](README.md#anti-abuse-and-cost-controls);
 - the database, defined in [`supabase/schema.sql`](supabase/schema.sql) and
   [mapped in `README.md`](README.md#database);
-- and the decisions behind them.
+- and [the decisions behind them](CLAUDE.md#status-log).

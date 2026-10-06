@@ -528,7 +528,8 @@ async function main() {
   check('schema.sql defines tables', tableNames.length > 0);
   const countClaims = [
     ['the Database section', (db.match(/^(\w+) tables in Supabase/m) || [])[1]],
-    ['Local development', (section(README, '## Local development').match(/creates the (\w+) tables/) || [])[1]],
+    // The count may open a link: "creates the [six tables](#database)".
+    ['Local development', (section(README, '## Local development').match(/creates the \[?(\w+) tables/) || [])[1]],
     ['the layout tree', (treeBlock.match(/all (\w+) tables/) || [])[1]],
     ["schema.sql's own header", (SCHEMA.match(/^-- (\w+) tables:/m) || [])[1]],
   ];
@@ -1270,8 +1271,9 @@ async function main() {
   // CLAUDE.md is wrapped at 80 columns, so the line may break before the list.
   const claudeFields = ((CLAUDE.match(/every\s+call\s+must\s+log\s+`([^`]+)`/) || [])[1] || '').split(/,\s*/);
   // Parentheticals dropped first: they would hold a field's allowed values,
-  // such as (`success` or `failed`), not further fields.
-  const readmeFields = [...((sections.api_call_logs || '').match(/^- The fields the spec requires for every call: (.*)$/m) || ['', ''])[1].replace(/\([^)]*\)/g, '').matchAll(/`([a-z_]+)`/g)].map((m) => m[1]);
+  // such as (`success` or `failed`), not further fields. "The spec" may be a
+  // link to SPEC.md.
+  const readmeFields = [...((sections.api_call_logs || '').match(/^- The fields (?:the spec|\[the spec\]\([^)\s]*\)) requires for every call: (.*)$/m) || ['', ''])[1].replace(/\([^)]*\)/g, '').matchAll(/`([a-z_]+)`/g)].map((m) => m[1]);
   const logColumns = (TABLES.api_call_logs || { columns: [] }).columns;
   for (const [doc, fields] of [['SPEC.md', specFields], ['CLAUDE.md Part 5', claudeFields], ['README', readmeFields]]) {
     check(`${doc}: every required log field is a real column`, fields.length > 1 && minus(fields, logColumns).length === 0, minus(fields, logColumns).join(', ') || String(fields.length));

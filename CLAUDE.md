@@ -4696,6 +4696,56 @@ his second succeeded. The trial completed 7 of 7 at 14:34:15, Daenerys after
 an escalation to `claude-haiku-4.5`, and its judges ruled 2-1. The cards'
 text areas show eight lines, as in the hero.
 
+### 2026-10-06: HARD RULE 4 read broadly in README and SPEC.md
+
+**README and SPEC.md now link every mention of something with a home of its
+own, at its first mention in each paragraph (2026-10-06, on the user's
+request).** Both files were read line by line against the rule's opening
+sentence rather than only its list of kinds: 186 links were added to README and
+21 to SPEC.md, and README's link to OpenRouter's streaming docs now gives the
+page's current address, to which the old one redirects.
+
+- **A README section named in other words:** an abort, an escalation, a
+  detector or a tier, the agent endpoints, functions and routes, the site gate,
+  the call cap and the per-IP limit, the call log, the run-history sidebar and
+  polling, each linked to its section.
+- **A table named in other words:** the case record, a trial, an argument, a
+  ruling, a call-log row and the attempt a role is on, each linked to its
+  table's section in README.
+- **The agents and the case:** the representatives and the judges, by name or
+  as a group, link to their SPEC.md sections, the case to its charge sheet and
+  the question to its own section; in SPEC.md, each agent's name links to its
+  profile in Part 2 or Part 3 of this file.
+- **Code or a file a mention names:** the escalation chain's lead to
+  `openrouter.ts`, the worker pool to `app.js`, the three anti-abuse layers in
+  their own section to `db.ts`, `netlify.toml` and `siteGate.ts`, the test
+  setup to `tests/support/`, the schema to `schema.sql`, and the three tiers of
+  the architecture line to `public/`, `netlify/functions/` and the Database
+  section.
+- **An outside source a claim rests on:** Netlify's documentation (Background
+  Functions, the synchronous execution limit, a function's own address, rate
+  limiting and the `URL` variable), OpenRouter's (errors and 402s), Supabase's
+  (row-level security) and GitHub's (the Markdown API), each read on 2026-10-06
+  and found to say what its sentence rests on.
+- **A dated measurement or verification:** linked to the entry in this log
+  that records it.
+- **Plain:** what is not a name - a verb ("was aborted", "escalated"), an
+  indefinite "a judge" - and generic uses of "the backend", "the browser" and
+  "the page", as well as settings and thresholds, the three jurists and the
+  products named.
+
+Verification:
+
+- Rendered through GitHub's markdown API before and after with every `<a>` tag
+  stripped, both files are identical. No paragraph links one target twice, and
+  every outside address answered 200.
+- `tests/docs.test.js` read two README sentences with patterns a link breaks,
+  and now reads each with or without its link: `creates the [six tables]` and
+  `The fields [the spec] requires`. Proven both ways, every file restored byte
+  for byte: a field dropped from the linked line and a wrong count in the
+  linked sentence were each caught, both sentences written plainly passed, and
+  the old patterns, put back, failed on the linked sentences.
+
 ## Operational notes
 
 ### Image and screenshot volume in long sessions
