@@ -1106,6 +1106,25 @@ table.call-log .col-full {
   margin-top: 2px;
 }
 
+/* In the table, a caption is centred in a narrow column and is often just
+   too long for one line, so greedy wrapping left its last word alone:
+   "(retried with the same / model)", "(the user aborted the / trial)".
+   `pretty` keeps the lines as full as it can while moving a word down to
+   keep the last one company: "(the user aborted / the trial)". A browser
+   without it keeps `balance`, which evens the lines out instead and splits
+   that one as "(the user / aborted the trial)". Measured in headless Edge
+   on 2026-10-13 from a 664px table to a 974px one: no caption left alone
+   on its last line, and no row taller than before. Table view only: in the
+   card view below 720px a caption has a whole row and fits on one line, so
+   that layout is left exactly as it was. A browser with neither wraps as
+   before. */
+@media (width > 720px) {
+  table.call-log .status-caption {
+    text-wrap: balance;
+    text-wrap: pretty;
+  }
+}
+
 /* Deterministic centring for a cell that stacks two elements vertically
    (a bold total over a dim breakdown in the Tokens column; a badge over
    a status-caption in the Status column) - text-align: center on the

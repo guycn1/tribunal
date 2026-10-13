@@ -675,7 +675,7 @@ Every file tracked in the repository. Not tracked, and git-ignored:
 │   ├── retry-logic.test.js           the escalation chain, from the real TypeScript
 │   ├── trial-status.test.js          when a trial is completed; aborts; calls the page never sends; the call cap and the failure flag; replies kept for audit, off the page
 │   ├── render-cards.test.js          app.js: cards, the judges' banner, the call log, model ids, failed requests, the site-gate header, the card fade
-│   ├── shared-constants.test.js      values duplicated across files still agree; the page's timeouts outlast the server's; a card's text area is whole lines tall
+│   ├── shared-constants.test.js      values duplicated across files still agree; the page's timeouts outlast the server's; a card's text area is whole lines tall; call-log captions wrap evenly
 │   ├── docs.test.js                  README, SPEC.md and CLAUDE.md agree with the code; README and SPEC.md link what they name
 │   ├── markdown.test.js              no Markdown file holds source GitHub is known to render wrongly; check-render's pieces of a large file join back into it
 │   ├── check-render.js               npm run check-render — renders each Markdown file through GitHub and compares the page with its source
@@ -759,11 +759,13 @@ DOM](tests/support/load-app.js) — except
 - [`tests/shared-constants.test.js`](tests/shared-constants.test.js) — values
   that are deliberately duplicated across files still agree, the page's polling
   and ["interrupted"](#run-history-sidebar) timeouts stay above the server's
-  time budget, and a card's text area is a whole number of lines tall, so no
-  line is cut in half. The duplicated values: the markers, the fixed messages
-  and the phrase that marks a truncation, [the roles with their names and
+  time budget, a card's text area is a whole number of lines tall, so no
+  line is cut in half, and the captions in [the call log](#call-log) wrap
+  evenly in the table view and as before in the card view. The duplicated
+  values: the markers, the fixed messages and the phrase that marks a
+  truncation, [the roles with their names and
   seats](SPEC.md#2-the-seven-agents), the scrollbar's resting opacity, the
-  spinner's durations, the class that dims [a call-log row](#call-log), the
+  spinner's durations, the class that dims a call-log row, the
   property that carries a card's scrollbar width to its fade, and the sidebar's
   width where the loading overlay restates it.
 - [`tests/docs.test.js`](tests/docs.test.js) — this README, [`SPEC.md`](SPEC.md)

@@ -5075,6 +5075,38 @@ the merge, so that right after it `main` and `draft` held identical trees.
   `aborted`, and no row was added in the 2 minutes 20 seconds after the last.
   8 rows, $0.0005.
 
+### 2026-10-13: the call log's captions wrap evenly
+
+**The captions under the call log's badges no longer leave one word alone on
+their last line (2026-10-13, on the user's request).** In the table view, a
+caption such as "(retried with the same model)" is just too long for its
+centred Status cell, and greedy wrapping put "model)" on a line of its own,
+as in README's call-log and aborted-trial screenshots.
+
+- `table.call-log .status-caption` now sets `text-wrap: balance` and then
+  `text-wrap: pretty`, inside `@media (width > 720px)`: a browser that
+  knows `pretty` keeps the lines full and moves a word down to keep the
+  last one company, and one that knows only `balance` evens the lines out.
+  The card view below 720px, where every caption fits on one line, is left
+  as it was.
+- Measured in headless Edge on the real page, served from the working tree
+  with the API answered by local `netlify dev` (reads only), on trials
+  `0a5de440` and `298f38b4` and on all four caption texts the app writes,
+  at ten table widths from 721px to 1920px and five card widths from 360px
+  to 720px. Before, a caption ended on one word at every table width; after,
+  none did ("(retried with the / same model)", "(the user aborted / the
+  trial)"), no row grew taller and nothing overflowed. In the card view
+  every element's box and style matched before and after.
+- `tests/shared-constants.test.js` checks that exactly one caption rule
+  sets `text-wrap`, that it is that table rule inside a media query that
+  starts where the card view's ends, and that it sets `balance` and then
+  `pretty`. Proven both ways, every file restored byte for byte: 11 breaks -
+  the rule removed, either value dropped, the two swapped, the media query
+  dropped, moved to 600px or written as `min-width`, the selector widened,
+  the rule repeated in the card view, the card view's breakpoint moved
+  alone, and its header rule renamed - each failed the checks meant for
+  it, and a comment naming `text-wrap` on a caption passed.
+
 ## Operational notes
 
 ### Image and screenshot volume in long sessions

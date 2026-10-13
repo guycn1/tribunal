@@ -1,7 +1,8 @@
 /**
  * @file Asserts that values deliberately duplicated across files still agree,
- * that the page's timeouts outlast the server's time budget, and that a
- * card's text area ends between two lines.
+ * that the page's timeouts outlast the server's time budget, that a card's
+ * text area ends between two lines, and that the call log's captions wrap
+ * evenly in the table view and as before in the card view.
  *
  * Run with `npm test`. No framework, no network, no build: every check
  * reads the real source files as text and compares what it finds.
@@ -357,6 +358,71 @@ const cardScroll = (css.match(/\.card-body-scroll\s*\{([^}]*)\}/) || [])[1] || '
 const caps = [...cardScroll.matchAll(/max-height:\s*([^;]+);/g)].map((m) => m[1].trim());
 check('the card text area has a height cap', caps.length > 0, cardScroll.trim().slice(0, 80));
 check('its cap is a whole number of lines (lh), set last', caps.length > 0 && /^[1-9]\d*lh$/.test(caps[caps.length - 1]), caps.join(', '));
+
+// --- 12. Call-log captions wrap without a lone last word, in the table only
+console.log("\n=== The call log's captions wrap evenly in the table, and only there ===");
+
+/**
+ * Splits CSS into its blocks at one nesting level: each `prelude { body }`,
+ * the body kept whole, so an @media block's rules can be read by calling this
+ * again on its body. Comments must already be removed.
+ * @param {string} source
+ * @returns {{prelude: string, body: string}[]}
+ */
+function cssBlocks(source) {
+  const blocks = [];
+  let depth = 0;
+  let start = 0;
+  let open = -1;
+  for (let i = 0; i < source.length; i++) {
+    if (source[i] === '{') {
+      if (depth === 0) open = i;
+      depth++;
+    } else if (source[i] === '}') {
+      depth--;
+      if (depth === 0) {
+        blocks.push({ prelude: source.slice(start, open).trim(), body: source.slice(open + 1, i) });
+        start = i + 1;
+      }
+    }
+  }
+  return blocks;
+}
+
+// Every rule naming .status-caption, with the @media it sits in ('' at the
+// top level).
+const cssNoComments = css.replace(/\/\*[\s\S]*?\*\//g, '');
+const captionRules = [];
+for (const block of cssBlocks(cssNoComments)) {
+  const inner = block.prelude.startsWith('@media') ? cssBlocks(block.body) : [{ prelude: block.prelude, body: block.body }];
+  const media = block.prelude.startsWith('@media') ? block.prelude : '';
+  for (const rule of inner) {
+    if (rule.prelude.includes('.status-caption')) captionRules.push({ media, selector: rule.prelude, body: rule.body });
+  }
+}
+const wrapRules = captionRules.filter((r) => /\btext-wrap\s*:/.test(r.body));
+// The card view starts at the breakpoint that hides the table's header row.
+const cardBreakpoint = (cssBlocks(cssNoComments).find((b) => /^@media\s*\(max-width:\s*\d+px\)$/.test(b.prelude)
+  && cssBlocks(b.body).some((r) => r.prelude === 'table.call-log thead')) || { prelude: '' }).prelude.match(/(\d+)px/);
+const tableOnly = cardBreakpoint ? `@media (width > ${cardBreakpoint[1]}px)` : null;
+const wrapValues = wrapRules.length === 1 ? [...wrapRules[0].body.matchAll(/\btext-wrap\s*:\s*([^;]+);/g)].map((m) => m[1].trim()) : [];
+
+check('found the card view breakpoint', Boolean(cardBreakpoint), 'no @media (max-width: Npx) hiding table.call-log thead');
+check(
+  'exactly one caption rule sets text-wrap',
+  wrapRules.length === 1,
+  wrapRules.map((r) => `${r.media || '(top level)'} ${r.selector}`).join('; ') || 'none'
+);
+check(
+  'it is scoped to the call log table, above the card view breakpoint',
+  wrapRules.length === 1 && wrapRules[0].selector === 'table.call-log .status-caption' && wrapRules[0].media === tableOnly,
+  wrapRules.length === 1 ? `${wrapRules[0].media || '(top level)'} ${wrapRules[0].selector}; expected ${tableOnly} table.call-log .status-caption` : ''
+);
+check(
+  'it sets balance, then pretty last, so a browser without pretty keeps balance',
+  wrapValues.length === 2 && wrapValues[0] === 'balance' && wrapValues[1] === 'pretty',
+  wrapValues.join(', ') || 'none'
+);
 
 console.log(failures === 0 ? '\nAll checks passed.' : `\n${failures} check(s) failed.`);
 process.exit(failures === 0 ? 0 : 1);
