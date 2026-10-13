@@ -4729,6 +4729,8 @@ two decimals of a cent) and the totals (27,210 tokens, 0.56¢ of a stored
 0.5586¢, 144,178 ms) were checked against the stored rows, and the caption's
 reasons against their stored error messages. The status captions wrap with
 "model)" on a line of its own; that is the app at its widest layout.
+*(Re-captured on 2026-10-13, after the captions began to wrap evenly - see
+"2026-10-13: the call log's captions wrap evenly".)*
 
 **README's fourth screenshot: an aborted trial (same day).**
 `screenshots/readme-4-aborted-trial.png`, taken by the user, shows trial
@@ -5081,7 +5083,7 @@ the merge, so that right after it `main` and `draft` held identical trees.
 their last line (2026-10-13, on the user's request).** In the table view, a
 caption such as "(retried with the same model)" is just too long for its
 centred Status cell, and greedy wrapping put "model)" on a line of its own,
-as in README's call-log and aborted-trial screenshots.
+as README's call-log and aborted-trial screenshots then showed.
 
 - `table.call-log .status-caption` now sets `text-wrap: balance` and then
   `text-wrap: pretty`, inside `@media (width > 720px)`: a browser that
@@ -5106,6 +5108,19 @@ as in README's call-log and aborted-trial screenshots.
   the rule repeated in the card view, the card view's breakpoint moved
   alone, and its header rule renamed - each failed the checks meant for
   it, and a comment naming `text-wrap` on a caption passed.
+
+**README's call-log screenshot re-captured with the new wrapping (same
+day).** `screenshots/readme-3-call-log.png` shows trial `0a5de440` as
+before, at the same size, 2592×1739. Compared with the capture it replaces,
+pixel by pixel after alignment:
+
+- the three Status captions it holds now read "(retried with the / same
+  model)", twice, and "(escalated to a / different model)";
+- everything else - every figure, badge, model name, the totals row and the
+  heading - is the same, each part matching exactly once moved by at most
+  one image pixel, half a CSS pixel at the capture's scale, since the table
+  laid out a pixel narrower and a pixel taller than before. README's caption
+  for it is unchanged.
 
 ## Operational notes
 
