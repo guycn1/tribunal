@@ -3,8 +3,7 @@
  * charge sheet, runs a trial - triggering the seven agent calls as Netlify
  * Background Functions and polling for their results - and displays each
  * argument and ruling, the per-call log, and the run history. The three
- * judges' rulings are shown independently, each on its own card, and are
- * never combined.
+ * judges' rulings are shown independently, each on its own card.
  *
  * This file is served as-is: no build step and no modules. It cannot import
  * from the Netlify Functions, so the values both sides must agree on are
@@ -1586,7 +1585,7 @@ const SPINNER_REDUCED_MOTION_MS = 2400;
  * Prepended to every "still waiting on a response" status below - a purely
  * visual, CSS-animated indicator (see .spinner in styles.css) that there's
  * real, ongoing activity, distinct from the text-only states (aborted,
- * failed, success) where nothing is in flight anymore.
+ * failed, success) where nothing is in flight any more.
  *
  * A CSS animation restarts from 0% whenever its element is torn down and
  * recreated, which would otherwise make a spinner visibly snap back to the

@@ -13,23 +13,23 @@ arguments and the three judges' rulings side by side, with the run history on
 the left](screenshots/readme-1-hero-split-rulings.png)
 
 *[Three judges](SPEC.md#judges), three separate rulings: the Elon judge found
-the killing justified, the Barak and Shamgar judges did not, and nothing on the
-page adds them up. [Grey Worm](SPEC.md#representatives)'s argument was answered
-by `claude-haiku-4.5` rather than the default model: his first two attempts were
+the killing justified, and the Barak and Shamgar judges did not.
+[Grey Worm](SPEC.md#representatives)'s argument was answered by
+`claude-haiku-4.5` rather than the default model: his first two attempts were
 caught and discarded, and [the escalation chain](#the-escalation-chain) moved
 him up a tier.*
 
 A fixed, canonical fictional tribunal — **[Case T-001: The Realm v. Jon
 Snow](SPEC.md#1-the-charge-sheet)** — argued and ruled on by [seven independent
 **AI agents**](SPEC.md#2-the-seven-agents): [four
-representatives](SPEC.md#representatives) (two defense, two prosecution) and
+representatives](SPEC.md#representatives) (two defence, two prosecution) and
 [three judges](SPEC.md#judges), each modelled on a distinct real judicial
 reasoning method (Aharon Barak, Menachem Elon, Meir Shamgar).
 
 The Tribunal decides [one question](SPEC.md#question-for-judgment) — **justified
 / not justified** — and gives reasons. It does not impose a sentence, and the
-[three judges](SPEC.md#judges)' rulings are never combined into a single
-verdict; they are displayed independently, each on its own card.
+[three judges](SPEC.md#judges)' rulings are displayed independently, each on
+its own card.
 
 ## Architecture
 
@@ -170,7 +170,7 @@ lines: the Barak judge announces "a structured, rights-centered analysis" and
 defines "justified" and "necessary" before applying them; the Elon judge turns
 to a principle of Jewish legal tradition, the rodef or pursuer; the Shamgar
 judge sets out the governing standard and the institutional framework, then the
-chronology. Three rulings, side by side, never combined.*
+chronology. Three independent rulings, side by side.*
 
 ### Background Functions and polling
 
@@ -482,8 +482,8 @@ judges](SPEC.md#judges)), `verdict` (`justified` or `not justified`),
 `reasoning_text`, `model_used`, `created_at`
 
 - At most one row per trial and role.
-- A trial's three rulings are independent rows, and nothing in [the
-  schema](supabase/schema.sql) or the code combines them.
+- A trial's three rulings are independent rows, and neither [the
+  schema](supabase/schema.sql) nor the code combines them.
 
 #### api_call_logs
 
@@ -857,7 +857,7 @@ Feature-complete and stable.
 
 [The full pipeline](#how-a-trial-runs) ([four
 representatives](SPEC.md#representatives) in parallel, [three
-judges](SPEC.md#judges) after, independent rulings never combined) has been
+judges](SPEC.md#judges) after, independent rulings) has been
 verified across many real end-to-end trials against real models, both locally
 and against [the live deployed site](https://tribunal-t001.netlify.app).
 

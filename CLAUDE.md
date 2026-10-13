@@ -117,7 +117,7 @@ wrong earlier in this project: see the "Known trap" part of the
 
 Per rule 1 above, merging to `main` and pushing triggers a deploy, so it already
 requires explicit permission — but treat "is this actually a milestone" as its
-own judgment call to raise explicitly, not just "do I have permission to deploy
+own judgement call to raise explicitly, not just "do I have permission to deploy
 right now." When in doubt, ask rather than merge.
 
 ### 3. Edit history belongs in the commit message, not in the file
@@ -390,7 +390,7 @@ tag it does not know.
 ## What this project is
 
 A web app that runs one fixed, canonical fictional trial — **Case T-001: The
-Realm v. Jon Snow** — using 7 AI agents: 4 representatives (2 defense, 2
+Realm v. Jon Snow** — using 7 AI agents: 4 representatives (2 defence, 2
 prosecution) and 3 judges, each modelled on a distinct real judicial philosophy.
 
 This is the ASE course's shared "running project" — every submission implements
@@ -463,26 +463,26 @@ to death. Her soldiers arrest him.
 reasons. It does **not** impose a sentence, and it does **not** combine the
 three judges' opinions into one verdict.
 
-## Part 2 — The four representatives (defense: 2, prosecution: 2)
+## Part 2 — The four representatives (defence: 2, prosecution: 2)
 
 **Critical rule:** the assigned seat fixes only each representative's procedural
 role. It does **not** fix an opinion, factual inference, proposed argument, or
 final position.
 
 Let the model reason in character — do not instruct any representative to argue
-toward a predetermined conclusion (e.g. never write a prompt that says "argue
+towards a predetermined conclusion (e.g. never write a prompt that says "argue
 that the defendant is guilty/justified"). Write prompts that establish character
 and values, then let the agent's own reasoning land where it lands.
 
-### Jon Snow — defense seat
+### Jon Snow — defence seat
 
 Speaks plainly, rarely volunteers long explanation. Dislikes praise, titles,
 arguments built on his birth. Values duty, kept promises, family, protection of
 people who cannot defend themselves. Accepts blame quickly, can undervalue his
-own judgment. Answers directly, tolerates silence, admits uncertainty, changes
-position when honor or evidence requires it.
+own judgement. Answers directly, tolerates silence, admits uncertainty, changes
+position when honour or evidence requires it.
 
-### Tyrion Lannister — defense seat
+### Tyrion Lannister — defence seat
 
 Quick, ironic, curious about motives and consequences. Prefers persuasion,
 negotiated limits, plans that leave people alive. Mistrusts purity, inherited
@@ -494,7 +494,7 @@ notices contradictions, can revise without losing his wit.
 
 Speaks with command and moral intensity. Prizes liberation, courage, loyalty,
 action against entrenched cruelty. Wants recognition as a legitimate ruler;
-reacts sharply to betrayal, condescension, secret maneuvering. Her experience
+reacts sharply to betrayal, condescension, secret manoeuvring. Her experience
 can make caution look like complicity, but she can listen when respect is
 genuine. Interprets the record herself, including evidence against her.
 
@@ -514,7 +514,7 @@ reasoning method each judge applies.
 
 ### Judge 1 — the Aharon Barak model
 
-**Character signal:** Systematic, rights-centered, confident that legal
+**Character signal:** Systematic, rights-centred, confident that legal
 principle can discipline public power.
 
 Treats law as a coherent system whose principles reach every exercise of public
@@ -522,7 +522,7 @@ authority. Sees democracy as majority rule together with individual rights and
 limits that bind the majority itself, and accepts an active judicial role when
 courts must protect those limits.
 
-Favors **purposive interpretation** — text matters, but is read together with
+Favours **purposive interpretation** — text matters, but is read together with
 the function of the rule, the structure of the legal system, and democratic
 values. Rights are serious claims, not decorative language, requiring: lawful
 authority, proper purpose, rational fit, attention to less harmful means, and a
@@ -549,11 +549,11 @@ Sees law as an inherited conversation, not a blank page for present-day
 preference. Treats Jewish law as a working legal source — arguments,
 distinctions, duties, moral experience illuminating modern statutes and
 institutions. Values human dignity, communal responsibility, continuity,
-tolerance toward traditions that give a group its identity.
+tolerance towards traditions that give a group its identity.
 
 Insists courts have limited authority — a judge may identify illegality and
 enforce a legal duty, but should not turn broad ideas like fairness or
-reasonableness into license to supervise every political or social choice.
+reasonableness into licence to supervise every political or social choice.
 
 Opinions read like a scholar addressing lawyers, citizens, and history at once —
 often begins with the legal source and the court's competence, then moves
@@ -595,8 +595,8 @@ though it may quietly establish a durable framework.
 
 Strength: institutional clarity without indifference to the person before the
 court. Risk: continuity and measured language can make a deep legal choice
-appear merely technical, leaving the underlying value judgment less visible than
-it should be.
+appear merely technical, leaving the underlying value judgement less visible
+than it should be.
 
 ## Part 4 — Output requirements
 
@@ -605,11 +605,8 @@ it should be.
   above.
 - **No sentence is imposed** — the judges rule only on justified/not justified,
   nothing more.
-- **The three verdicts are never combined.** No majority vote, no aggregate
-  field, no single "final ruling." Display all three independently, each on its
-  own card.
-  - This is a hard, non-negotiable requirement of this project — do not
-    introduce any combination or aggregation logic under any framing.
+- The three verdicts are not combined: there should be no vote count and no
+  overall outcome. Each should be displayed on its own card.
 - The four representatives' arguments should reflect authentic in-character
   reasoning — it is acceptable and expected that a representative's argument may
   not straightforwardly support "their side" if genuine reasoning in character
@@ -1436,7 +1433,7 @@ frontend uses, succeeded completely: 7 of 7.**
   tokens, 15311ms) - the exact two roles that had hung with zero response, twice
   each, in the immediately preceding test.
 - All 3 judges also succeeded on attempt 1 (639-882 completion tokens,
-  13495-18993ms), all reaching `justified` independently (never combined - each
+  13495-18993ms), all reaching `justified` independently (not combined - each
   ran from its own prompt, no aggregation logic touched).
 - No truncation, no repetition, no 429s, nothing logged beyond a clean attempt-1
   success for every one of the 7 calls.
@@ -1472,8 +1469,8 @@ it.**
   a one-time coincidence to ignore.
 - Verdicts this run: all three `not justified` (the immediately preceding run
   had all three `justified`) - expected run-to-run variance from live,
-  non-deterministic model output, not a bug; still fully independent, never
-  combined.
+  non-deterministic model output, not a bug; still fully independent, not a
+  combined outcome.
 - **A first automated repetition-glitch scan (a simple heuristic: flag any exact
   5-word phrase repeated 4+ times) flagged three responses**
   (`daenerys_targaryen`, `barak`, `elon`) **as potential glitches - all three
@@ -3503,7 +3500,7 @@ It states:
 - that the assigned seat "fixes only each representative's procedural role. It
   does not fix an opinion, factual inference, proposed argument, or final
   position";
-- that no prompt may instruct a representative "to argue toward a predetermined
+- that no prompt may instruct a representative "to argue towards a predetermined
   conclusion";
 - and that "it is acceptable and expected that a representative's argument may
   not straightforwardly support 'their side' if genuine reasoning in character
@@ -3516,7 +3513,7 @@ concedes - would break those terms, and so is not open.
 
 Her character is fully in place: Daenerys's prompt carries every trait the
 dossier gives her, including that "you react sharply to betrayal, condescension,
-or secret maneuvering", and `representatives.ts` was checked line by line
+or secret manoeuvring", and `representatives.ts` was checked line by line
 against the dossier on 2026-08-28 and found faithful. That her argument in
 `651cee8a` voiced its concession without that edge - noting that Jon acted
 "alone, in secret" and accepting it - is variation in what the model wrote on
@@ -4509,9 +4506,10 @@ now has 204 lines and 14 headings.
   rulings" and "Failures, logging and architecture"; and "How this repository
   implements it", over the closing pointer to README and this file, which sat
   after a `---`.
-- The charge sheet's three lead items, the non-negotiable rule, each judge's
-  method, the never-combined requirement, the pointer to the other two
-  documents and the closing pointer are now bullets.
+- The charge sheet's three lead items, the rule that an agent's seat or
+  method does not fix its conclusion, each judge's method, the requirement
+  that the rulings stay separate, the pointer to the other two documents and
+  the closing pointer are now bullets.
 - Prose is wrapped at 80 characters. The one longer line is a single link,
   to `representatives.ts`, which cannot break.
 - Links added under HARD RULE 4: the README sections meant (its
@@ -5138,6 +5136,34 @@ the same way:
   a CSS pixel at most. Every word, figure, badge and border is otherwise the
   same, and README's caption for it is unchanged.
 
+### 2026-10-14: the separate-rulings wording toned down
+
+**The statements that the three rulings are kept separate now say so plainly,
+and less often (2026-10-14, on the user's request).** The requirement is
+unchanged: the rulings are not combined, and each is shown on its own card.
+What changed is how often, and how firmly, the docs and the page repeated it.
+
+- README states it once in its introduction ("displayed independently, each on
+  its own card"), and its other mentions describe the rulings as independent
+  without restating the rule: the hero and judges captions, the
+  `judge_rulings` section ("neither the schema nor the code combines them")
+  and "Status".
+- SPEC.md's requirement is one bullet: "The three rulings are not combined:
+  there is no vote count or overall outcome, and each is shown on its own
+  card." Its "No sentence or penalty is ever imposed" bullet is no longer
+  bold, and the label over the rule that an agent's seat or method does not
+  fix its conclusion is now "Seats and methods".
+- Part 4 above states the requirement in the same terms. The scope sentence
+  in Part 1, SPEC.md and the seed, Part 6's checklist item, the entry in
+  "When to stop and ask" and the judges' prompt are unchanged.
+- The note above the judges' cards reads "Each judge rules independently: the
+  three verdicts below are not combined into a single outcome.", and
+  `app.js`'s file header describes the rulings as shown independently, each
+  on its own card.
+- Every tracked file was searched for the rule's wording with wrapped lines
+  joined back together, so a phrase split across two lines was found too.
+  `npm test`, `npm run typecheck` and `npm run check-render` pass.
+
 ## Operational notes
 
 ### Image and screenshot volume in long sessions
@@ -5759,7 +5785,7 @@ for it to arrive naturally").
 - Trial 4 (`f5aab9fd`): 61s, $0.001394, one same-model retry.
 - Verdicts across the four runs went 2-1, 3-0, 2-1, 3-0 - ordinary run-to-run
   variance from live, non-deterministic output, and three genuinely independent
-  rulings every time, never combined.
+  rulings every time, not a combined outcome.
 
 **Trial 2 exercised the recovery path for real, in production, for the first
 time.** `tyrion_lannister`'s first attempt came back at exactly 1400 completion

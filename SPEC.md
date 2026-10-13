@@ -3,7 +3,7 @@
 **[Case T-001: The Realm v. Jon Snow](#1-the-charge-sheet).** A fixed, canonical
 trial — not a general-purpose "submit any charge" tool — argued and ruled on by
 [seven independent AI agents](#2-the-seven-agents): [four
-representatives](#representatives) (two defense, two prosecution) and [three
+representatives](#representatives) (two defence, two prosecution) and [three
 judges](#judges), each modelled on a distinct real judicial reasoning method.
 
 This is the ASE course's shared "running project": every submission
@@ -92,13 +92,13 @@ verdict.
 
 ## 2. The seven agents
 
-**Non-negotiable rule:**
+**Seats and methods:**
 
-- a representative's seat (defense or prosecution) fixes only procedural role
+- a representative's seat (defence or prosecution) fixes only procedural role
   — never an opinion, a factual inference, or a final position;
 - a judge's named model fixes the reasoning method it applies, never the
   verdict;
-- no agent is instructed to argue toward a predetermined conclusion; each
+- no agent is instructed to argue towards a predetermined conclusion; each
   reasons from its own character/method and may land anywhere, including
   against "its side."
 
@@ -112,11 +112,11 @@ and required reasoning approach, not the prompts themselves.
 
 ### Representatives
 
-- **[Jon Snow](CLAUDE.md#jon-snow--defense-seat)** (defense) — plain-spoken,
+- **[Jon Snow](CLAUDE.md#jon-snow--defence-seat)** (defence) — plain-spoken,
   duty- and protection-driven; accepts blame readily; changes position when
-  honor or evidence requires it.
-- **[Tyrion Lannister](CLAUDE.md#tyrion-lannister--defense-seat)** (defense) —
-  quick, ironic, skeptical of purity and inherited power; favors persuasion and
+  honour or evidence requires it.
+- **[Tyrion Lannister](CLAUDE.md#tyrion-lannister--defence-seat)** (defence) —
+  quick, ironic, sceptical of purity and inherited power; favours persuasion and
   outcomes that leave people alive.
 - **[Daenerys Targaryen](CLAUDE.md#daenerys-targaryen--prosecution-seat)**
   (prosecution) — commanding, morally intense; prizes liberation and loyalty;
@@ -133,7 +133,7 @@ persona.
 
 - **Judge 1 — [the Aharon Barak
   model](CLAUDE.md#judge-1--the-aharon-barak-model).** Systematic and
-  rights-centered:
+  rights-centred:
   - purposive interpretation (text read against a rule's function, structure,
     and democratic values);
   - tests a rights claim through lawful authority, proper purpose, rational
@@ -144,7 +144,7 @@ persona.
   - treats Jewish law as a working legal source alongside comparative and
     historical material;
   - insists courts have limited authority — identifying illegality is not
-    license to supervise every political or social choice;
+    licence to supervise every political or social choice;
   - comfortable dissenting on the merits.
 - **Judge 3 — [the Meir Shamgar
   model](CLAUDE.md#judge-3--the-meir-shamgar-model).** Institutional and
@@ -171,14 +171,10 @@ persona.
 
 - Each judge returns one independent ruling — **justified** or **not
   justified** — with reasoning in its own voice/method.
-- **No sentence or penalty is ever imposed** — the Tribunal rules only on
+- No sentence or penalty is ever imposed — the Tribunal rules only on
   justified/not justified.
-- **The three rulings are never combined, aggregated, or reduced to a
-  majority/consensus.**
-  - No vote count, no aggregate field, no single "outcome" — all three are
-    shown independently, each on its own card.
-  - This is a hard requirement, not a default to optimise away under any
-    framing.
+- The three rulings are not combined: there is no vote count or overall
+  outcome, and each is shown on its own card.
 - A representative's argument must reflect authentic in-character reasoning;
   an argument landing against its seat's usual side is a valid, expected
   outcome, not a defect.

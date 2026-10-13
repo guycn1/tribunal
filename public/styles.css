@@ -88,7 +88,7 @@ body {
      than fixed specifically so this stays a normal flex child of
      .layout, sharing width with .main exactly as before - fixed would
      take it out of flow entirely and need its own hand-maintained
-     width/offset math duplicating the clamp() above. align-self:
+     width/offset maths duplicating the clamp() above. align-self:
      flex-start stops .layout's default stretch behaviour from fighting
      the explicit height below. Capped at 100vh (never taller than the
      viewport) with overflow hidden - the fix for the sidebar previously
