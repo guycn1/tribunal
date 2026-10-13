@@ -4741,7 +4741,9 @@ end, logged with its real tokens and cost and not retried or saved - two
 repeated a sentence, two hit the token cap. The trial ran at 19:57 UTC, after
 that day's abort fixes (`82f7c97`, `a3fe0d8`, `e464938`), so its rows are what
 the app writes today; every figure was checked against them (8,054 tokens,
-0.05¢ of a stored 0.0521¢, 81,869 ms).
+0.05¢ of a stored 0.0521¢, 81,869 ms). *(Re-captured on 2026-10-13, after
+the captions began to wrap evenly - see "2026-10-13: the call log's
+captions wrap evenly".)*
 
 **README's fifth screenshot: a trial in progress (same day).**
 `screenshots/readme-5-in-progress.png`, taken by the user from local
@@ -5121,6 +5123,20 @@ pixel by pixel after alignment:
   one image pixel, half a CSS pixel at the capture's scale, since the table
   laid out a pixel narrower and a pixel taller than before. README's caption
   for it is unchanged.
+
+**README's aborted-trial screenshot re-captured the same way (same day).**
+`screenshots/readme-4-aborted-trial.png` shows trial `298f38b4` as before, at
+the same size, 2108×1955, and was compared with the capture it replaces in
+the same way:
+
+- the four `aborted` rows' captions now read "(the user aborted / the
+  trial)";
+- the cards keep their width and the table its width to a pixel, but the
+  table's body laid out about 3 image pixels taller, so with the crop
+  chosen the heading and cards sit 2 pixels higher and the table's bottom
+  edge 2 pixels lower than before, and the left edges 1 pixel further left -
+  a CSS pixel at most. Every word, figure, badge and border is otherwise the
+  same, and README's caption for it is unchanged.
 
 ## Operational notes
 
