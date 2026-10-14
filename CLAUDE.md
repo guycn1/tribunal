@@ -5185,7 +5185,7 @@ the same way:
   a CSS pixel at most. Every word, figure, badge and border is otherwise the
   same, and README's caption for it is unchanged.
 
-### 2026-10-14: the separate-rulings wording, a top fade on the cards, the docs' structure, and a token for the render check
+### 2026-10-14: the separate-rulings wording, a top fade on the cards, the docs' structure, a token for the render check, and the merge
 
 #### The separate-rulings wording toned down
 
@@ -5336,6 +5336,38 @@ were each stripped, and the text came out at body size.
 
 Rendered through GitHub's markdown API before and after, the two files
 differed only in those places, and nothing links to the removed section.
+
+#### The merge
+
+**Merged to `main` (2026-10-14, on the user's explicit request), triggering a
+deploy: 24 commits, everything since `71d8975`.** They are:
+
+- the record of the `71d8975` deploy confirmed live (`4ba60c8`);
+- the call log's captions wrapping without a lone last word, in the table
+  view only, and README's call-log and aborted-trial screenshots re-captured
+  with them (`9b7d8b0`, `16e0d8f`, `08c01e0`);
+- the statements that the three rulings are kept separate toned down
+  (`f60511f`);
+- a top fade on the cards (`8141480`);
+- this file's status log given one heading per day and one per topic
+  (`e11709c`, `2e09616`, `06235f1`);
+- the render check sending a GitHub token when one is set (`06b85c1`);
+- README's and SPEC.md's structure tidied where a bold label did a heading's
+  job (`5d999ff`);
+- README's wording on what a table's rows belong to, which call-log rows are
+  dimmed, its badge tables headed "What triggers it", the two labels it tells
+  apart by how an attempt ended, the second way a trial reads
+  `aborted (N of 7 completed)`, its setup block's comments and its docs-test
+  entry (`3c069de`, `5826b38`, `b9d0a11`, `3acc4e3`, `36d3b01`, `11fea16`,
+  `32bf75c`);
+- cross-references, lists and stale statements checked again for the work
+  since `71d8975`, with a note added to the SPEC.md layout entry and a test
+  comment rewrapped (`c39bfe0`, `0ea5548`, `350cf63`, `805de97`, `c76a21a`);
+- the commit that adds this entry.
+
+No database change is needed: nothing since `71d8975` adds or alters a
+column. This entry was committed to `draft` ahead of the merge, so that right
+after it `main` and `draft` held identical trees.
 
 ## Operational notes
 
