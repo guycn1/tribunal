@@ -342,8 +342,9 @@ tag it does not know.
   yet. It needs the network - one GitHub request per file, or per piece of a
   file over 200,000 characters, and none of this project's quota - so it is
   not part of `npm test`. GitHub allows 60 such requests an hour, or 5,000
-  with a token, which the script sends when `GITHUB_TOKEN` is set in `.env`
-  (a fine-grained token with no permissions is enough). GitHub's API renders at
+  with a token, which the script sends when `GITHUB_TOKEN` is set in the
+  environment or in `.env` (a fine-grained token with no permissions is
+  enough). GitHub's API renders at
   most 400 KB, so a larger file is sent in pieces cut before its `##` and `###`
   headings, each compared with its own source.
 
@@ -4079,18 +4080,18 @@ what GitHub was seen to do.
 request, in the manner of this file).** It had 244 lines, 114 of them over 80
 characters and the longest 1,688, with 17 headings.
 
-- It now has 25: Architecture is split under "How a trial runs", "Background
-  Functions and polling", "The escalation chain", "Aborting a trial" and
-  "Anti-abuse and cost controls", and Local development under "The test
-  suites", "Checking the rendered page" and "Local costs".
+- That pass took it to 25: Architecture is split under "How a trial runs",
+  "Background Functions and polling", "The escalation chain", "Aborting a
+  trial" and "Anti-abuse and cost controls", and Local development under "The
+  test suites", "Checking the rendered page" and "Local costs".
 - Long sentences listing several things - the escalation signals, the fast and
   slow transient failures, the call-log rows with no attempt, the labels, the
   suites' coverage - are now bullets, and the agent-endpoint text in the API
   section is six paragraphs rather than one.
-- Prose is wrapped at 80 characters. Lines still longer are the 16 table rows
-  and 22 code-block lines (the layout tree and the setup block), which cannot
-  wrap without changing what they show, and three lines that are one
-  unbreakable span each: a commit URL, a code span and a link.
+- Prose is wrapped at 80 characters. The lines still longer that day were the
+  16 table rows and 22 code-block lines (the layout tree and the setup block),
+  which cannot wrap without changing what they show, and three lines that are
+  one unbreakable span each: a commit URL, a code span and a link.
 - Rendered through GitHub's markdown API before and after, the text is the same
   apart from the headings added and sentences split for the bullets, and the
   wrapped and unwrapped files render identically.
@@ -4534,7 +4535,7 @@ the second silently.
 **SPEC.md spaced out and wrapped at 80 characters (2026-10-06, on the user's
 request, as README and this file were), with HARD RULES 4 and 5 applied to it
 in full.** It had 66 lines, 35 of them over 80 characters, and 4 headings; it
-now has 204 lines and 14 headings.
+came out of that pass with 204 lines and 14 headings.
 
 - The new headings: the charge sheet's "Background", "Stipulated facts",
   "Question for judgment" and "Scope"; "Representatives" and "Judges"; the
@@ -5140,10 +5141,12 @@ as README's call-log and aborted-trial screenshots then showed.
 - Measured in headless Edge on the real page, served from the working tree
   with the API answered by local `netlify dev` (reads only), on trials
   `0a5de440` and `298f38b4` and on all four caption texts the app writes,
-  at ten table widths from 721px to 1920px and five card widths from 360px
-  to 720px. Before, a caption ended on one word at every table width; after,
-  none did ("(retried with the / same model)", "(the user aborted / the
-  trial)"), no row grew taller and nothing overflowed. In the card view
+  at ten viewport widths from 721px to 1920px, where the table ran from 640px
+  to 974px wide, and at five from 360px to 720px, in the card view. Before,
+  captions ended on one word at every viewport from 1150px up, two to four of
+  them in each trial, and at none below it; after, none did at any width
+  ("(retried with the / same model)", "(the user aborted / the trial)"), no
+  row grew taller and nothing overflowed. In the card view
   every element's box and style matched before and after.
 - `tests/shared-constants.test.js` checks that exactly one caption rule
   sets `text-wrap`, that it is that table rule inside a media query that
@@ -6252,6 +6255,10 @@ Kept the scrollbar, made it clearer there's more text:
   only when content actually overflows and hidden again once scrolled to the
   true bottom - verified offline against synthetic scroll-metrics
   (overflow/at-top, at-bottom, no-overflow, dynamic rescroll, all correct).
+  *(Since 2026-10-06 it stops where the card's scrollbar begins, and since
+  2026-10-14 a top fade does the same for text hidden above - see "The card
+  fade and the card scrollbar" and "A top fade on the cards" in "Status
+  log".)*
 - Scrollbar itself restyled whitish/neutral instead of the gold accent (which
   read as decorative, not a control), three-stage hover prominence (dim at rest,
   visible once the card is hovered, brightest on the thumb itself), plus a faint

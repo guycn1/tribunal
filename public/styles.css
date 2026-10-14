@@ -1135,7 +1135,7 @@ table.call-log .col-full {
    keep the last one company: "(the user aborted / the trial)". A browser
    without it keeps `balance`, which evens the lines out instead and splits
    that one as "(the user / aborted the trial)". Measured in headless Edge
-   on 2026-10-13 from a 664px table to a 974px one: no caption left alone
+   on 2026-10-13 from a 640px table to a 974px one: no caption left alone
    on its last line, and no row taller than before. Table view only: in the
    card view below 720px a caption has a whole row and fits on one line, so
    that layout is left exactly as it was. A browser with neither wraps as

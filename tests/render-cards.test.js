@@ -455,11 +455,11 @@ function fadedBody(size) {
   return { wrap, body, scrollTo };
 }
 const overflowing = fadedBody({ offsetWidth: 300, clientWidth: 290, scrollHeight: 600, clientHeight: 173 });
-check('more text below: the fade is shown', overflowing.wrap.classList.contains('has-more-below'));
+check('more text below: the bottom fade is shown', overflowing.wrap.classList.contains('has-more-below'));
 check('at the start: no top fade', !overflowing.wrap.classList.contains('has-more-above'));
-check('it stops where a 10px scrollbar begins', overflowing.wrap.style.getPropertyValue('--card-scrollbar-width') === '10px', overflowing.wrap.style.getPropertyValue('--card-scrollbar-width'));
+check('the fades stop where a 10px scrollbar begins', overflowing.wrap.style.getPropertyValue('--card-scrollbar-width') === '10px', overflowing.wrap.style.getPropertyValue('--card-scrollbar-width'));
 const scrolledToEnd = fadedBody({ offsetWidth: 300, clientWidth: 290, scrollHeight: 600, clientHeight: 173, scrollTop: 427 });
-check('scrolled to the end: no fade', !scrolledToEnd.wrap.classList.contains('has-more-below'));
+check('scrolled to the end: no bottom fade', !scrolledToEnd.wrap.classList.contains('has-more-below'));
 check('scrolled to the end: the top fade is shown', scrolledToEnd.wrap.classList.contains('has-more-above'));
 const scrolledMidway = fadedBody({ offsetWidth: 300, clientWidth: 290, scrollHeight: 600, clientHeight: 173, scrollTop: 200 });
 check('scrolled midway: both fades are shown', scrolledMidway.wrap.classList.contains('has-more-above') && scrolledMidway.wrap.classList.contains('has-more-below'));
@@ -469,7 +469,7 @@ check('scrolled back to the start: the top fade goes, the bottom one stays', !sc
 overflowing.scrollTo(427);
 check('scrolled from the start to the end: the fades swap', overflowing.wrap.classList.contains('has-more-above') && !overflowing.wrap.classList.contains('has-more-below'));
 const overlaid = fadedBody({ offsetWidth: 300, clientWidth: 300, scrollHeight: 600, clientHeight: 173 });
-check('a scrollbar drawn over the text takes no width: the fade runs to the edge', overlaid.wrap.style.getPropertyValue('--card-scrollbar-width') === '0px', overlaid.wrap.style.getPropertyValue('--card-scrollbar-width'));
+check('a scrollbar drawn over the text takes no width: the fades run to the edge', overlaid.wrap.style.getPropertyValue('--card-scrollbar-width') === '0px', overlaid.wrap.style.getPropertyValue('--card-scrollbar-width'));
 
 /**
  * A stub fetch Response carrying a JSON body.

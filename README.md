@@ -403,11 +403,11 @@ Both were verified on the live site on 2026-10-06: [the limit and the
 functions' own addresses](CLAUDE.md#the-morning-merge) after one deploy, and
 [the site's other
 addresses](CLAUDE.md#the-agent-functions-accept-requests-only-on-the-sites-main-address-and-its-merge)
-after the next. Bursts from one IP were cut off with `429`s after 62 requests to one route, and
-after 63 split between the two (40 to one, 23 to the other). Gated requests for
-a real trial sent straight to both agent functions' own addresses, or through
-their routes to `main--tribunal-t001.netlify.app`, left nothing behind, while
-the same request through its route on [the main
+after the next. Bursts from one IP were cut off with `429`s after 62 requests
+to one route, and after 63 split between the two (40 to one, 23 to the other).
+Gated requests for a real trial sent straight to both agent functions' own
+addresses, or through their routes to `main--tribunal-t001.netlify.app`, left
+nothing behind, while the same request through its route on [the main
 address](https://tribunal-t001.netlify.app) started its attempt within 5
 seconds.
 
@@ -840,9 +840,9 @@ so such a file is sent in pieces cut before its headings.
 
 GitHub allows 60 such requests an hour without a token, and [5,000 with
 one](https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api).
-The script sends one when `GITHUB_TOKEN` is set in `.env` (see
-[`.env.example`](.env.example)); a fine-grained token with no permissions is
-enough, since [the Markdown
+The script sends one when `GITHUB_TOKEN` is set in the environment or in `.env`
+(see [`.env.example`](.env.example)); a fine-grained token with no permissions
+is enough, since [the Markdown
 API](https://docs.github.com/en/rest/markdown/markdown#render-a-markdown-document)
 needs none when, as here, only public resources are requested.
 
