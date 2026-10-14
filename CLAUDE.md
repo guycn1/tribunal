@@ -768,9 +768,9 @@ session from the top. Keep its layout:
 - **Give every topic a heading.** In the status log, each day has one `###`
   heading (an arc spanning several days, such as "2026-08-29/30", shares one),
   never two; when a day holds more than one topic, each topic gets a `####`
-  heading under it, and the day's heading names them all. A new topic on a day
-  that already has a heading goes under it as a `####`. A long write-up outside
-  the log gets `####` headings of its own.
+  heading under it that names what it holds, and the day's heading sums them
+  up. A new topic on a day that already has a heading goes under it as a
+  `####`. A long write-up outside the log gets `####` headings of its own.
 - **Split a long entry into a lead paragraph and sub-items**, rather than one
   dense paragraph; keep paragraphs to a few sentences.
 - **No `---` separator before a heading:** GitHub already draws a rule under
@@ -2385,6 +2385,8 @@ The three fallback-tier env vars still don't need any Netlify configuration -
 
 ### 2026-09-01 to 2026-09-03: degeneration detection and the live model line
 
+#### Degeneration detection
+
 **A real user-facing gap found the morning after the merge (2026-09-01),
 directly on a real trial run: a Grey Worm argument displayed in the UI with no
 truncation badge, but visibly degenerate** - a long, comma-less run-on sentence
@@ -2463,6 +2465,8 @@ see at all.
     trial ran there) and the first on a judge - `shamgar`, 5 repeats, trial
     `5192e119`, retried on the same model and kept. That makes two production
     catches.)*
+
+#### The live model line
 
 **A real user report (2026-09-03): the loading card's "Model:" line still showed
 the wrong model while an escalated attempt was actually generating** - Daenerys
@@ -3409,6 +3413,8 @@ changed in this merge) and `index.html` all matched `main` byte for byte.
 
 ### 2026-09-28: near-verbatim loops, and the prosecution seats
 
+#### Near-verbatim loops
+
 **Near-verbatim loops caught (2026-09-28, on the user's request).** Daenerys's
 argument in trial `5bb8f477` was saved as a success while closing on a loop: its
 last five paragraphs rotate the same three phrases ("a woman who was a threat,
@@ -3482,6 +3488,8 @@ Two other things seen in the reading:
   which their prompts allow, since every argument is put before them to weigh;
 - and three trials on 2026-09-20 (`b3a1d6e3`, `12498f92`, `f7ac3ec6`) received
   the same Grey Worm reply, byte for byte, a sound argument each time.
+
+#### The prosecution seats
 
 **Prosecution seats that argue for Jon are left as they are, on the dossier's
 explicit terms (2026-09-28, the user's decision).** In trial `651cee8a`
@@ -3621,7 +3629,9 @@ limit was then tested on the live site with ungated POSTs (no quota spent).
   attempts its agents take. *(Raised to 60 on 2026-10-04, on the user's
   direction - see that day's entry.)*
 
-### 2026-10-03: absolute and conditional claims checked
+### 2026-10-03: absolute and conditional claims checked, and README's figures put under test
+
+#### Absolute claims checked
 
 **Claims of the form "the only", "every", "never" checked across every tracked
 file (2026-10-03, on the user's request), and the ones an exception disproved
@@ -3668,6 +3678,8 @@ The rest were wording:
 - and an unverified claim that browsers cannot animate scrollbar colours was
   dropped from the code comments.
 
+#### README's figures from the code put under test
+
 **The last README figures taken from the code put under test (2026-10-03, on the
 user's go-ahead).** The same scan found three that `tests/docs.test.js` did not
 check: "the 1,400 tokens the default model is given", "a trial costs 7" and "a
@@ -3684,6 +3696,8 @@ full trial sends 7 requests".
   offline regression suites `npm test` runs, and how many anti-abuse layers are
   in place. Found, and checks added, on 2026-10-06; see that day's entry on
   those two counts.)*
+
+#### Conditional claims checked
 
 **Conditional claims ("X only happens when Y") checked across every tracked file
 (2026-10-03, on the user's request), and the ones whose conditions are wider
@@ -3725,6 +3739,8 @@ offline, and the database read-only; no model calls were made for it.
   under at least one of 28 targeted breaks, every file restored byte for byte.
 
 ### 2026-10-04: inclusive and comparative claims, and the rate limit raised
+
+#### Inclusive claims checked
 
 **Claims of inclusion ("every", "all", "only", "the rest") checked across every
 tracked file (2026-10-04, on the user's request), and the ones an exception
@@ -3770,6 +3786,8 @@ by read-only queries; no model calls were made.
   day, up from 418). Each new or changed check fails under at least one of 69
   targeted breaks, every file restored byte for byte.
 
+#### The rate limit raised
+
 **The per-IP rate limit raised from 30 to 60 requests per 3 minutes (2026-10-04,
 on the user's direction).** At 30, counted across the two agent routes together,
 one IP had room for about 4 full trials every 3 minutes, which several graders
@@ -3780,6 +3798,8 @@ on one shared network could reach; at 60 it has room for about 8.
 - Both rules in `netlify.toml` changed together, and README and the
   `netlify.toml` comment now give 60, with the 2026-10-02 live measurements kept
   and dated to the 30-request limit they were made at.
+
+#### Comparative claims checked
 
 **Comparative and superlative claims checked across every tracked file
 (2026-10-04, on the user's request), and the ones that overstated restated.**
@@ -3957,7 +3977,7 @@ descriptions, and left free they wrapped at every space, `aborted (N` / `of 7` /
 
 ### 2026-10-06: the docs' layout, HARD RULES 4 and 5, the agent routes, README's hero, and the evening merge
 
-#### This file's and README's layout, and HARD RULES 4 and 5
+#### This file's layout
 
 **This file restructured (2026-10-06, on the user's request, after the layout of
 the CLAUDE.md in CineRank, another of the user's own projects).** Before, many
@@ -3978,6 +3998,8 @@ paragraphs.
 - Three `<date>` placeholders in HARD RULE 3, which GitHub's renderer dropped as
   unknown HTML tags, are now written so they show.
 - "Writing in this file", above this log, sets out how to keep the layout.
+
+#### HARD RULES 4 and 5
 
 **HARD RULE 4 added (2026-10-06, by the user): in every Markdown file but this
 one, a reference is a link** - see the HARD RULES block at the top, which adapts
@@ -4047,6 +4069,8 @@ what GitHub was seen to do.
   names README gives, and the three script descriptions - fails under a targeted
   break, and every kind of defect the render check reports was proven again on
   the committed script.
+
+#### README's layout, and its links to its own sections
 
 **README spaced out and wrapped at 80 characters (2026-10-06, on the user's
 request, in the manner of this file).** It had 244 lines, 114 of them over 80
@@ -4123,6 +4147,8 @@ description and in the retry-logic suite's, had none.
   passed. Each part of the check was then removed or loosened in turn, and the
   break it exists for either failed the check or, with that part gone, went
   uncaught, 8 in all.
+
+#### README's counts put under test
 
 **Two counts in README's "Status" put under test (2026-10-06, on the user's
 go-ahead).** Proving the link work above meant breaking every paragraph it
@@ -4334,6 +4360,8 @@ README, `netlify.toml` and the representatives handler's comment give these
 measurements. They reached `main` in a second merge the same day that changes
 only documentation and comments, whose message carries Netlify's
 `[skip netlify]` marker.
+
+#### The agent functions accept requests only on the site's main address
 
 **The agent handlers also accept a request only on the site's main address
 (2026-10-06).** Netlify serves the whole site at more than one address -
@@ -4621,7 +4649,7 @@ card's last line, on the live site as in the capture.
   (`--card-scrollbar`) still matched, so the shared-name check now requires
   the name to end where the property does.
 
-#### README's hero, and images in the render check
+#### README's hero
 
 **README opens with a hero (2026-10-06, on the user's request, after the one
 in the README of CineRank, another of the user's own projects): the live link,
@@ -4651,6 +4679,8 @@ history.
   session's scratch directory.
 - The README's old "Live:" line is replaced by the hero's heading, and the
   layout tree lists `screenshots/`.
+
+#### The render check reads images, and sends a large file in pieces
 
 **The render check reads images (same day).** Rendered through GitHub's API,
 the hero image came out as an `<img>` keeping its full alt text, but
@@ -4696,6 +4726,8 @@ exit code.
   written; and a dropped `<date>` tag in CLAUDE.md's first piece and in its
   last were each caught, labelled with the piece.
 
+#### A card's text area a whole number of lines tall
+
 **A card's text area is now a whole number of lines tall (same day, found by
 the user in a close-up of the judges' cards taken for README).** The area
 was capped at 340px, and card text is 12.96px at a line height of 1.5 - the
@@ -4710,6 +4742,8 @@ letter tops under the fade, plain in a close-up at reading size.
 - `tests/shared-constants.test.js` checks that the cap set last is a whole
   number of `lh`. Caught: the cap back in pixels, 17.5lh, 0lh, and the
   fallback set after the `lh` value; 17lh passed.
+
+#### README's other four screenshots
 
 **README's second screenshot: the three judges up close (same day).**
 `screenshots/readme-2-judges.png`, taken by the user from local `netlify dev`
@@ -4756,6 +4790,8 @@ discarded for repeating an 18-word sentence three times, and 14:33:10, when
 his second succeeded. The trial completed 7 of 7 at 14:34:15, Daenerys after
 an escalation to `claude-haiku-4.5`, and its judges ruled 2-1. The cards'
 text areas show eight lines, as in the hero.
+
+#### README's live link centred
 
 **README's live link centred, with space below it (same day, on the user's
 report and choice).** On GitHub the "Live app" line sat 16px above the
@@ -5139,7 +5175,7 @@ the same way:
   a CSS pixel at most. Every word, figure, badge and border is otherwise the
   same, and README's caption for it is unchanged.
 
-### 2026-10-14: the separate-rulings wording, a top fade on the cards, and one heading per day
+### 2026-10-14: the separate-rulings wording, a top fade on the cards, and the status log's headings
 
 #### The separate-rulings wording toned down
 
@@ -5195,27 +5231,45 @@ was cut through its letters at the top edge.
   pseudo-element, and the scroll listener removed - were each caught by the
   checks meant for them.
 
-#### The status log given one heading per day
+#### The status log's headings: one per day, and one per topic
 
 **Each day in the status log now has one `###` heading, with a `####` for each
 of its topics (2026-10-14, on the user's request).** Two days had more than one
 `###`: 2026-08-28, split into two arcs, and 2026-10-06, whose entries from the
 route check on were each given a `###` of their own, as were the two of
-2026-10-14 until this change.
+2026-10-14.
 
-- 2026-08-28's two arcs are now one heading, their eight topics under it in
-  their order; the topic opening the second arc is now "The 10-second
+- 2026-08-28's two arcs became one heading, their eight topics under it in
+  their order; the topic opening the second arc became "The 10-second
   ceiling: a critical correction", so it names its subject without the arc's
   heading above it.
-- 2026-10-06's fifteen entries are now `####`s under one heading for the day,
-  and 2026-10-14's three likewise.
+- 2026-10-06's fifteen entries became `####`s under one heading for the day,
+  and 2026-10-14's likewise.
 - "Writing in this file" now says so: one `###` per day, or per arc of
-  several days, and a `####` per topic when a day has more than one.
+  several days, and a `####` per topic when a day has more than one, naming
+  what it holds.
 - Five quotes of the old headings in this file, and three links in README
-  to two of them, point to the new ones; `tests/docs.test.js` checks that
-  every link lands.
-- Rendered through GitHub's markdown API before and after, the file differs
-  only in those headings, the rule and the five quotes.
+  to two of them, were pointed to the new ones; `tests/docs.test.js` checks
+  that every link lands.
+
+**Then every topic given a heading that names what it holds (same day, on the
+user's request).** Read against that rule, two things were still uneven:
+
+- Four days held several topics with no `####`: 2026-09-01 to 2026-09-03,
+  2026-09-28, 2026-10-03 and 2026-10-04. Each topic now has one, and
+  2026-10-03's heading names the README figures put under test too.
+- Three of 2026-10-06's topics held clusters of separate work under a heading
+  naming part of it. The three are now eleven: this file's layout, HARD RULES
+  4 and 5, README's layout, and README's counts put under test; the route
+  check, and the main-address check, each with its merge and live
+  confirmation; and README's hero, the render check's images and pieces, the
+  cards' whole-line height, the other four screenshots and the centred live
+  link, each a topic of its own.
+- One quote in this file, and eight links in README into the days given topic
+  headings, were pointed to the topic that holds what each cites.
+
+Rendered through GitHub's markdown API before and after each pass, the file
+differed only in its headings, the rule, the quotes and this entry.
 
 ## Operational notes
 
@@ -6023,7 +6077,7 @@ to `draft` by 2026-09-03:
    loading/failed status text. `ed9a2de`.
    *(Capped at 18 lines, `18lh`, since 2026-10-06, so the box ends between two
    lines rather than through one, with 340px kept for a browser without `lh` -
-   see "README's hero, and images in the render check", under
+   see "A card's text area a whole number of lines tall", under
    2026-10-06 in "Status log".)*
 
 All 7 verified via offline tests (extracted real functions against synthetic

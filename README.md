@@ -203,14 +203,14 @@ escalating once a tier has used up its attempts. The escalation signals are:
 
 - `finish_reason === 'length'` (hit the token cap);
 - two independent degeneration heuristics ([a long punctuation-less
-  run-on](CLAUDE.md#2026-09-01-to-2026-09-03-degeneration-detection-and-the-live-model-line),
+  run-on](CLAUDE.md#degeneration-detection),
   and repetition, verbatim or near-verbatim: [the same whole sentence twice in a
   row](CLAUDE.md#a-widened-repeated-sentence-detector), [a sentence of 18+ words
   twice](CLAUDE.md#capped-replies-clause-level-rules-and-the-detectors-measured),
   any sentence 3+ times, a passage of 3+ sentences repeated word for word, the
   same clause twice in a row, a clause of 6+ words 3 times close together, [2+
   consecutive sentences found again almost word for word (80%+ alike, 10+
-  words)](CLAUDE.md#2026-09-28-near-verbatim-loops-and-the-prosecution-seats),
+  words)](CLAUDE.md#near-verbatim-loops),
   or a sentence in the last 10% that is 60%+ like one of the 4 before it (8+
   words each) — a clause being any stretch between commas, semicolons, colons or
   sentence ends, and two sentences' likeness the share of words that need no
@@ -380,7 +380,7 @@ discarded attempts logged has no outcome yet, so it is not turned away.
 [Netlify's per-IP rate
 limit](https://docs.netlify.com/manage/security/secure-access-to-sites/rate-limiting/#set-limits-for-redirects)
 ([60 requests per 3
-minutes](CLAUDE.md#2026-10-04-inclusive-and-comparative-claims-and-the-rate-limit-raised)
+minutes](CLAUDE.md#the-rate-limit-raised)
 from one IP, counted across the two routes together, set on their redirects in
 [`netlify.toml`](netlify.toml)) is enforced by the platform ahead of the
 handler, so a rejection there reaches the browser directly, as a `429`. It is a
@@ -577,7 +577,7 @@ count every attempt, discarded ones included.*
 | `failed` | red | The row that ended the call (the agent's card reads "call failed") — [every tier](#the-escalation-chain) or the time budget used up, a failure no retry can fix ([not enough credit for the request](https://openrouter.ai/docs/api_reference/limits#handling-402-errors), a rate limit that outlasts the time budget, or no OpenRouter key on the server, the one case with no attempt behind the row), or a judge reply with no `VERDICT` line and reasoning after it. |
 | <code>abort&nbsp;requested</code> | grey | The row [the abort endpoint](#api-endpoints) writes, the moment [Abort](#aborting-a-trial) is clicked, for each role still pending. It records the request to stop, not a model call: the model reads `n/a`, with no tokens or duration, and it does not count against [the site-wide call cap](#anti-abuse-and-cost-controls). Dimmed, like a discarded attempt. The running calls look for it and stop; the role's own `aborted` row, if its call was still running, follows. |
 | `truncated` | amber | `finish_reason === 'length'` on a reply with text — the model was still writing when it hit [that tier](#the-escalation-chain)'s token cap. Retried or escalated; the caption says which. |
-| `degenerated` | amber | [A detector](#the-escalation-chain) fired on a reply that did *not* hit the token cap: [a 40+ word run with no punctuation](CLAUDE.md#2026-09-01-to-2026-09-03-degeneration-detection-and-the-live-model-line), or repetition, verbatim or near-verbatim ([the same whole sentence twice in a row](CLAUDE.md#a-widened-repeated-sentence-detector), [a sentence of 18+ words twice](CLAUDE.md#capped-replies-clause-level-rules-and-the-detectors-measured), any sentence 3+ times, a passage of 3+ sentences repeated word for word, the same clause twice in a row, a clause of 6+ words 3 times close together, [2+ consecutive sentences found again almost word for word (80%+ alike, 10+ words)](CLAUDE.md#2026-09-28-near-verbatim-loops-and-the-prosecution-seats), or a sentence in the last 10% that is 60%+ like one of the 4 before it (8+ words each)). Retried or escalated; the caption says which. |
+| `degenerated` | amber | [A detector](#the-escalation-chain) fired on a reply that did *not* hit the token cap: [a 40+ word run with no punctuation](CLAUDE.md#degeneration-detection), or repetition, verbatim or near-verbatim ([the same whole sentence twice in a row](CLAUDE.md#a-widened-repeated-sentence-detector), [a sentence of 18+ words twice](CLAUDE.md#capped-replies-clause-level-rules-and-the-detectors-measured), any sentence 3+ times, a passage of 3+ sentences repeated word for word, the same clause twice in a row, a clause of 6+ words 3 times close together, [2+ consecutive sentences found again almost word for word (80%+ alike, 10+ words)](CLAUDE.md#near-verbatim-loops), or a sentence in the last 10% that is 60%+ like one of the 4 before it (8+ words each)). Retried or escalated; the caption says which. |
 | `truncated` | red | The same cap hit, with nothing left to fall back to: on [the final tier](#the-escalation-chain), or with no time budget left for another. Nothing was saved. |
 | `degenerated` | red | [The same detector](#the-escalation-chain) hit, with nothing left to fall back to. Nothing was saved. |
 | `escalated` | amber | A plain HTTP failure from [that tier](#the-escalation-chain)'s own model (e.g. a removed model id returning 404). Skips the tier's remaining attempts, since re-asking a model that just 404'd is pointless. On the last tier there is nowhere to escalate, so the same failure ends the call and shows as `failed`. |
@@ -602,7 +602,7 @@ every tier-1 reply kept as sound had finished well short of [the 1,400 tokens
 the default model is
 given](CLAUDE.md#per-attempt-logging-timeouts-truncation-and-the-merge); a loop
 that stops on its own [can come much
-closer](CLAUDE.md#2026-10-03-absolute-and-conditional-claims-checked).
+closer](CLAUDE.md#absolute-claims-checked).
 
 ### Run history sidebar
 
@@ -830,8 +830,8 @@ That is what catches a defect nobody has thought of yet. Run it [before every
 commit that touches a Markdown file](CLAUDE.md#when-to-run-them); it uses one
 unauthenticated GitHub request per file, or per piece of a file over 200,000
 characters: GitHub's API [renders at most 400
-KB](CLAUDE.md#readmes-hero-and-images-in-the-render-check), so such a
-file is sent in pieces cut before its headings.
+KB](CLAUDE.md#the-render-check-reads-images-and-sends-a-large-file-in-pieces),
+so such a file is sent in pieces cut before its headings.
 
 ### Local costs
 
@@ -889,7 +889,7 @@ All three [anti-abuse layers](#anti-abuse-and-cost-controls) are in place:
   site on
   2026-10-06](CLAUDE.md#the-agent-functions-accept-requests-only-through-their-routes),
   at [the limit of
-  60](CLAUDE.md#2026-10-04-inclusive-and-comparative-claims-and-the-rate-limit-raised).
+  60](CLAUDE.md#the-rate-limit-raised).
 
 The frontend (layout, live status display, [call log](#call-log) transparency, a
 responsive card view for narrow screens, [cross-browser scrollbar and
