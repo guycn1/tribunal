@@ -434,9 +434,9 @@ what each table holds and the rules worth knowing, not a copy of that file.
   [Only the backend's service-role key
   can](https://supabase.com/docs/guides/database/postgres/row-level-security#bypassing-row-level-security),
   and the browser never talks to Supabase directly.
-- Every table except [`case_definitions`](#case_definitions) and
-  [`trials`](#trials) itself belongs to a single trial through `trial_id`, and
-  deleting a trial deletes its rows in all of them.
+- Every row in the tables other than [`case_definitions`](#case_definitions)
+  and [`trials`](#trials) itself belongs to a single trial through `trial_id`,
+  and deleting a trial deletes its rows in all of them.
 
 #### case_definitions
 

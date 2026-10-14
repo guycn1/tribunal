@@ -587,7 +587,7 @@ async function main() {
     }
     check(`${table}: "one row per trial and role" is claimed exactly when the schema enforces it`, /one row per trial and role/i.test(para) === info.keyedByTrialAndRole, `schema: ${info.keyedByTrialAndRole}`);
   }
-  const ownershipBullet = (db.match(/^- Every table except ([^\n]*?) belongs to a single trial[^\n]*$/m) || [])[0] || '';
+  const ownershipBullet = (db.match(/^- Every row in the tables other than ([^\n]*?) belongs to a single trial[^\n]*$/m) || [])[0] || '';
   const excepted = [...(ownershipBullet.split('belongs')[0] || '').matchAll(/`(\w+)`/g)].map((m) => m[1]);
   const withTrialId = tableNames.filter((t) => TABLES[t].columns.includes('trial_id'));
   check('the tables said to belong to a trial are exactly the ones with trial_id', ownershipBullet && minus(minus(tableNames, excepted), withTrialId).length === 0 && minus(withTrialId, minus(tableNames, excepted)).length === 0, `with trial_id: ${withTrialId}`);
