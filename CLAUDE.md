@@ -4540,7 +4540,9 @@ now has 204 lines and 14 headings.
   requirements under "The case and the order of calls", "Arguments and
   rulings" and "Failures, logging and architecture"; and "How this repository
   implements it", over the closing pointer to README and this file, which sat
-  after a `---`.
+  after a `---`. *(That last section was removed on 2026-10-14: it mostly
+  repeated the pointers at the top of SPEC.md, which took over the rest - see
+  "README's and SPEC.md's structure", under that day.)*
 - The charge sheet's three lead items, the rule that an agent's seat or
   method does not fix its conclusion, each judge's method, the requirement
   that the rulings stay separate, the pointer to the other two documents and
