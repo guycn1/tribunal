@@ -714,7 +714,7 @@ even though the key is correct.
 
 ```bash
 npm install
-cp .env.example .env   # fill in OPENROUTER_API_KEY, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
+cp .env.example .env    # fill in OPENROUTER_API_KEY, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
 npm run dev             # netlify dev — serves the static frontend and functions locally
 npm run typecheck       # tsc --noEmit
 npm run check-render    # node tests/check-render.js — needs the network (see below)
