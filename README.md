@@ -572,7 +572,7 @@ closed on a near-copy of an earlier sentence, and was escalated to
 `claude-haiku-4.5`, whose one call cost 0.41¢ of the trial's 0.56¢. The totals
 count every attempt, discarded ones included.*
 
-| Badge | Colour | What triggered it |
+| Badge | Colour | What triggers it |
 | --- | --- | --- |
 | `success` | green | The attempt returned usable content and was kept — for a judge, that includes a `VERDICT` line. This is the text shown on that agent's card. |
 | `failed` | red | The row that ended the call (the agent's card reads "call failed") — [every tier](#the-escalation-chain) or the time budget used up, a failure no retry can fix ([not enough credit for the request](https://openrouter.ai/docs/api_reference/limits#handling-402-errors), a rate limit that outlasts the time budget, or no OpenRouter key on the server, the one case with no attempt behind the row), or a judge reply with no `VERDICT` line and reasoning after it. |
@@ -609,7 +609,7 @@ closer](CLAUDE.md#absolute-claims-checked).
 
 One badge per trial, summarising the whole run.
 
-| Badge | Colour | What triggered it |
+| Badge | Colour | What triggers it |
 | --- | --- | --- |
 | `completed` | green | Finished, with all 7 of 7 results saved. |
 | <code>completed&nbsp;— missing&nbsp;N&nbsp;of&nbsp;7</code> | amber | Finished, but fewer than 7 results were saved: some agent's call failed for good ([every tier](#the-escalation-chain) or the time budget used up, a failure no retry can fix, or a judge reply with no `VERDICT` line and reasoning after it), or a representative's call never ran (its trigger request rejected or never sent, or the call turned away by [the site gate](#anti-abuse-and-cost-controls) or the call cap). |
