@@ -5366,8 +5366,34 @@ deploy: 24 commits, everything since `71d8975`.** They are:
 - the commit that adds this entry.
 
 No database change is needed: nothing since `71d8975` adds or alters a
-column. This entry was committed to `draft` ahead of the merge, so that right
-after it `main` and `draft` held identical trees.
+column. Merge commit `17493ff`. This entry was committed to `draft` ahead of
+the merge, so that right after it `main` and `draft` held identical trees.
+
+**Confirmed live the same day**, from 16:11 UTC, within four minutes of the
+push:
+
+- the deployed `app.js`, `styles.css` and `index.html` matched `main` byte for
+  byte;
+- a full 7-agent trial (`eeac3974`) completed in 73 seconds, 7 of 7:
+  `jon_snow` recovered on the default model after a repeated 22-word
+  sentence, and the other six calls were clean first attempts on the default
+  model; the three judges ruled independently. 8 calls, $0.0013. The
+  discarded attempt was read in full and is a loop; every kept reply was
+  read, and each is coherent;
+- an abort (`5bc58ede`), about 17 seconds into a trial, wrote one
+  `abort requested` row per representative. No attempt started after it, no
+  judge was started and nothing was saved; the run history showed the trial
+  as `aborted`, and no row was added in the 142 seconds after the last. Of
+  the four first attempts already running, two hit the token cap after the
+  abort and were logged `aborted` and not retried, both loops; one finished
+  after it and was logged `aborted`, its complete reply not saved; and
+  `jon_snow`'s finished half a second before the abort rows landed, so it
+  was logged `success` and then discarded unsaved by the handler's re-check,
+  the window the comment above that check in
+  `representative-background.ts` describes. 8 rows, $0.0005;
+- both trials were then deleted from the database, with every dependent row,
+  as post-deployment confirmation tests with no place in the run history; a
+  backup of every deleted row was kept in that session's scratch directory.
 
 ## Operational notes
 
