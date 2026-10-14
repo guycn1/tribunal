@@ -4298,6 +4298,8 @@ The change:
   route checks, run again on the changed test, had every case behave as it
   should.
 
+#### The morning merge
+
 **Merged to `main` (2026-10-06, on the user's explicit request), triggering a
 deploy: 54 commits, everything since the 2026-10-02 merge (`6af2e72`).** They
 are:
@@ -4363,7 +4365,7 @@ measurements. They reached `main` in a second merge the same day that changes
 only documentation and comments, whose message carries Netlify's
 `[skip netlify]` marker.
 
-#### The agent functions accept requests only on the site's main address
+#### The agent functions accept requests only on the site's main address, and its merge
 
 **The agent handlers also accept a request only on the site's main address
 (2026-10-06).** Netlify serves the whole site at more than one address -
@@ -5269,6 +5271,12 @@ user's request).** Read against that rule, two things were still uneven:
   link, each a topic of its own.
 - One quote in this file, and eight links in README into the days given topic
   headings, were pointed to the topic that holds what each cites.
+- 2026-10-06's morning merge, of 54 commits, sat under the route check's
+  heading, which did not name it, though the route check was only its last
+  commit. It is now a topic of its own, "The morning merge", with its live
+  confirmation, as the evening merge is; and the main-address check's heading
+  now names the merge that deployed it alone. README's two links to that live
+  confirmation point to the new topic.
 
 Rendered through GitHub's markdown API before and after each pass, the file
 differed only in its headings, the rule, the quotes and this entry.

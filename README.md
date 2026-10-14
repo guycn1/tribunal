@@ -400,7 +400,7 @@ So each request an agent function acts on has come through its route on the main
 address and passed the one count.
 
 Both were [verified on the live site on
-2026-10-06](CLAUDE.md#the-agent-functions-accept-requests-only-through-their-routes).
+2026-10-06](CLAUDE.md#the-morning-merge).
 Bursts from one IP were cut off with `429`s after 62 requests to one route, and
 after 63 split between the two (40 to one, 23 to the other). Gated requests for
 a real trial sent straight to both agent functions' own addresses, or through
@@ -894,9 +894,7 @@ All three [anti-abuse layers](#anti-abuse-and-cost-controls) are in place:
   as a backstop far above normal use, and the agent functions accept requests
   only through those routes, on [the site's main
   address](https://tribunal-t001.netlify.app); both were [verified on the live
-  site on
-  2026-10-06](CLAUDE.md#the-agent-functions-accept-requests-only-through-their-routes),
-  at [the limit of
+  site on 2026-10-06](CLAUDE.md#the-morning-merge), at [the limit of
   60](CLAUDE.md#the-rate-limit-raised).
 
 The frontend (layout, live status display, [call log](#call-log) transparency, a
