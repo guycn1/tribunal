@@ -27,7 +27,7 @@ function makeElement(tag = 'div') {
     kids,
     dataset: {},
     // Kept for real, so a check can read back a custom property app.js
-    // sets, as the card fade's scrollbar width.
+    // sets, as the scrollbar width the card's fades read.
     style: (() => {
       const props = new Map();
       return {

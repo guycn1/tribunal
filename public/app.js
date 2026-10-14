@@ -170,7 +170,7 @@
  * @typedef {object} BuiltCard
  * @property {HTMLDivElement} card
  * @property {HTMLDivElement | null} scrollBody The scrolling text body, if
- *   the card has one - the caller attaches its scroll fade once the card is
+ *   the card has one - the caller attaches its scroll fades once the card is
  *   in the document.
  */
 

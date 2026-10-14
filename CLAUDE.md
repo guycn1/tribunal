@@ -353,7 +353,8 @@ tag it does not know.
 - `npm run check-render` before every commit that touches a Markdown file, and
   before every merge to `main`. A defect it finds blocks the commit, as a
   failing test does.
-- If GitHub cannot be reached, the script exits 2 rather than passing: the check
+- If GitHub cannot be reached, or refuses the request (the hourly limit used
+  up, say, or a wrong token), the script exits 2 rather than passing: the check
   has not run, and the commit should say so rather than claim it.
 
 #### When a check finds something

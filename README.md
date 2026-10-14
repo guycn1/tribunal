@@ -690,7 +690,7 @@ Every file tracked in the repository. Not tracked, and git-ignored:
 ├── netlify.toml                      build and local-dev settings, the /api/* routes, and the agent routes' rate limit
 ├── package.json, package-lock.json
 ├── tsconfig.json                     type-checks netlify/functions (not app.js)
-├── .env.example                      environment variables read by the backend
+├── .env.example                      environment variables read by the backend and the render check
 ├── .gitignore
 ├── .vscode/settings.json             turns format-on-save off for this workspace
 ├── SPEC.md                           the requirements, from the course's Case Design Dossier
