@@ -332,20 +332,30 @@ check('app.js keys on a phrase', Boolean(capPhrase), String(capPhrase));
 check('found the truncation reason in openrouter.ts', Boolean(truncationReason), String(truncationReason));
 check('the truncation reason contains that phrase', Boolean(capPhrase) && Boolean(truncationReason) && truncationReason.includes(capPhrase), `'${capPhrase}' in '${truncationReason}'`);
 
-// --- 10. The card fade's scrollbar width: app.js <-> styles.css ----------
-console.log('\n=== The card fade ends at the width app.js measures ===');
+// --- 10. The card fades' scrollbar width and classes: app.js <-> styles.css
+console.log('\n=== The card fades end at the width app.js measures ===');
 
 // attachScrollFade() measures each card's scrollbar into a custom property,
-// and the fade's right edge reads it; a rename on one side only would run
-// the fade back over the scrollbar, with nothing failing. The name must end
+// and both fades' right edges read it; a rename on one side only would run
+// a fade back over the scrollbar, with nothing failing. The name must end
 // where the property does, so a name the other only starts with does not pass.
 const fadeVar = (appJs.match(/wrapEl\.style\.setProperty\('(--[\w-]+)'/) || [])[1];
 check('app.js sets a property for the scrollbar width', Boolean(fadeVar), String(fadeVar));
-check(
-  "the card fade's right edge reads that property",
-  Boolean(fadeVar) && new RegExp(`\\.card-body-scroll-wrap::after\\s*\\{[^}]*\\bright:\\s*var\\(${fadeVar}\\s*[,)]`).test(css),
-  `app.js sets '${fadeVar}', but no '.card-body-scroll-wrap::after { right: var(${fadeVar}...) }' was found in styles.css`
-);
+for (const [edge, pseudo] of [['bottom', '::after'], ['top', '::before']]) {
+  check(
+    `the card's ${edge} fade's right edge reads that property`,
+    Boolean(fadeVar) && new RegExp(`\\.card-body-scroll-wrap${pseudo}\\s*\\{[^}]*\\bright:\\s*var\\(${fadeVar}\\s*[,)]`).test(css),
+    `app.js sets '${fadeVar}', but no '.card-body-scroll-wrap${pseudo} { right: var(${fadeVar}...) }' was found in styles.css`
+  );
+}
+
+// Each fade is shown by a class attachScrollFade() toggles on the wrapper; a
+// rename on one side only would leave that fade never showing.
+for (const [edge, pseudo, cls] of [['bottom', '::after', 'has-more-below'], ['top', '::before', 'has-more-above']]) {
+  const toggled = new RegExp(`wrapEl\\.classList\\.toggle\\('${cls}'`).test(appJs);
+  const styled = new RegExp(`\\.card-body-scroll-wrap\\.${cls}${pseudo}\\s*\\{[^}]*\\bopacity:\\s*1\\b`).test(css);
+  check(`the ${edge} fade is shown by the class app.js toggles ('${cls}')`, toggled && styled, `toggled in app.js: ${toggled}; shown in styles.css: ${styled}`);
+}
 
 // --- 11. A card's text area ends between two lines ----------------------
 console.log("\n=== A card's text area is a whole number of lines tall ===");

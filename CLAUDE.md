@@ -5164,6 +5164,32 @@ What changed is how often, and how firmly, the docs and the page repeated it.
   joined back together, so a phrase split across two lines was found too.
   `npm test`, `npm run typecheck` and `npm run check-render` pass.
 
+### 2026-10-14: a top fade on the cards
+
+**A card's text now fades at its top edge too, while it is scrolled away from
+its start (2026-10-14, on the user's request).** The bottom fade showed where
+text was hidden below, but once a card was scrolled, its first visible line
+was cut through its letters at the top edge.
+
+- `.card-body-scroll-wrap::before` is the bottom fade mirrored: the same 42px
+  gradient into the card's background, shown by a `has-more-above` class that
+  `attachScrollFade()` sets while the text is scrolled more than 2px from its
+  start, and stopping where the scrollbar begins, so the scrollbar's top arrow
+  stays fully visible.
+- Rendered in headless Edge with the real stylesheet and the real
+  `attachScrollFade()`, on three cards scrolled to the start, the middle and
+  the end: only the bottom fade, both, and only the top fade.
+- Tests: `tests/render-cards.test.js` checks the top fade at the start, the
+  middle and the end, and after scrolling back and forth, through the scroll
+  listener itself; `tests/shared-constants.test.js` checks that both fades'
+  right edges read the scrollbar width, and that each fade is shown by the
+  class `app.js` toggles.
+- Proven both ways, every file restored byte for byte: 9 breaks - the toggle
+  removed, inverted or always on, the class renamed on either side, the top
+  fade never shown, run back over the scrollbar or shown on the wrong
+  pseudo-element, and the scroll listener removed - were each caught by the
+  checks meant for them.
+
 ## Operational notes
 
 ### Image and screenshot volume in long sessions

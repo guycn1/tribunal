@@ -625,9 +625,10 @@ body {
   color: var(--text-dim);
 }
 
-/* Positioning anchor for the bottom fade below - see attachScrollFade()
-   in app.js for why this needs to be a plain (non-scrolling) wrapper
-   rather than putting the fade directly inside .card-body-scroll. */
+/* Positioning anchor for the bottom and top fades below - see
+   attachScrollFade() in app.js for why this needs to be a plain
+   (non-scrolling) wrapper rather than putting the fades directly inside
+   .card-body-scroll. */
 .card-body-scroll-wrap {
   position: relative;
 }
@@ -672,6 +673,27 @@ body {
 }
 
 .card-body-scroll-wrap.has-more-below::after {
+  opacity: 1;
+}
+
+/* The same fade at the top edge, shown while the text is scrolled away
+   from its start (.has-more-above, set by attachScrollFade() in app.js),
+   so the first visible line fades in rather than being cut through its
+   letters. It stops at the scrollbar too, for the top arrow's sake. */
+.card-body-scroll-wrap::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: var(--card-scrollbar-width, 0px);
+  top: 0;
+  height: 42px;
+  background: linear-gradient(to top, transparent, var(--bg-card));
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.card-body-scroll-wrap.has-more-above::before {
   opacity: 1;
 }
 
