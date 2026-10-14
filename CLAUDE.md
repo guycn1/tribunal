@@ -765,9 +765,12 @@ session from the top. Keep its layout:
   something markdown reads as the start of a block:** `-`, `*` or `+` followed
   by a space, a number followed by `.` or `)`, `#`, `>` or `<`. Keep that word
   on the line above instead.
-- **Give every topic a heading.** A status-log entry goes under its day's `###`
-  heading, or the arc's, and a long entry or write-up gets `####` headings of
-  its own.
+- **Give every topic a heading.** In the status log, each day has one `###`
+  heading (an arc spanning several days, such as "2026-08-29/30", shares one),
+  never two; when a day holds more than one topic, each topic gets a `####`
+  heading under it, and the day's heading names them all. A new topic on a day
+  that already has a heading goes under it as a `####`. A long write-up outside
+  the log gets `####` headings of its own.
 - **Split a long entry into a lead paragraph and sub-items**, rather than one
   dense paragraph; keep paragraphs to a few sentences.
 - **No `---` separator before a heading:** GitHub already draws a rule under
@@ -1029,7 +1032,7 @@ time, for the same reason. The 9 commits:
   bug log below (Frontend UX subsection). For the rest, this entry and the
   commits' own messages are the record.
 
-### 2026-08-28: the paid model, timeouts, truncation and concurrency
+### 2026-08-28: the paid model, timeouts, truncation, concurrency, and the move to Background Functions
 
 #### Two merges, and the anti-abuse layers going live
 
@@ -1495,9 +1498,7 @@ it.**
   no confirmed repetition glitches, nothing that needed a retry, nothing close
   enough to the timeout ceiling to call dangerous.
 
-### 2026-08-28: the 10-second ceiling and the move to Background Functions
-
-#### The critical correction
+#### The 10-second ceiling: a critical correction
 
 **CRITICAL CORRECTION (2026-08-28), supersedes every `TOTAL_BUDGET_MS`/"~30s"
 assumption above: the real Netlify free-tier synchronous function ceiling is 10
@@ -2351,8 +2352,8 @@ zero escalations, zero truncations.**
     correct for its real use case (a trial that only ever runs once).
   - *(A trial can no longer be reused this way: since 2026-10-06 an agent
     endpoint refuses a role that already has a final outcome, so each round
-    needs a trial of its own - see "2026-10-06: the abort endpoint, and agent
-    calls the page never sends".)*
+    needs a trial of its own - see "The abort endpoint, and agent calls the page
+    never sends", under 2026-10-06.)*
 
 #### The rate limit raised, the merge, and the production env vars
 
@@ -3954,7 +3955,9 @@ descriptions, and left free they wrapped at every space, `aborted (N` / `of 7` /
   it starts with, and any dash - and fails on any other; 14 targeted breaks were
   each caught by the checks meant for them.
 
-### 2026-10-06: this file's and README's layout, and HARD RULES 4 and 5
+### 2026-10-06: the docs' layout, HARD RULES 4 and 5, the agent routes, README's hero, and the evening merge
+
+#### This file's and README's layout, and HARD RULES 4 and 5
 
 **This file restructured (2026-10-06, on the user's request, after the layout of
 the CLAUDE.md in CineRank, another of the user's own projects).** Before, many
@@ -4226,7 +4229,7 @@ against the committed checks, ca51fc8; seven were real:
   then letting its defect through or raising a false alarm on correct text -
   and cb251be's 24 cases on the named-section check, run again unchanged.
 
-### 2026-10-06: the agent functions accept requests only through their routes
+#### The agent functions accept requests only through their routes
 
 **Each agent handler now accepts a request only when it came through its
 rate-limited route (2026-10-06).** Netlify serves every function at its own
@@ -4394,7 +4397,7 @@ reached `main` in a further merge the same day that changes only
 documentation and comments, whose message carries Netlify's `[skip netlify]`
 marker.
 
-### 2026-10-06: the abort endpoint, and agent calls the page never sends
+#### The abort endpoint, and agent calls the page never sends
 
 **The abort endpoint and the agent handlers now accept only the requests the
 page sends (2026-10-06, on the user's go-ahead).** Read from the code that day:
@@ -4493,7 +4496,7 @@ the second silently.
   lowercase, which the server accepts, passed. The abort-header cases of the
   commit before were run again on the changed check and caught as before.
 
-### 2026-10-06: SPEC.md's layout
+#### SPEC.md's layout
 
 **SPEC.md spaced out and wrapped at 80 characters (2026-10-06, on the user's
 request, as README and this file were), with HARD RULES 4 and 5 applied to it
@@ -4536,7 +4539,7 @@ now has 204 lines and 14 headings.
   unlinked were each caught by the check meant for it; and the vocabulary's
   bold wrapped across two lines, and a paragraph rewrapped, both passed.
 
-### 2026-10-06: README's architecture diagram
+#### README's architecture diagram
 
 **README's Architecture section gained a diagram, "What talks to what"
 (2026-10-06, on the user's request, after the one in the README of CineRank,
@@ -4587,7 +4590,7 @@ where the per-IP limit sits. A last bullet lists the library modules not drawn.
   from the new section and a bullet describing the checks;
   `npm run check-render` passes, and `npm test` ran 659 checks.
 
-### 2026-10-06: the card fade and the card scrollbar
+#### The card fade and the card scrollbar
 
 **A card's bottom fade now stops where its scrollbar begins (2026-10-06,
 found by the user in a screenshot taken for README).** The fade covered all
@@ -4618,7 +4621,7 @@ card's last line, on the live site as in the capture.
   (`--card-scrollbar`) still matched, so the shared-name check now requires
   the name to end where the property does.
 
-### 2026-10-06: README's hero, and images in the render check
+#### README's hero, and images in the render check
 
 **README opens with a hero (2026-10-06, on the user's request, after the one
 in the README of CineRank, another of the user's own projects): the live link,
@@ -4823,7 +4826,7 @@ of the heading's 16px margin, measured as before. Two `<br>`s on the line of
     missing, and without its count, line breaks the source does not ask for.
     The centred-block proof was run again in full.
 
-### 2026-10-06: HARD RULE 4 read broadly in README and SPEC.md
+#### HARD RULE 4 read broadly in README and SPEC.md
 
 **README and SPEC.md now link every mention of something with a home of its
 own, at its first mention in each paragraph (2026-10-06, on the user's
@@ -4900,7 +4903,7 @@ and people and products.
     the 2026-10-04 entry, and the 40-minute "interrupted" line to the
     frontend polish backlog of 2026-09-02.
 
-### 2026-10-06: the render check moved into `tests/`
+#### The render check moved into `tests/`
 
 **`scripts/check-render.js` is now `tests/check-render.js` (2026-10-06, on the
 user's request).** It was the only file in `scripts/`, and it is a check rather
@@ -4926,7 +4929,7 @@ file into pieces.
   of the setup block's `npm run check-render` line; and `tests/markdown.test.js`
   still requiring it from there stopped that suite on a missing module.
 
-### 2026-10-06: cross-references checked again
+#### Cross-references checked again
 
 **Cross-references checked again across every tracked file (2026-10-06, on the
 user's request), for the work since the last such check, `b3e6d75`.** That work
@@ -4938,7 +4941,7 @@ the few that did not land where they said were corrected. Every anchor that a
 README link names on an outside page was found on that page. The details are in
 the commit message.
 
-### 2026-10-06: lists and enumerations checked again
+#### Lists and enumerations checked again
 
 **Lists and enumerations checked again across every tracked file (2026-10-06,
 on the user's request), for the work since the last such check, `15c2d61`.**
@@ -4949,12 +4952,12 @@ lists, and the ones that the new handler checks, the abort endpoint's site gate
 and refusal, the new suites and checks and README's new layout had left behind
 were completed. The details are in the commit message.
 
-### 2026-10-06: stale and contradicting statements checked again
+#### Stale and contradicting statements checked again
 
 **Every Markdown file and every code comment read again for what the work since
 the 2026-09-27 evening merge (`67f00f1`) had left stale or contradicted
 (2026-10-06, on the user's request, ahead of the merge to `main` recorded under
-"2026-10-06: the evening merge" below).** Every statement, figure, pointer and
+"The evening merge" below).** Every statement, figure, pointer and
 list was read against the code, the tests and the other statements that touch
 the same fact.
 
@@ -4976,7 +4979,7 @@ the same fact.
 
 The details are in the commit message.
 
-### 2026-10-06: the ignored `config` export checked in every bundler release
+#### The ignored `config` export checked in every bundler release
 
 **The 2026-10-02 finding that Netlify never read the agent functions' `config`
 export, `background: true` included, checked again (2026-10-06, on the user's
@@ -5003,7 +5006,7 @@ release of it.
   `representative-background.ts` and `tests/docs.test.js` now cite the releases
   read.
 
-### 2026-10-06: no line starts with `+ ` or `* `
+#### No line starts with `+ ` or `* `
 
 **Every line of every Markdown file is checked for a leading `+ ` or `* `
 (2026-10-06, on the user's question, after a footnote in CineRank, another of
@@ -5024,7 +5027,7 @@ No line in the repository starts with either, in Markdown or in a code comment.
   sub-item passed. Without the rule, the first of those passed both checks.
 - HARD RULE 5 and README's description of the suite list the rule.
 
-### 2026-10-06: the evening merge
+#### The evening merge
 
 **Merged to `main` (2026-10-06, on the user's explicit request), triggering a
 deploy: 28 commits, everything since `4098e3b`.** They are:
@@ -5136,7 +5139,9 @@ the same way:
   a CSS pixel at most. Every word, figure, badge and border is otherwise the
   same, and README's caption for it is unchanged.
 
-### 2026-10-14: the separate-rulings wording toned down
+### 2026-10-14: the separate-rulings wording, a top fade on the cards, and one heading per day
+
+#### The separate-rulings wording toned down
 
 **The statements that the three rulings are kept separate now say so plainly,
 and less often (2026-10-14, on the user's request).** The requirement is
@@ -5164,7 +5169,7 @@ What changed is how often, and how firmly, the docs and the page repeated it.
   joined back together, so a phrase split across two lines was found too.
   `npm test`, `npm run typecheck` and `npm run check-render` pass.
 
-### 2026-10-14: a top fade on the cards
+#### A top fade on the cards
 
 **A card's text now fades at its top edge too, while it is scrolled away from
 its start (2026-10-14, on the user's request).** The bottom fade showed where
@@ -5189,6 +5194,28 @@ was cut through its letters at the top edge.
   fade never shown, run back over the scrollbar or shown on the wrong
   pseudo-element, and the scroll listener removed - were each caught by the
   checks meant for them.
+
+#### The status log given one heading per day
+
+**Each day in the status log now has one `###` heading, with a `####` for each
+of its topics (2026-10-14, on the user's request).** Two days had more than one
+`###`: 2026-08-28, split into two arcs, and 2026-10-06, whose entries from the
+route check on were each given a `###` of their own, as were the two of
+2026-10-14 until this change.
+
+- 2026-08-28's two arcs are now one heading, their eight topics under it in
+  their order; the topic opening the second arc is now "The 10-second
+  ceiling: a critical correction", so it names its subject without the arc's
+  heading above it.
+- 2026-10-06's fifteen entries are now `####`s under one heading for the day,
+  and 2026-10-14's three likewise.
+- "Writing in this file" now says so: one `###` per day, or per arc of
+  several days, and a `####` per topic when a day has more than one.
+- Five quotes of the old headings in this file, and three links in README
+  to two of them, point to the new ones; `tests/docs.test.js` checks that
+  every link lands.
+- Rendered through GitHub's markdown API before and after, the file differs
+  only in those headings, the rule and the five quotes.
 
 ## Operational notes
 
@@ -5996,8 +6023,8 @@ to `draft` by 2026-09-03:
    loading/failed status text. `ed9a2de`.
    *(Capped at 18 lines, `18lh`, since 2026-10-06, so the box ends between two
    lines rather than through one, with 340px kept for a browser without `lh` -
-   see "2026-10-06: README's hero, and images in the render check" under
-   "Status log".)*
+   see "README's hero, and images in the render check", under
+   2026-10-06 in "Status log".)*
 
 All 7 verified via offline tests (extracted real functions against synthetic
 data/DOM stubs) or structural/typecheck review — no OpenRouter calls spent on
@@ -6579,8 +6606,8 @@ exactly the 2 functions that call OpenRouter), declared via the function's own
   to the function's own address, `/.netlify/functions/<name>`, or to any
   address of the site but its main one, so every request an agent function
   acts on has come through its route on the main address and passed the one
-  count - see "2026-10-06: the agent functions accept requests only through
-  their routes" under "Status log".)*
+  count - see "The agent functions accept requests only through
+  their routes", under 2026-10-06 in "Status log".)*
 
 ### Site-gate header
 
@@ -6738,8 +6765,8 @@ this log didn't exist yet to check against).
     routes - trigger and poll alike - and worked, and the deployed site never
     had it. The workaround is no longer needed, and for the agent functions it
     no longer works: since 2026-10-06 each refuses a request sent to its own
-    address - see "2026-10-06: the agent functions accept requests only through
-    their routes" under "Status log".)*
+    address - see "The agent functions accept requests only through
+    their routes", under 2026-10-06 in "Status log".)*
 - **A representative call that got cut off by `netlify dev`'s local 30-second
   lambda-local timeout had actually already succeeded server-side** — the
   OpenRouter call, the Supabase write, and the call log all completed and saved

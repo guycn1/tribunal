@@ -400,7 +400,7 @@ So each request an agent function acts on has come through its route on the main
 address and passed the one count.
 
 Both were [verified on the live site on
-2026-10-06](CLAUDE.md#2026-10-06-the-agent-functions-accept-requests-only-through-their-routes).
+2026-10-06](CLAUDE.md#the-agent-functions-accept-requests-only-through-their-routes).
 Bursts from one IP were cut off with `429`s after 62 requests to one route, and
 after 63 split between the two (40 to one, 23 to the other). Gated requests for
 a real trial sent straight to both agent functions' own addresses, or through
@@ -830,7 +830,7 @@ That is what catches a defect nobody has thought of yet. Run it [before every
 commit that touches a Markdown file](CLAUDE.md#when-to-run-them); it uses one
 unauthenticated GitHub request per file, or per piece of a file over 200,000
 characters: GitHub's API [renders at most 400
-KB](CLAUDE.md#2026-10-06-readmes-hero-and-images-in-the-render-check), so such a
+KB](CLAUDE.md#readmes-hero-and-images-in-the-render-check), so such a
 file is sent in pieces cut before its headings.
 
 ### Local costs
@@ -887,7 +887,7 @@ All three [anti-abuse layers](#anti-abuse-and-cost-controls) are in place:
   only through those routes, on [the site's main
   address](https://tribunal-t001.netlify.app); both were [verified on the live
   site on
-  2026-10-06](CLAUDE.md#2026-10-06-the-agent-functions-accept-requests-only-through-their-routes),
+  2026-10-06](CLAUDE.md#the-agent-functions-accept-requests-only-through-their-routes),
   at [the limit of
   60](CLAUDE.md#2026-10-04-inclusive-and-comparative-claims-and-the-rate-limit-raised).
 
