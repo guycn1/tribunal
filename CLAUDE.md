@@ -3629,7 +3629,7 @@ limit was then tested on the live site with ungated POSTs (no quota spent).
   and escalations run inside the Background Function and send no further request
   through these routes, so a trial costs 7 against the limit however many
   attempts its agents take. *(Raised to 60 on 2026-10-04, on the user's
-  direction - see that day's entry.)*
+  direction - see "The rate limit raised" under that day.)*
 
 ### 2026-10-03: absolute and conditional claims checked, and README's figures put under test
 
@@ -4157,7 +4157,7 @@ go-ahead).** Proving the link work above meant breaking every paragraph it
 touched before and after, to make sure no check had stopped reading one; no
 check had, but none read those paragraphs at all, so "Six offline regression
 suites" and "All three anti-abuse layers" were checked by nothing, contrary to
-the 2026-10-03 entry.
+"README's figures from the code put under test", under 2026-10-03.
 
 - The suite count, already checked in the setup block, is now checked wherever
   README states it, against the suites `npm test` runs.
@@ -5684,7 +5684,7 @@ looped paragraph-sized block).
   earlier abandoned 5-word-phrase heuristic false-positived on it and this one
   does not. *(True of the verbatim rules. The near-copy rules added on
   2026-09-28 can flag anaphora whose sentences share most of their words - see
-  that day's entry.)*
+  "Near-verbatim loops" under that day.)*
 - Sentences under 5 words are ignored outright.
 
 #### Abort, which stopped nothing server-side

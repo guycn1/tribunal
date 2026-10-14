@@ -399,9 +399,11 @@ which [Netlify gives functions as
 So each request an agent function acts on has come through its route on the main
 address and passed the one count.
 
-Both were [verified on the live site on
-2026-10-06](CLAUDE.md#the-morning-merge).
-Bursts from one IP were cut off with `429`s after 62 requests to one route, and
+Both were verified on the live site on 2026-10-06: [the limit and the
+functions' own addresses](CLAUDE.md#the-morning-merge) after one deploy, and
+[the site's other
+addresses](CLAUDE.md#the-agent-functions-accept-requests-only-on-the-sites-main-address-and-its-merge)
+after the next. Bursts from one IP were cut off with `429`s after 62 requests to one route, and
 after 63 split between the two (40 to one, 23 to the other). Gated requests for
 a real trial sent straight to both agent functions' own addresses, or through
 their routes to `main--tribunal-t001.netlify.app`, left nothing behind, while
@@ -896,9 +898,11 @@ All three [anti-abuse layers](#anti-abuse-and-cost-controls) are in place:
   platform](https://docs.netlify.com/manage/security/secure-access-to-sites/rate-limiting/),
   as a backstop far above normal use, and the agent functions accept requests
   only through those routes, on [the site's main
-  address](https://tribunal-t001.netlify.app); both were [verified on the live
-  site on 2026-10-06](CLAUDE.md#the-morning-merge), at [the limit of
-  60](CLAUDE.md#the-rate-limit-raised).
+  address](https://tribunal-t001.netlify.app); both were verified on the live
+  site on 2026-10-06 ([the limit and the
+  routes](CLAUDE.md#the-morning-merge), [the main
+  address](CLAUDE.md#the-agent-functions-accept-requests-only-on-the-sites-main-address-and-its-merge)),
+  at [the limit of 60](CLAUDE.md#the-rate-limit-raised).
 
 The frontend (layout, live status display, [call log](#call-log) transparency, a
 responsive card view for narrow screens, [cross-browser scrollbar and
