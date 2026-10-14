@@ -29,8 +29,8 @@
  *      stopped is "truncated" and one a detector flagged "degenerated"; a "no
  *      response" row says whether it was retried or escalated; the legacy
  *      "truncated" badge marks only rows saved before truncation became a
- *      failure; a discarded attempt is dimmed and the role's own aborted row is
- *      not; an abort endpoint's row reads "abort requested", dimmed and
+ *      failure; a retried attempt is dimmed, and the role's own aborted row
+ *      and a call's final failure are not; an abort endpoint's row reads "abort requested", dimmed and
  *      uncaptioned, with its model printed as "n/a" rather than shortened like
  *      a model id; every cell carries its column name for the narrow card
  *      layout; the token breakdown can break only after its slash; and a model
@@ -333,6 +333,7 @@ console.log('\n=== An abort row\'s model reads "n/a", not a shortened "a" ===');
   };
   check('a discarded attempt that was retried is dimmed', dimmed('[degenerate-retried-same-model] This attempt hit the max_tokens limit before finishing naturally - re-tried with the same model.'));
   check('but the role\'s own aborted row, its outcome, is not', !dimmed('[aborted-mid-call] Finished after the user aborted this trial: the reply was complete, but it was not saved.'));
+  check('nor is a call\'s final failure, though nothing was saved', !dimmed('[degenerate-final] Every model tier was tried (4 in total, ending with google/gemini-2.5-pro) and none produced a usable response - the final attempt hit the max_tokens limit before finishing naturally. Nothing was saved.') && !dimmed('OpenRouter returned HTTP 402: insufficient credits'));
   check('the Model cell reads exactly "n/a"', naCell === 'n/a', naCell);
   check('with no <abbr> or tooltip', !/<abbr|title=/.test(naCell), naCell);
   const realCell = modelCellFor('mistralai/mistral-small-24b-instruct-2501');

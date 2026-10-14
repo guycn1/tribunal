@@ -555,9 +555,10 @@ A few rows have no attempt behind them:
   starting an attempt;
 - and the `failed` row a call ends on when the server has no OpenRouter key.
 
-Discarded rows are dimmed, since the call usually went on to succeed further
-down the table, and so are [the abort endpoint](#api-endpoints)'s rows, which
-record the request to stop rather than an outcome.
+Rows for attempts that were retried or escalated are dimmed, since the call
+usually went on to succeed further down the table, and so are [the abort
+endpoint](#api-endpoints)'s rows, which record the request to stop rather than
+an outcome. A call's last row is *not* dimmed, even when nothing was saved.
 
 ![The call log of one trial: ten model attempts with their tokens, cost,
 duration, status badge and time, three discarded attempts dimmed, and a totals
