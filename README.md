@@ -797,7 +797,8 @@ DOM](tests/support/load-app.js) — except
     every link lands and holds no whitespace, every commit hash is linked at
     each mention, and the first mention in each paragraph of a file,
     [`npm test`](tests), a table, a route, or the thing a section's heading
-    names ("[The escalation chain](#the-escalation-chain)") is linked to it.
+    names (e.g. "[The escalation chain](#the-escalation-chain)") is linked to
+    it.
 - [`tests/markdown.test.js`](tests/markdown.test.js) — no Markdown file,
   [`CLAUDE.md`](CLAUDE.md) included, holds source GitHub is known to render
   wrongly: an HTML tag it would drop, a code span left open or holding an escape
