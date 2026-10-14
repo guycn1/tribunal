@@ -339,9 +339,11 @@ tag it does not know.
   text, and the page must have as many headings, tables, table cells, rules,
   code blocks, list items, quotes, line breaks, links, images and bold spans as
   the source asks for. This is the check that catches a defect nobody has listed
-  yet. It needs the network - one unauthenticated GitHub request per file, or
-  per piece of a file over 200,000 characters, 60 an hour, and none of this
-  project's quota - so it is not part of `npm test`. GitHub's API renders at
+  yet. It needs the network - one GitHub request per file, or per piece of a
+  file over 200,000 characters, and none of this project's quota - so it is
+  not part of `npm test`. GitHub allows 60 such requests an hour, or 5,000
+  with a token, which the script sends when `GITHUB_TOKEN` is set in `.env`
+  (a fine-grained token with no permissions is enough). GitHub's API renders at
   most 400 KB, so a larger file is sent in pieces cut before its `##` and `###`
   headings, each compared with its own source.
 
@@ -5175,7 +5177,7 @@ the same way:
   a CSS pixel at most. Every word, figure, badge and border is otherwise the
   same, and README's caption for it is unchanged.
 
-### 2026-10-14: the separate-rulings wording, a top fade on the cards, and the status log's headings
+### 2026-10-14: the separate-rulings wording, a top fade on the cards, the status log's headings, and a token for the render check
 
 #### The separate-rulings wording toned down
 
@@ -5270,6 +5272,27 @@ user's request).** Read against that rule, two things were still uneven:
 
 Rendered through GitHub's markdown API before and after each pass, the file
 differed only in its headings, the rule, the quotes and this entry.
+
+#### A token for the render check
+
+**`npm run check-render` sends a GitHub token when one is set (2026-10-14).**
+GitHub's Markdown API allows 60 unauthenticated requests an hour, and the
+render comparisons for the heading changes above used them up; with a token
+it allows 5,000, per GitHub's REST rate-limit docs (read that day).
+
+- `githubToken()` in `tests/check-render.js` reads `GITHUB_TOKEN` from the
+  environment, or else from the git-ignored `.env`, and `render()` sends it
+  when set; without one, the requests go unauthenticated as before.
+- A fine-grained token with no permissions is enough: GitHub's docs for
+  "Render a Markdown document" (read that day) say the endpoint needs none
+  when only public resources are requested, as here, and such a token can
+  neither read nor change anything private if it leaks.
+- Checked that day: with the unauthenticated allowance at 0, the check
+  rendered all three files with the token; and with a wrong token it exited
+  2, "Bad credentials", so a broken token cannot let it pass.
+- `.env.example` lists `GITHUB_TOKEN` as optional, and `tests/docs.test.js`
+  now holds that file to the variables the backend and the render check
+  read; README's "Checking the rendered page" and HARD RULE 5 say so.
 
 ## Operational notes
 

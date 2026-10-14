@@ -828,10 +828,18 @@ and compares the page with its source:
 
 That is what catches a defect nobody has thought of yet. Run it [before every
 commit that touches a Markdown file](CLAUDE.md#when-to-run-them); it uses one
-unauthenticated GitHub request per file, or per piece of a file over 200,000
-characters: GitHub's API [renders at most 400
+GitHub request per file, or per piece of a file over 200,000 characters:
+GitHub's API [renders at most 400
 KB](CLAUDE.md#the-render-check-reads-images-and-sends-a-large-file-in-pieces),
 so such a file is sent in pieces cut before its headings.
+
+GitHub allows 60 such requests an hour without a token, and [5,000 with
+one](https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api).
+The script sends one when `GITHUB_TOKEN` is set in `.env` (see
+[`.env.example`](.env.example)); a fine-grained token with no permissions is
+enough, since [the Markdown
+API](https://docs.github.com/en/rest/markdown/markdown#render-a-markdown-document)
+needs none when, as here, only public resources are requested.
 
 ### Local costs
 

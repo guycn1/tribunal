@@ -21,10 +21,12 @@
  *
  * It needs the network, so it is not part of `npm test`: run it before every
  * commit that touches a Markdown file, and before every merge to main. It
- * uses GitHub's unauthenticated API (60 requests an hour), one request per
- * file, or per piece of one over PIECE_LIMIT characters (see pieces()
- * below), and spends no quota of this project's. Exits 1 on a defect, and 2
- * when GitHub could not be reached, so an unreachable API never passes.
+ * sends one request per file, or per piece of one over PIECE_LIMIT
+ * characters (see pieces() below), and spends no quota of this project's.
+ * GitHub allows 60 such requests an hour unauthenticated, and 5,000 with a
+ * token, which it sends when GITHUB_TOKEN is set (see githubToken() below).
+ * Exits 1 on a defect, and 2 when GitHub could not be reached or refused the
+ * request, so an unreachable API never passes.
  */
 
 const fs = require('node:fs');
@@ -205,15 +207,40 @@ function compare(source, html) {
 }
 
 /**
+ * The GitHub token to send, if one is set: GITHUB_TOKEN in the environment,
+ * or else in the git-ignored .env at the repository root. With a token,
+ * GitHub allows 5,000 requests an hour rather than 60. A fine-grained token
+ * with no permissions is enough, since the Markdown API needs none when only
+ * public resources are requested, as here, and one with none can neither
+ * read nor change anything private if it leaks.
+ * Without one, the requests go unauthenticated.
+ * @returns {string} The token, or '' when none is set.
+ */
+function githubToken() {
+  if (process.env.GITHUB_TOKEN) return process.env.GITHUB_TOKEN.trim();
+  try {
+    const line = fs.readFileSync(path.join(ROOT, '.env'), 'utf8').match(/^GITHUB_TOKEN=(.*)$/m);
+    return line ? line[1].trim() : '';
+  } catch {
+    return '';
+  }
+}
+
+/**
  * Renders Markdown through GitHub's API, in the default mode, whose line
  * breaks match a file's page on github.com.
  * @param {string} text
  * @returns {Promise<string>}
  */
 async function render(text) {
+  const token = githubToken();
   const res = await fetch('https://api.github.com/markdown', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'User-Agent': 'tribunal-check-render' },
+    headers: {
+      'Content-Type': 'application/json',
+      'User-Agent': 'tribunal-check-render',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
     body: JSON.stringify({ text }),
   });
   if (!res.ok) throw new Error(`GitHub answered ${res.status}: ${(await res.text()).slice(0, 200)}`);
