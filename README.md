@@ -586,7 +586,8 @@ count every attempt, discarded ones included.*
 | `aborted` | amber | The call's last row when the trial was aborted while it was running server-side, in one of three ways: it stopped before starting an attempt (no tokens, no duration); an attempt that failed as [the abort](#aborting-a-trial) landed is not retried; or a reply that finished after the abort is not saved. The last two keep that attempt's real tokens, cost and reply, since it ran and was paid for. |
 | `truncated` | amber | Legacy only: a second badge shown *next to* a green `success` on a row logged before [truncation became a real failure, on 2026-08-29](https://github.com/guycn1/tribunal/commit/298d2fab14a71f3be6a13c5235e7150edcb7eacf), whose completion is a whole multiple of [the 1,400-token cap](CLAUDE.md#per-attempt-logging-timeouts-truncation-and-the-merge). New trials never produce it. |
 
-The two labels record how an attempt ended, not what the text was like:
+`truncated` and `degenerated` are told apart by how an attempt ended, not by
+everything that was wrong with its text:
 
 - `truncated` means the model was still writing when it hit the token cap;
 - and `degenerated` means it did not hit the cap and [a
