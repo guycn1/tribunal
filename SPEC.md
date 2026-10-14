@@ -13,19 +13,19 @@ not on the artefact alone.
 This document is the functional/requirements spec, sourced from the ASE Book
 "Case Design Dossier." Two other documents cover the rest:
 
-- [`README.md`](README.md): how this particular submission implements it
-  ([architecture](README.md#architecture), [live
-  deployment](https://tribunal-t001.netlify.app),
-  [setup](README.md#local-development));
-- [`CLAUDE.md`](CLAUDE.md): [the build history](CLAUDE.md#status-log) and the
-  engineering decisions behind it.
+- [`README.md`](README.md): how this particular submission implements it, as
+  it stands — [its architecture](README.md#architecture); the models used, and
+  the cost and reliability engineering, in [the escalation
+  chain](README.md#the-escalation-chain); [the anti-abuse
+  measures](README.md#anti-abuse-and-cost-controls); the database, defined in
+  [`supabase/schema.sql`](supabase/schema.sql) and [mapped in
+  `README.md`](README.md#database); [the live
+  deployment](https://tribunal-t001.netlify.app); and
+  [setup](README.md#local-development);
+- [`CLAUDE.md`](CLAUDE.md): [the build history](CLAUDE.md#status-log), as a
+  running log, and the engineering decisions behind it.
 
 ## 1. The charge sheet
-
-- **Accused:** Jon Snow
-- **Deceased:** Daenerys Targaryen
-- **Act alleged:** Jon intentionally killed Daenerys by stabbing her during a
-  private meeting in the throne room after the fall of King's Landing.
 
 This section is the case exactly as [the app](https://tribunal-t001.netlify.app)
 serves it — word for word [the record](README.md#case_definitions) seeded into
@@ -33,6 +33,11 @@ serves it — word for word [the record](README.md#case_definitions) seeded into
 [`supabase/schema.sql`](supabase/schema.sql). [The stipulated
 facts](#stipulated-facts) in particular are quoted, not paraphrased: they are
 what both sides accept, and a restatement can shift what was agreed.
+
+- **Accused:** Jon Snow
+- **Deceased:** Daenerys Targaryen
+- **Act alleged:** Jon intentionally killed Daenerys by stabbing her during a
+  private meeting in the throne room after the fall of King's Landing.
 
 ### Background
 
@@ -92,7 +97,17 @@ verdict.
 
 ## 2. The seven agents
 
-**Seats and methods:**
+Each agent's full system prompt (real depth, not a one-line trait) lives in
+[`netlify/functions/lib/representatives.ts`](netlify/functions/lib/representatives.ts)
+or [`judges.ts`](netlify/functions/lib/judges.ts), and
+[`prompts.ts`](netlify/functions/lib/prompts.ts) pairs it with [the case
+record](#1-the-charge-sheet) (for a judge, with [the
+representatives](#representatives)' arguments too). This section states identity
+and required reasoning approach, not the prompts themselves.
+
+### Seats and methods
+
+What an agent's seat or method fixes, and what it does not:
 
 - a representative's seat (defence or prosecution) fixes only procedural role
   — never an opinion, a factual inference, or a final position;
@@ -101,14 +116,6 @@ verdict.
 - no agent is instructed to argue towards a predetermined conclusion; each
   reasons from its own character/method and may land anywhere, including
   against "its side."
-
-Each agent's full system prompt (real depth, not a one-line trait) lives in
-[`netlify/functions/lib/representatives.ts`](netlify/functions/lib/representatives.ts)
-or [`judges.ts`](netlify/functions/lib/judges.ts), and
-[`prompts.ts`](netlify/functions/lib/prompts.ts) pairs it with [the case
-record](#1-the-charge-sheet) (for a judge, with [the
-representatives](#representatives)' arguments too). This section states identity
-and required reasoning approach, not the prompts themselves.
 
 ### Representatives
 
@@ -191,23 +198,10 @@ persona.
   completion tokens, total tokens, cost, status, and timestamp. Token counts
   are read from the API response's own usage data; cost is computed from
   [per-token pricing](netlify/functions/lib/pricing.ts).
-- **Architecture:** [three-tier](README.md#architecture) — [browser](public) /
+- The architecture is [three-tier](README.md#architecture): [browser](public) /
   [backend](netlify/functions) / [database](README.md#database). The backend
   alone holds the API key and orchestrates every model call; the database stores
   [the case record](README.md#case_definitions), every
   [argument](README.md#representative_arguments) and
   [ruling](README.md#judge_rulings), and [the full per-call
   log](README.md#api_call_logs).
-
-## How this repository implements it
-
-How this repository actually satisfies the above is documented in
-[`README.md`](README.md) (current state) and
-[`CLAUDE.md`](CLAUDE.md#status-log) (running log), not repeated here:
-
-- the specific model(s) used, and the cost and reliability engineering, in
-  [the escalation chain](README.md#the-escalation-chain);
-- the [anti-abuse measures](README.md#anti-abuse-and-cost-controls);
-- the database, defined in [`supabase/schema.sql`](supabase/schema.sql) and
-  [mapped in `README.md`](README.md#database);
-- and [the decisions behind them](CLAUDE.md#status-log).

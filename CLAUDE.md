@@ -5179,7 +5179,7 @@ the same way:
   a CSS pixel at most. Every word, figure, badge and border is otherwise the
   same, and README's caption for it is unchanged.
 
-### 2026-10-14: the separate-rulings wording, a top fade on the cards, the status log's headings, and a token for the render check
+### 2026-10-14: the separate-rulings wording, a top fade on the cards, the docs' structure, and a token for the render check
 
 #### The separate-rulings wording toned down
 
@@ -5301,6 +5301,35 @@ it allows 5,000, per GitHub's REST rate-limit docs (read that day).
 - `.env.example` lists `GITHUB_TOKEN` as optional, and `tests/docs.test.js`
   now holds that file to the variables the backend and the render check
   read; README's "Checking the rendered page" and HARD RULE 5 say so.
+
+#### README's and SPEC.md's structure
+
+**README's and SPEC.md's headings, lists and sections read against the same
+standard as the status log's (2026-10-14, on the user's request).** Neither
+file skips a heading level but README's live-app line, and both use only
+bullets, at most two deep. What was changed:
+
+- README's "The escalation chain" and "Anti-abuse and cost controls" each
+  opened by restating their heading in bold. The first now opens as a plain
+  sentence, and the second as one that says what the list below it is.
+- SPEC.md's "Seats and methods" was a bold label beside the section's `###`
+  headings. It is now one of them, with a lead-in to its list, and the
+  paragraph on where the prompts live, which it used to follow, opens the
+  section.
+- SPEC.md's closing section, "How this repository implements it", was its
+  only unnumbered `##` and mostly repeated the pointers at its top. Its
+  pointers joined that list, and the section is gone.
+- In SPEC.md, the paragraph on where the charge sheet comes from now opens
+  its section, above the three lead bullets, and the architecture bullet,
+  the one bullet in its list with a bold label, lost the label.
+
+README's live-app line stays a `###` under the `#` title, though it is not a
+section. A heading is the only way to set text larger on GitHub: rendered
+through its API that day, `<big>`, `<font size>` and a `style` attribute
+were each stripped, and the text came out at body size.
+
+Rendered through GitHub's markdown API before and after, the two files
+differed only in those places, and nothing links to the removed section.
 
 ## Operational notes
 

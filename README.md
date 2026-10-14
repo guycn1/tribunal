@@ -196,8 +196,8 @@ as it begins](#agent_progress). The trial went on to finish 7 of 7.*
 
 ### The escalation chain
 
-**[A 4-tier model escalation chain](netlify/functions/lib/openrouter.ts)**
-guards against unusable output:
+[A 4-tier model escalation chain](netlify/functions/lib/openrouter.ts) guards
+against unusable output:
 [`default model (2 attempts) → claude-haiku-4.5 (2 attempts) → a third model (2 attempts) → a last-resort model (1 attempt)`](CLAUDE.md#the-4-tier-escalation-chain),
 escalating once a tier has used up its attempts. The escalation signals are:
 
@@ -289,7 +289,7 @@ two hit the token cap - and none was retried or saved. No judge ever started.*
 
 ### Anti-abuse and cost controls
 
-**Anti-abuse / cost controls**, layered since [the deployed
+Three layers guard against abuse and runaway cost, since [the deployed
 site](https://tribunal-t001.netlify.app) runs on a paid model with no login:
 
 - [a site-wide rolling call cap](netlify/functions/lib/db.ts);
