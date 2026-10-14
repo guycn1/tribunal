@@ -3,8 +3,7 @@
  * charge sheet, runs a trial - triggering the seven agent calls as Netlify
  * Background Functions and polling for their results - and displays each
  * argument and ruling, the per-call log, and the run history. The three
- * judges' rulings are shown independently, each on its own card, and are
- * never combined.
+ * judges' rulings are shown independently, each on its own card.
  *
  * This file is served as-is: no build step and no modules. It cannot import
  * from the Netlify Functions, so the values both sides must agree on are
@@ -171,7 +170,7 @@
  * @typedef {object} BuiltCard
  * @property {HTMLDivElement} card
  * @property {HTMLDivElement | null} scrollBody The scrolling text body, if
- *   the card has one - the caller attaches its scroll fade once the card is
+ *   the card has one - the caller attaches its scroll fades once the card is
  *   in the document.
  */
 
@@ -1586,7 +1585,7 @@ const SPINNER_REDUCED_MOTION_MS = 2400;
  * Prepended to every "still waiting on a response" status below - a purely
  * visual, CSS-animated indicator (see .spinner in styles.css) that there's
  * real, ongoing activity, distinct from the text-only states (aborted,
- * failed, success) where nothing is in flight anymore.
+ * failed, success) where nothing is in flight any more.
  *
  * A CSS animation restarts from 0% whenever its element is torn down and
  * recreated, which would otherwise make a spinner visibly snap back to the
@@ -1751,28 +1750,31 @@ function appendTruncationNotice(card, entry) {
  * response..." expand (would fight the fixed card-grid row heights this
  * same scroll region exists to keep consistent) or a modal (real added
  * complexity - backdrop, focus handling - for a benefit judged not worth
- * it here). The fade lives on bodyEl's parent (a plain sibling wrapper,
- * not a child of the scrolling element itself) specifically so it stays
- * visually pinned at the bottom of the visible box - an absolutely
- * positioned child of the SCROLLING element would scroll away along with
- * the text instead.
+ * it here). A top fade does the same for text hidden above, so once the
+ * card is scrolled, its first visible line fades in rather than being
+ * cut through its letters. The fades live on bodyEl's parent (a plain
+ * sibling wrapper, not a child of the scrolling element itself)
+ * specifically so they stay visually pinned to the edges of the visible
+ * box - an absolutely positioned child of the SCROLLING element would
+ * scroll away along with the text instead.
  *
  * @param {HTMLElement} bodyEl The scrolling text body. Its parent is the
- *   element that receives the has-more-below class, and it must already be
- *   in the document - see reconcileAgentCards().
+ *   element that receives the has-more-above and has-more-below classes,
+ *   and it must already be in the document - see reconcileAgentCards().
  */
 function attachScrollFade(bodyEl) {
   const wrapEl = bodyEl.parentElement;
   const SCROLL_END_EPSILON = 2; // sub-pixel/rounding tolerance
   /**
-   * Shows the fade only while there is text below the visible area, and
-   * stops it where the scrollbar begins: the body's width less its
-   * content-and-padding width is the scrollbar's, whatever the browser
-   * draws (0 where scrollbars overlay the content).
+   * Shows each fade only while there is text beyond its edge of the
+   * visible area, and stops both where the scrollbar begins: the body's
+   * width less its content-and-padding width is the scrollbar's, whatever
+   * the browser draws (0 where scrollbars overlay the content).
    */
   function update() {
     const hasMore = bodyEl.scrollHeight - bodyEl.scrollTop - bodyEl.clientHeight > SCROLL_END_EPSILON;
     wrapEl.classList.toggle('has-more-below', hasMore);
+    wrapEl.classList.toggle('has-more-above', bodyEl.scrollTop > SCROLL_END_EPSILON);
     wrapEl.style.setProperty('--card-scrollbar-width', `${Math.max(0, bodyEl.offsetWidth - bodyEl.clientWidth)}px`);
   }
   bodyEl.addEventListener('scroll', update);

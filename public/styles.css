@@ -88,7 +88,7 @@ body {
      than fixed specifically so this stays a normal flex child of
      .layout, sharing width with .main exactly as before - fixed would
      take it out of flow entirely and need its own hand-maintained
-     width/offset math duplicating the clamp() above. align-self:
+     width/offset maths duplicating the clamp() above. align-self:
      flex-start stops .layout's default stretch behaviour from fighting
      the explicit height below. Capped at 100vh (never taller than the
      viewport) with overflow hidden - the fix for the sidebar previously
@@ -625,9 +625,10 @@ body {
   color: var(--text-dim);
 }
 
-/* Positioning anchor for the bottom fade below - see attachScrollFade()
-   in app.js for why this needs to be a plain (non-scrolling) wrapper
-   rather than putting the fade directly inside .card-body-scroll. */
+/* Positioning anchor for the bottom and top fades below - see
+   attachScrollFade() in app.js for why this needs to be a plain
+   (non-scrolling) wrapper rather than putting the fades directly inside
+   .card-body-scroll. */
 .card-body-scroll-wrap {
   position: relative;
 }
@@ -672,6 +673,27 @@ body {
 }
 
 .card-body-scroll-wrap.has-more-below::after {
+  opacity: 1;
+}
+
+/* The same fade at the top edge, shown while the text is scrolled away
+   from its start (.has-more-above, set by attachScrollFade() in app.js),
+   so the first visible line fades in rather than being cut through its
+   letters. It stops at the scrollbar too, for the top arrow's sake. */
+.card-body-scroll-wrap::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: var(--card-scrollbar-width, 0px);
+  top: 0;
+  height: 42px;
+  background: linear-gradient(to top, transparent, var(--bg-card));
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.card-body-scroll-wrap.has-more-above::before {
   opacity: 1;
 }
 
@@ -1104,6 +1126,25 @@ table.call-log .col-full {
   color: var(--text-dim);
   font-size: 0.72rem;
   margin-top: 2px;
+}
+
+/* In the table, a caption is centred in a narrow column and is often just
+   too long for one line, so greedy wrapping left its last word alone:
+   "(retried with the same / model)", "(the user aborted the / trial)".
+   `pretty` keeps the lines as full as it can while moving a word down to
+   keep the last one company: "(the user aborted / the trial)". A browser
+   without it keeps `balance`, which evens the lines out instead and splits
+   that one as "(the user / aborted the trial)". Measured in headless Edge
+   on 2026-10-13 from a 640px table to a 974px one: no caption left alone
+   on its last line, and no row taller than before. Table view only: in the
+   card view below 720px a caption has a whole row and fits on one line, so
+   that layout is left exactly as it was. A browser with neither wraps as
+   before. */
+@media (width > 720px) {
+  table.call-log .status-caption {
+    text-wrap: balance;
+    text-wrap: pretty;
+  }
 }
 
 /* Deterministic centring for a cell that stacks two elements vertically

@@ -13,23 +13,23 @@ arguments and the three judges' rulings side by side, with the run history on
 the left](screenshots/readme-1-hero-split-rulings.png)
 
 *[Three judges](SPEC.md#judges), three separate rulings: the Elon judge found
-the killing justified, the Barak and Shamgar judges did not, and nothing on the
-page adds them up. [Grey Worm](SPEC.md#representatives)'s argument was answered
-by `claude-haiku-4.5` rather than the default model: his first two attempts were
+the killing justified, and the Barak and Shamgar judges did not.
+[Grey Worm](SPEC.md#representatives)'s argument was answered by
+`claude-haiku-4.5` rather than the default model: his first two attempts were
 caught and discarded, and [the escalation chain](#the-escalation-chain) moved
 him up a tier.*
 
 A fixed, canonical fictional tribunal — **[Case T-001: The Realm v. Jon
 Snow](SPEC.md#1-the-charge-sheet)** — argued and ruled on by [seven independent
 **AI agents**](SPEC.md#2-the-seven-agents): [four
-representatives](SPEC.md#representatives) (two defense, two prosecution) and
+representatives](SPEC.md#representatives) (two defence, two prosecution) and
 [three judges](SPEC.md#judges), each modelled on a distinct real judicial
 reasoning method (Aharon Barak, Menachem Elon, Meir Shamgar).
 
 The Tribunal decides [one question](SPEC.md#question-for-judgment) — **justified
 / not justified** — and gives reasons. It does not impose a sentence, and the
-[three judges](SPEC.md#judges)' rulings are never combined into a single
-verdict; they are displayed independently, each on its own card.
+[three judges](SPEC.md#judges)' rulings are displayed independently, each on
+its own card.
 
 ## Architecture
 
@@ -170,7 +170,7 @@ lines: the Barak judge announces "a structured, rights-centered analysis" and
 defines "justified" and "necessary" before applying them; the Elon judge turns
 to a principle of Jewish legal tradition, the rodef or pursuer; the Shamgar
 judge sets out the governing standard and the institutional framework, then the
-chronology. Three rulings, side by side, never combined.*
+chronology. Three independent rulings, side by side.*
 
 ### Background Functions and polling
 
@@ -196,21 +196,21 @@ as it begins](#agent_progress). The trial went on to finish 7 of 7.*
 
 ### The escalation chain
 
-**[A 4-tier model escalation chain](netlify/functions/lib/openrouter.ts)**
-guards against unusable output:
+[A 4-tier model escalation chain](netlify/functions/lib/openrouter.ts) guards
+against unusable output:
 [`default model (2 attempts) → claude-haiku-4.5 (2 attempts) → a third model (2 attempts) → a last-resort model (1 attempt)`](CLAUDE.md#the-4-tier-escalation-chain),
 escalating once a tier has used up its attempts. The escalation signals are:
 
 - `finish_reason === 'length'` (hit the token cap);
 - two independent degeneration heuristics ([a long punctuation-less
-  run-on](CLAUDE.md#2026-09-01-to-2026-09-03-degeneration-detection-and-the-live-model-line),
+  run-on](CLAUDE.md#degeneration-detection),
   and repetition, verbatim or near-verbatim: [the same whole sentence twice in a
   row](CLAUDE.md#a-widened-repeated-sentence-detector), [a sentence of 18+ words
   twice](CLAUDE.md#capped-replies-clause-level-rules-and-the-detectors-measured),
   any sentence 3+ times, a passage of 3+ sentences repeated word for word, the
   same clause twice in a row, a clause of 6+ words 3 times close together, [2+
   consecutive sentences found again almost word for word (80%+ alike, 10+
-  words)](CLAUDE.md#2026-09-28-near-verbatim-loops-and-the-prosecution-seats),
+  words)](CLAUDE.md#near-verbatim-loops),
   or a sentence in the last 10% that is 60%+ like one of the 4 before it (8+
   words each) — a clause being any stretch between commas, semicolons, colons or
   sentence ends, and two sentences' likeness the share of words that need no
@@ -289,7 +289,7 @@ two hit the token cap - and none was retried or saved. No judge ever started.*
 
 ### Anti-abuse and cost controls
 
-**Anti-abuse / cost controls**, layered since [the deployed
+Three layers guard against abuse and runaway cost, since [the deployed
 site](https://tribunal-t001.netlify.app) runs on a paid model with no login:
 
 - [a site-wide rolling call cap](netlify/functions/lib/db.ts);
@@ -380,7 +380,7 @@ discarded attempts logged has no outcome yet, so it is not turned away.
 [Netlify's per-IP rate
 limit](https://docs.netlify.com/manage/security/secure-access-to-sites/rate-limiting/#set-limits-for-redirects)
 ([60 requests per 3
-minutes](CLAUDE.md#2026-10-04-inclusive-and-comparative-claims-and-the-rate-limit-raised)
+minutes](CLAUDE.md#the-rate-limit-raised)
 from one IP, counted across the two routes together, set on their redirects in
 [`netlify.toml`](netlify.toml)) is enforced by the platform ahead of the
 handler, so a rejection there reaches the browser directly, as a `429`. It is a
@@ -399,13 +399,15 @@ which [Netlify gives functions as
 So each request an agent function acts on has come through its route on the main
 address and passed the one count.
 
-Both were [verified on the live site on
-2026-10-06](CLAUDE.md#2026-10-06-the-agent-functions-accept-requests-only-through-their-routes).
-Bursts from one IP were cut off with `429`s after 62 requests to one route, and
-after 63 split between the two (40 to one, 23 to the other). Gated requests for
-a real trial sent straight to both agent functions' own addresses, or through
-their routes to `main--tribunal-t001.netlify.app`, left nothing behind, while
-the same request through its route on [the main
+Both were verified on the live site on 2026-10-06: [the limit and the
+functions' own addresses](CLAUDE.md#the-morning-merge) after one deploy, and
+[the site's other
+addresses](CLAUDE.md#the-agent-functions-accept-requests-only-on-the-sites-main-address-and-its-merge)
+after the next. Bursts from one IP were cut off with `429`s after 62 requests
+to one route, and after 63 split between the two (40 to one, 23 to the other).
+Gated requests for a real trial sent straight to both agent functions' own
+addresses, or through their routes to `main--tribunal-t001.netlify.app`, left
+nothing behind, while the same request through its route on [the main
 address](https://tribunal-t001.netlify.app) started its attempt within 5
 seconds.
 
@@ -434,9 +436,9 @@ what each table holds and the rules worth knowing, not a copy of that file.
   [Only the backend's service-role key
   can](https://supabase.com/docs/guides/database/postgres/row-level-security#bypassing-row-level-security),
   and the browser never talks to Supabase directly.
-- Every table except [`case_definitions`](#case_definitions) and
-  [`trials`](#trials) itself belongs to a single trial through `trial_id`, and
-  deleting a trial deletes its rows in all of them.
+- Every row in the tables other than [`case_definitions`](#case_definitions)
+  and [`trials`](#trials) itself belongs to a single trial through `trial_id`,
+  and deleting a trial deletes its rows in all of them.
 
 #### case_definitions
 
@@ -482,8 +484,8 @@ judges](SPEC.md#judges)), `verdict` (`justified` or `not justified`),
 `reasoning_text`, `model_used`, `created_at`
 
 - At most one row per trial and role.
-- A trial's three rulings are independent rows, and nothing in [the
-  schema](supabase/schema.sql) or the code combines them.
+- A trial's three rulings are independent rows, and neither [the
+  schema](supabase/schema.sql) nor the code combines them.
 
 #### api_call_logs
 
@@ -555,9 +557,10 @@ A few rows have no attempt behind them:
   starting an attempt;
 - and the `failed` row a call ends on when the server has no OpenRouter key.
 
-Discarded rows are dimmed, since the call usually went on to succeed further
-down the table, and so are [the abort endpoint](#api-endpoints)'s rows, which
-record the request to stop rather than an outcome.
+Rows for attempts that were retried or escalated are dimmed, since the call
+usually went on to succeed further down the table, and so are [the abort
+endpoint](#api-endpoints)'s rows, which record the request to stop rather than
+an outcome. A call's last row is *not* dimmed, even when nothing was saved.
 
 ![The call log of one trial: ten model attempts with their tokens, cost,
 duration, status badge and time, three discarded attempts dimmed, and a totals
@@ -571,13 +574,13 @@ closed on a near-copy of an earlier sentence, and was escalated to
 `claude-haiku-4.5`, whose one call cost 0.41¢ of the trial's 0.56¢. The totals
 count every attempt, discarded ones included.*
 
-| Badge | Colour | What triggered it |
+| Badge | Colour | What triggers it |
 | --- | --- | --- |
 | `success` | green | The attempt returned usable content and was kept — for a judge, that includes a `VERDICT` line. This is the text shown on that agent's card. |
 | `failed` | red | The row that ended the call (the agent's card reads "call failed") — [every tier](#the-escalation-chain) or the time budget used up, a failure no retry can fix ([not enough credit for the request](https://openrouter.ai/docs/api_reference/limits#handling-402-errors), a rate limit that outlasts the time budget, or no OpenRouter key on the server, the one case with no attempt behind the row), or a judge reply with no `VERDICT` line and reasoning after it. |
 | <code>abort&nbsp;requested</code> | grey | The row [the abort endpoint](#api-endpoints) writes, the moment [Abort](#aborting-a-trial) is clicked, for each role still pending. It records the request to stop, not a model call: the model reads `n/a`, with no tokens or duration, and it does not count against [the site-wide call cap](#anti-abuse-and-cost-controls). Dimmed, like a discarded attempt. The running calls look for it and stop; the role's own `aborted` row, if its call was still running, follows. |
 | `truncated` | amber | `finish_reason === 'length'` on a reply with text — the model was still writing when it hit [that tier](#the-escalation-chain)'s token cap. Retried or escalated; the caption says which. |
-| `degenerated` | amber | [A detector](#the-escalation-chain) fired on a reply that did *not* hit the token cap: [a 40+ word run with no punctuation](CLAUDE.md#2026-09-01-to-2026-09-03-degeneration-detection-and-the-live-model-line), or repetition, verbatim or near-verbatim ([the same whole sentence twice in a row](CLAUDE.md#a-widened-repeated-sentence-detector), [a sentence of 18+ words twice](CLAUDE.md#capped-replies-clause-level-rules-and-the-detectors-measured), any sentence 3+ times, a passage of 3+ sentences repeated word for word, the same clause twice in a row, a clause of 6+ words 3 times close together, [2+ consecutive sentences found again almost word for word (80%+ alike, 10+ words)](CLAUDE.md#2026-09-28-near-verbatim-loops-and-the-prosecution-seats), or a sentence in the last 10% that is 60%+ like one of the 4 before it (8+ words each)). Retried or escalated; the caption says which. |
+| `degenerated` | amber | [A detector](#the-escalation-chain) fired on a reply that did *not* hit the token cap: [a 40+ word run with no punctuation](CLAUDE.md#degeneration-detection), or repetition, verbatim or near-verbatim ([the same whole sentence twice in a row](CLAUDE.md#a-widened-repeated-sentence-detector), [a sentence of 18+ words twice](CLAUDE.md#capped-replies-clause-level-rules-and-the-detectors-measured), any sentence 3+ times, a passage of 3+ sentences repeated word for word, the same clause twice in a row, a clause of 6+ words 3 times close together, [2+ consecutive sentences found again almost word for word (80%+ alike, 10+ words)](CLAUDE.md#near-verbatim-loops), or a sentence in the last 10% that is 60%+ like one of the 4 before it (8+ words each)). Retried or escalated; the caption says which. |
 | `truncated` | red | The same cap hit, with nothing left to fall back to: on [the final tier](#the-escalation-chain), or with no time budget left for another. Nothing was saved. |
 | `degenerated` | red | [The same detector](#the-escalation-chain) hit, with nothing left to fall back to. Nothing was saved. |
 | `escalated` | amber | A plain HTTP failure from [that tier](#the-escalation-chain)'s own model (e.g. a removed model id returning 404). Skips the tier's remaining attempts, since re-asking a model that just 404'd is pointless. On the last tier there is nowhere to escalate, so the same failure ends the call and shows as `failed`. |
@@ -585,7 +588,8 @@ count every attempt, discarded ones included.*
 | `aborted` | amber | The call's last row when the trial was aborted while it was running server-side, in one of three ways: it stopped before starting an attempt (no tokens, no duration); an attempt that failed as [the abort](#aborting-a-trial) landed is not retried; or a reply that finished after the abort is not saved. The last two keep that attempt's real tokens, cost and reply, since it ran and was paid for. |
 | `truncated` | amber | Legacy only: a second badge shown *next to* a green `success` on a row logged before [truncation became a real failure, on 2026-08-29](https://github.com/guycn1/tribunal/commit/298d2fab14a71f3be6a13c5235e7150edcb7eacf), whose completion is a whole multiple of [the 1,400-token cap](CLAUDE.md#per-attempt-logging-timeouts-truncation-and-the-merge). New trials never produce it. |
 
-The two labels record how an attempt ended, not what the text was like:
+`truncated` and `degenerated` are told apart by how an attempt ended, not by
+everything that was wrong with its text:
 
 - `truncated` means the model was still writing when it hit the token cap;
 - and `degenerated` means it did not hit the cap and [a
@@ -602,18 +606,18 @@ every tier-1 reply kept as sound had finished well short of [the 1,400 tokens
 the default model is
 given](CLAUDE.md#per-attempt-logging-timeouts-truncation-and-the-merge); a loop
 that stops on its own [can come much
-closer](CLAUDE.md#2026-10-03-absolute-and-conditional-claims-checked).
+closer](CLAUDE.md#absolute-claims-checked).
 
 ### Run history sidebar
 
 One badge per trial, summarising the whole run.
 
-| Badge | Colour | What triggered it |
+| Badge | Colour | What triggers it |
 | --- | --- | --- |
 | `completed` | green | Finished, with all 7 of 7 results saved. |
 | <code>completed&nbsp;— missing&nbsp;N&nbsp;of&nbsp;7</code> | amber | Finished, but fewer than 7 results were saved: some agent's call failed for good ([every tier](#the-escalation-chain) or the time budget used up, a failure no retry can fix, or a judge reply with no `VERDICT` line and reasoning after it), or a representative's call never ran (its trigger request rejected or never sent, or the call turned away by [the site gate](#anti-abuse-and-cost-controls) or the call cap). |
 | `aborted` | grey | Stopped by the user before the trial reached completion. |
-| <code>aborted (N&nbsp;of&nbsp;7&nbsp;completed)</code> | grey | Stopped by the user, but the trial was marked complete too: [the abort](#aborting-a-trial) was recorded just as the last judge finished, or, in a trial run before [the abort endpoint](#api-endpoints) [began refusing a completed trial](https://github.com/guycn1/tribunal/commit/f160c5489c83ea1341a873f4c157a3cfb4baca39), once it had. The count says how much survived. |
+| <code>aborted (N&nbsp;of&nbsp;7&nbsp;completed)</code> | grey | Stopped by the user, but the trial was marked complete too: [the abort](#aborting-a-trial) was recorded just as the last judge finished, or, in a trial run before [the abort endpoint](#api-endpoints) [began refusing a completed trial](https://github.com/guycn1/tribunal/commit/f160c5489c83ea1341a873f4c157a3cfb4baca39), after the trial had already been marked complete. The count says how much survived. |
 | <code>in&nbsp;progress…</code> | slate | Not finished, not aborted, and [under 40 minutes old](CLAUDE.md#frontend-polish-backlog-flagged-2026-09-02-all-7-items-done-as-of-2026-09-03) — presumably still running. |
 | `interrupted` | red | Not finished, not aborted, and [over 40 minutes old](CLAUDE.md#frontend-polish-backlog-flagged-2026-09-02-all-7-items-done-as-of-2026-09-03), so it is treated as never going to finish — a dev-server restart mid-run, say, the page closed before [the judges](SPEC.md#judges) were started (the browser starts each phase), or a judge whose call never ran (its trigger request rejected, or the call turned away by [the site gate](#anti-abuse-and-cost-controls), the call cap or, on a page opened at another of the site's addresses than [the main one](https://tribunal-t001.netlify.app), [the handler's first check](#the-two-agent-endpoints)), since a trial is finished once every judge has an outcome logged. The threshold is sized well above the genuine worst case: the page waiting on the representatives for as long as it polls, then every judge running out its full time budget. |
 
@@ -674,8 +678,8 @@ Every file tracked in the repository. Not tracked, and git-ignored:
 ├── tests/                            npm test (no network, no quota) and npm run check-render (GitHub's API)
 │   ├── retry-logic.test.js           the escalation chain, from the real TypeScript
 │   ├── trial-status.test.js          when a trial is completed; aborts; calls the page never sends; the call cap and the failure flag; replies kept for audit, off the page
-│   ├── render-cards.test.js          app.js: cards, the judges' banner, the call log, model ids, failed requests, the site-gate header, the card fade
-│   ├── shared-constants.test.js      values duplicated across files still agree; the page's timeouts outlast the server's; a card's text area is whole lines tall
+│   ├── render-cards.test.js          app.js: cards, the judges' banner, the call log, model ids, failed requests, the site-gate header, the card fades
+│   ├── shared-constants.test.js      values duplicated across files still agree; the page's timeouts outlast the server's; a card's text area is whole lines tall; call-log captions wrap evenly
 │   ├── docs.test.js                  README, SPEC.md and CLAUDE.md agree with the code; README and SPEC.md link what they name
 │   ├── markdown.test.js              no Markdown file holds source GitHub is known to render wrongly; check-render's pieces of a large file join back into it
 │   ├── check-render.js               npm run check-render — renders each Markdown file through GitHub and compares the page with its source
@@ -686,7 +690,7 @@ Every file tracked in the repository. Not tracked, and git-ignored:
 ├── netlify.toml                      build and local-dev settings, the /api/* routes, and the agent routes' rate limit
 ├── package.json, package-lock.json
 ├── tsconfig.json                     type-checks netlify/functions (not app.js)
-├── .env.example                      environment variables read by the backend
+├── .env.example                      environment variables read by the backend and the render check
 ├── .gitignore
 ├── .vscode/settings.json             turns format-on-save off for this workspace
 ├── SPEC.md                           the requirements, from the course's Case Design Dossier
@@ -712,7 +716,7 @@ even though the key is correct.
 
 ```bash
 npm install
-cp .env.example .env   # fill in OPENROUTER_API_KEY, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
+cp .env.example .env    # fill in OPENROUTER_API_KEY, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
 npm run dev             # netlify dev — serves the static frontend and functions locally
 npm run typecheck       # tsc --noEmit
 npm run check-render    # node tests/check-render.js — needs the network (see below)
@@ -753,19 +757,22 @@ DOM](tests/support/load-app.js) — except
 - [`tests/render-cards.test.js`](tests/render-cards.test.js) —
   [`app.js`](public/app.js)'s agent cards, the banner above the judges, [the
   call log](#call-log), how it shortens model ids, how it reports a request that
-  fails outright, that a card's bottom fade stops at its scrollbar, and that
-  creating a trial, starting each agent and aborting all carry the [site-gate
-  header](#anti-abuse-and-cost-controls).
+  fails outright, when a card's top and bottom fades show and that they stop
+  at its scrollbar, and that creating a trial, starting each agent and
+  aborting all carry the [site-gate header](#anti-abuse-and-cost-controls).
 - [`tests/shared-constants.test.js`](tests/shared-constants.test.js) — values
   that are deliberately duplicated across files still agree, the page's polling
   and ["interrupted"](#run-history-sidebar) timeouts stay above the server's
-  time budget, and a card's text area is a whole number of lines tall, so no
-  line is cut in half. The duplicated values: the markers, the fixed messages
-  and the phrase that marks a truncation, [the roles with their names and
+  time budget, a card's text area is a whole number of lines tall, so no
+  line is cut in half, and the captions in [the call log](#call-log) wrap
+  evenly in the table view and as before in the card view. The duplicated
+  values: the markers, the fixed messages and the phrase that marks a
+  truncation, [the roles with their names and
   seats](SPEC.md#2-the-seven-agents), the scrollbar's resting opacity, the
-  spinner's durations, the class that dims [a call-log row](#call-log), the
-  property that carries a card's scrollbar width to its fade, and the sidebar's
-  width where the loading overlay restates it.
+  spinner's durations, the class that dims a call-log row, the
+  property that carries a card's scrollbar width to its fades, the classes
+  that show them, and the sidebar's width where the loading overlay restates
+  it.
 - [`tests/docs.test.js`](tests/docs.test.js) — this README, [`SPEC.md`](SPEC.md)
   and the requirement parts of [`CLAUDE.md`](CLAUDE.md) still say what the code
   does.
@@ -792,7 +799,8 @@ DOM](tests/support/load-app.js) — except
     every link lands and holds no whitespace, every commit hash is linked at
     each mention, and the first mention in each paragraph of a file,
     [`npm test`](tests), a table, a route, or the thing a section's heading
-    names ("[The escalation chain](#the-escalation-chain)") is linked to it.
+    names (e.g. "[The escalation chain](#the-escalation-chain)") is linked to
+    it.
 - [`tests/markdown.test.js`](tests/markdown.test.js) — no Markdown file,
   [`CLAUDE.md`](CLAUDE.md) included, holds source GitHub is known to render
   wrongly: an HTML tag it would drop, a code span left open or holding an escape
@@ -825,10 +833,18 @@ and compares the page with its source:
 
 That is what catches a defect nobody has thought of yet. Run it [before every
 commit that touches a Markdown file](CLAUDE.md#when-to-run-them); it uses one
-unauthenticated GitHub request per file, or per piece of a file over 200,000
-characters: GitHub's API [renders at most 400
-KB](CLAUDE.md#2026-10-06-readmes-hero-and-images-in-the-render-check), so such a
-file is sent in pieces cut before its headings.
+GitHub request per file, or per piece of a file over 200,000 characters:
+GitHub's API [renders at most 400
+KB](CLAUDE.md#the-render-check-reads-images-and-sends-a-large-file-in-pieces),
+so such a file is sent in pieces cut before its headings.
+
+GitHub allows 60 such requests an hour without a token, and [5,000 with
+one](https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api).
+The script sends one when `GITHUB_TOKEN` is set in the environment or in `.env`
+(see [`.env.example`](.env.example)); a fine-grained token with no permissions
+is enough, since [the Markdown
+API](https://docs.github.com/en/rest/markdown/markdown#render-a-markdown-document)
+needs none when, as here, only public resources are requested.
 
 ### Local costs
 
@@ -855,7 +871,7 @@ Feature-complete and stable.
 
 [The full pipeline](#how-a-trial-runs) ([four
 representatives](SPEC.md#representatives) in parallel, [three
-judges](SPEC.md#judges) after, independent rulings never combined) has been
+judges](SPEC.md#judges) after, independent rulings) has been
 verified across many real end-to-end trials against real models, both locally
 and against [the live deployed site](https://tribunal-t001.netlify.app).
 
@@ -882,11 +898,11 @@ All three [anti-abuse layers](#anti-abuse-and-cost-controls) are in place:
   platform](https://docs.netlify.com/manage/security/secure-access-to-sites/rate-limiting/),
   as a backstop far above normal use, and the agent functions accept requests
   only through those routes, on [the site's main
-  address](https://tribunal-t001.netlify.app); both were [verified on the live
-  site on
-  2026-10-06](CLAUDE.md#2026-10-06-the-agent-functions-accept-requests-only-through-their-routes),
-  at [the limit of
-  60](CLAUDE.md#2026-10-04-inclusive-and-comparative-claims-and-the-rate-limit-raised).
+  address](https://tribunal-t001.netlify.app); both were verified on the live
+  site on 2026-10-06 ([the limit and the
+  routes](CLAUDE.md#the-morning-merge), [the main
+  address](CLAUDE.md#the-agent-functions-accept-requests-only-on-the-sites-main-address-and-its-merge)),
+  at [the limit of 60](CLAUDE.md#the-rate-limit-raised).
 
 The frontend (layout, live status display, [call log](#call-log) transparency, a
 responsive card view for narrow screens, [cross-browser scrollbar and

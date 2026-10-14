@@ -587,7 +587,7 @@ async function main() {
     }
     check(`${table}: "one row per trial and role" is claimed exactly when the schema enforces it`, /one row per trial and role/i.test(para) === info.keyedByTrialAndRole, `schema: ${info.keyedByTrialAndRole}`);
   }
-  const ownershipBullet = (db.match(/^- Every table except ([^\n]*?) belongs to a single trial[^\n]*$/m) || [])[0] || '';
+  const ownershipBullet = (db.match(/^- Every row in the tables other than ([^\n]*?) belongs to a single trial[^\n]*$/m) || [])[0] || '';
   const excepted = [...(ownershipBullet.split('belongs')[0] || '').matchAll(/`(\w+)`/g)].map((m) => m[1]);
   const withTrialId = tableNames.filter((t) => TABLES[t].columns.includes('trial_id'));
   check('the tables said to belong to a trial are exactly the ones with trial_id', ownershipBullet && minus(minus(tableNames, excepted), withTrialId).length === 0 && minus(withTrialId, minus(tableNames, excepted)).length === 0, `with trial_id: ${withTrialId}`);
@@ -1099,10 +1099,12 @@ async function main() {
   // NETLIFY_DEV and URL are set by Netlify itself (netlify dev, and every
   // function at runtime), never by whoever runs the project.
   const NETLIFY_SET = ['NETLIFY_DEV', 'URL'];
-  const readVars = [...new Set(FUNCTION_SOURCES.flatMap(([, src]) => [...src.matchAll(/process\.env\.([A-Z0-9_]+)/g)].map((m) => m[1])))].filter((v) => !NETLIFY_SET.includes(v));
+  // The render check's token is the one variable read outside the backend.
+  const envSources = [...FUNCTION_SOURCES.map(([, src]) => src), read('tests', 'check-render.js')];
+  const readVars = [...new Set(envSources.flatMap((src) => [...src.matchAll(/process\.env\.([A-Z0-9_]+)/g)].map((m) => m[1])))].filter((v) => !NETLIFY_SET.includes(v));
   const roleVars = [...read('netlify', 'functions', 'lib', 'models.ts').matchAll(/'(MODEL_[A-Z_]+)'/g)].map((m) => m[1]);
-  check('.env.example lists every variable the backend reads', minus([...readVars, ...roleVars], envVars).length === 0, minus([...readVars, ...roleVars], envVars).join(', '));
-  check('.env.example lists nothing the backend does not read', minus(envVars, [...readVars, ...roleVars]).length === 0, minus(envVars, [...readVars, ...roleVars]).join(', '));
+  check('.env.example lists every variable the backend and the render check read', minus([...readVars, ...roleVars], envVars).length === 0, minus([...readVars, ...roleVars], envVars).join(', '));
+  check('.env.example lists nothing the backend and the render check do not read', minus(envVars, [...readVars, ...roleVars]).length === 0, minus(envVars, [...readVars, ...roleVars]).join(', '));
   const required = ENV_EXAMPLE.split(/\n\s*\n/).filter((block) => /\(required\)/.test(block)).flatMap((block) => [...block.matchAll(/^([A-Z][A-Z0-9_]+)=/gm)].map((m) => m[1]));
   const toFillIn = [...(local.match(/# fill in ([A-Z0-9_, ]+)/) || ['', ''])[1].matchAll(/[A-Z][A-Z0-9_]+/g)].map((m) => m[0]);
   check('README asks for exactly the required variables', required.length > 0 && minus(required, toFillIn).length === 0 && minus(toFillIn, required).length === 0, `required: ${required}, README: ${toFillIn}`);

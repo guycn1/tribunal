@@ -2,7 +2,7 @@
  * @file Regression tests for public/app.js: its agent-card, judges'-banner
  * and call-log render paths, how it shortens model ids, how it reports a
  * request that fails outright, the site-gate header on the requests the
- * gate checks, and where a card's bottom fade stops.
+ * gate checks, and when a card's fades show and where they stop.
  *
  * Run with `npm test`. No framework and no browser: app.js's real source is
  * executed against a minimal DOM stub, and the functions under test are
@@ -29,12 +29,13 @@
  *      stopped is "truncated" and one a detector flagged "degenerated"; a "no
  *      response" row says whether it was retried or escalated; the legacy
  *      "truncated" badge marks only rows saved before truncation became a
- *      failure; a discarded attempt is dimmed and the role's own aborted row is
- *      not; an abort endpoint's row reads "abort requested", dimmed and
- *      uncaptioned, with its model printed as "n/a" rather than shortened like
- *      a model id; every cell carries its column name for the narrow card
- *      layout; the token breakdown can break only after its slash; and a model
- *      id is shortened by rule without losing the date stamp.
+ *      failure; a retried attempt is dimmed, and the role's own aborted row
+ *      and a call's final failure are not; an abort endpoint's row reads
+ *      "abort requested", dimmed and uncaptioned, with its model printed as
+ *      "n/a" rather than shortened like a model id; every cell carries its
+ *      column name for the narrow card layout; the token breakdown can break
+ *      only after its slash; and a model id is shortened by rule without
+ *      losing the date stamp.
  *   5. Every badge label, on the agent cards as in the call log, reads in
  *      lowercase in the text itself.
  *   6. The banner above the judges names each representative whose
@@ -44,9 +45,11 @@
  *      aborting, whose request also names the roles still running. Without
  *      it the gate turns trial creation and the abort away with a 401, and
  *      drops an agent call silently.
- *   8. A card's bottom fade stops where its scrollbar begins, so the
- *      scrollbar's bottom arrow is not faded into a stray mark after the
- *      last line.
+ *   8. A card's bottom fade shows while text is hidden below and its top
+ *      fade while text is hidden above, so a scrolled card's first visible
+ *      line is not cut through its letters; and both stop where its
+ *      scrollbar begins, so the scrollbar's bottom arrow is not faded into
+ *      a stray mark after the last line.
  */
 
 const { installDom, loadApp, makeElement } = require('./support/load-app');
@@ -331,6 +334,7 @@ console.log('\n=== An abort row\'s model reads "n/a", not a shortened "a" ===');
   };
   check('a discarded attempt that was retried is dimmed', dimmed('[degenerate-retried-same-model] This attempt hit the max_tokens limit before finishing naturally - re-tried with the same model.'));
   check('but the role\'s own aborted row, its outcome, is not', !dimmed('[aborted-mid-call] Finished after the user aborted this trial: the reply was complete, but it was not saved.'));
+  check('nor is a call\'s final failure, though nothing was saved', !dimmed('[degenerate-final] Every model tier was tried (4 in total, ending with google/gemini-2.5-pro) and none produced a usable response - the final attempt hit the max_tokens limit before finishing naturally. Nothing was saved.') && !dimmed('OpenRouter returned HTTP 402: insufficient credits'));
   check('the Model cell reads exactly "n/a"', naCell === 'n/a', naCell);
   check('with no <abbr> or tooltip', !/<abbr|title=/.test(naCell), naCell);
   const realCell = modelCellFor('mistralai/mistral-small-24b-instruct-2501');
@@ -417,12 +421,14 @@ const { shortModelName } = app;
 // A name that merely contains the letters is not a segment and must survive.
 check('"instructor" is not stripped', shortModelName('vendor/model-instructor-v2') === 'model-instructor-v2', shortModelName('vendor/model-instructor-v2'));
 
-console.log("\n=== A card's bottom fade stops where its scrollbar begins ===");
-// The fade covered all but the last 4px of the card body, so it covered
-// most of the scrollbar too, and the scrollbar's bottom arrow showed as a
-// stray mark at the end of the last line. It now ends at the scrollbar,
-// whose width attachScrollFade() measures: the body's width less its
-// content-and-padding width.
+console.log("\n=== A card's fades show where text is hidden, and stop where its scrollbar begins ===");
+// The bottom fade shows while text is hidden below, the top fade while text
+// is hidden above, so a scrolled card's first visible line is not cut
+// through its letters. The bottom fade covered all but the last 4px of the
+// card body, so it covered most of the scrollbar too, and the scrollbar's
+// bottom arrow showed as a stray mark at the end of the last line. Both now
+// end at the scrollbar, whose width attachScrollFade() measures: the body's
+// width less its content-and-padding width.
 /**
  * A card body inside its fade wrapper, measured as a browser would report it.
  * @param {{
@@ -432,23 +438,38 @@ console.log("\n=== A card's bottom fade stops where its scrollbar begins ===");
  *   clientHeight: number,
  *   scrollTop?: number
  * }} size
- * @returns {{wrap: object, body: object}}
+ * @returns {{wrap: object, body: object, scrollTo: (top: number) => void}}
+ *   scrollTo sets the body's scroll position and runs its scroll listener,
+ *   as a browser would.
  */
 function fadedBody(size) {
   const wrap = makeElement('div');
   const body = makeElement('div');
   Object.assign(body, { scrollTop: 0 }, size);
+  /** @type {Array<() => void>} */
+  const onScroll = [];
+  body.addEventListener = (type, fn) => { if (type === 'scroll') onScroll.push(fn); };
   wrap.appendChild(body);
   app.attachScrollFade(body);
-  return { wrap, body };
+  const scrollTo = (top) => { body.scrollTop = top; onScroll.forEach((fn) => fn()); };
+  return { wrap, body, scrollTo };
 }
 const overflowing = fadedBody({ offsetWidth: 300, clientWidth: 290, scrollHeight: 600, clientHeight: 173 });
-check('more text below: the fade is shown', overflowing.wrap.classList.contains('has-more-below'));
-check('it stops where a 10px scrollbar begins', overflowing.wrap.style.getPropertyValue('--card-scrollbar-width') === '10px', overflowing.wrap.style.getPropertyValue('--card-scrollbar-width'));
+check('more text below: the bottom fade is shown', overflowing.wrap.classList.contains('has-more-below'));
+check('at the start: no top fade', !overflowing.wrap.classList.contains('has-more-above'));
+check('the fades stop where a 10px scrollbar begins', overflowing.wrap.style.getPropertyValue('--card-scrollbar-width') === '10px', overflowing.wrap.style.getPropertyValue('--card-scrollbar-width'));
 const scrolledToEnd = fadedBody({ offsetWidth: 300, clientWidth: 290, scrollHeight: 600, clientHeight: 173, scrollTop: 427 });
-check('scrolled to the end: no fade', !scrolledToEnd.wrap.classList.contains('has-more-below'));
+check('scrolled to the end: no bottom fade', !scrolledToEnd.wrap.classList.contains('has-more-below'));
+check('scrolled to the end: the top fade is shown', scrolledToEnd.wrap.classList.contains('has-more-above'));
+const scrolledMidway = fadedBody({ offsetWidth: 300, clientWidth: 290, scrollHeight: 600, clientHeight: 173, scrollTop: 200 });
+check('scrolled midway: both fades are shown', scrolledMidway.wrap.classList.contains('has-more-above') && scrolledMidway.wrap.classList.contains('has-more-below'));
+// Scrolling, not only the first measurement, updates both fades.
+scrolledMidway.scrollTo(0);
+check('scrolled back to the start: the top fade goes, the bottom one stays', !scrolledMidway.wrap.classList.contains('has-more-above') && scrolledMidway.wrap.classList.contains('has-more-below'));
+overflowing.scrollTo(427);
+check('scrolled from the start to the end: the fades swap', overflowing.wrap.classList.contains('has-more-above') && !overflowing.wrap.classList.contains('has-more-below'));
 const overlaid = fadedBody({ offsetWidth: 300, clientWidth: 300, scrollHeight: 600, clientHeight: 173 });
-check('a scrollbar drawn over the text takes no width: the fade runs to the edge', overlaid.wrap.style.getPropertyValue('--card-scrollbar-width') === '0px', overlaid.wrap.style.getPropertyValue('--card-scrollbar-width'));
+check('a scrollbar drawn over the text takes no width: the fades run to the edge', overlaid.wrap.style.getPropertyValue('--card-scrollbar-width') === '0px', overlaid.wrap.style.getPropertyValue('--card-scrollbar-width'));
 
 /**
  * A stub fetch Response carrying a JSON body.

@@ -117,7 +117,7 @@ wrong earlier in this project: see the "Known trap" part of the
 
 Per rule 1 above, merging to `main` and pushing triggers a deploy, so it already
 requires explicit permission — but treat "is this actually a milestone" as its
-own judgment call to raise explicitly, not just "do I have permission to deploy
+own judgement call to raise explicitly, not just "do I have permission to deploy
 right now." When in doubt, ask rather than merge.
 
 ### 3. Edit history belongs in the commit message, not in the file
@@ -339,9 +339,12 @@ tag it does not know.
   text, and the page must have as many headings, tables, table cells, rules,
   code blocks, list items, quotes, line breaks, links, images and bold spans as
   the source asks for. This is the check that catches a defect nobody has listed
-  yet. It needs the network - one unauthenticated GitHub request per file, or
-  per piece of a file over 200,000 characters, 60 an hour, and none of this
-  project's quota - so it is not part of `npm test`. GitHub's API renders at
+  yet. It needs the network - one GitHub request per file, or per piece of a
+  file over 200,000 characters, and none of this project's quota - so it is
+  not part of `npm test`. GitHub allows 60 such requests an hour, or 5,000
+  with a token, which the script sends when `GITHUB_TOKEN` is set in the
+  environment or in `.env` (a fine-grained token with no permissions is
+  enough). GitHub's API renders at
   most 400 KB, so a larger file is sent in pieces cut before its `##` and `###`
   headings, each compared with its own source.
 
@@ -351,7 +354,8 @@ tag it does not know.
 - `npm run check-render` before every commit that touches a Markdown file, and
   before every merge to `main`. A defect it finds blocks the commit, as a
   failing test does.
-- If GitHub cannot be reached, the script exits 2 rather than passing: the check
+- If GitHub cannot be reached, or refuses the request (the hourly limit used
+  up, say, or a wrong token), the script exits 2 rather than passing: the check
   has not run, and the commit should say so rather than claim it.
 
 #### When a check finds something
@@ -390,7 +394,7 @@ tag it does not know.
 ## What this project is
 
 A web app that runs one fixed, canonical fictional trial — **Case T-001: The
-Realm v. Jon Snow** — using 7 AI agents: 4 representatives (2 defense, 2
+Realm v. Jon Snow** — using 7 AI agents: 4 representatives (2 defence, 2
 prosecution) and 3 judges, each modelled on a distinct real judicial philosophy.
 
 This is the ASE course's shared "running project" — every submission implements
@@ -463,26 +467,26 @@ to death. Her soldiers arrest him.
 reasons. It does **not** impose a sentence, and it does **not** combine the
 three judges' opinions into one verdict.
 
-## Part 2 — The four representatives (defense: 2, prosecution: 2)
+## Part 2 — The four representatives (defence: 2, prosecution: 2)
 
 **Critical rule:** the assigned seat fixes only each representative's procedural
 role. It does **not** fix an opinion, factual inference, proposed argument, or
 final position.
 
 Let the model reason in character — do not instruct any representative to argue
-toward a predetermined conclusion (e.g. never write a prompt that says "argue
+towards a predetermined conclusion (e.g. never write a prompt that says "argue
 that the defendant is guilty/justified"). Write prompts that establish character
 and values, then let the agent's own reasoning land where it lands.
 
-### Jon Snow — defense seat
+### Jon Snow — defence seat
 
 Speaks plainly, rarely volunteers long explanation. Dislikes praise, titles,
 arguments built on his birth. Values duty, kept promises, family, protection of
 people who cannot defend themselves. Accepts blame quickly, can undervalue his
-own judgment. Answers directly, tolerates silence, admits uncertainty, changes
-position when honor or evidence requires it.
+own judgement. Answers directly, tolerates silence, admits uncertainty, changes
+position when honour or evidence requires it.
 
-### Tyrion Lannister — defense seat
+### Tyrion Lannister — defence seat
 
 Quick, ironic, curious about motives and consequences. Prefers persuasion,
 negotiated limits, plans that leave people alive. Mistrusts purity, inherited
@@ -494,7 +498,7 @@ notices contradictions, can revise without losing his wit.
 
 Speaks with command and moral intensity. Prizes liberation, courage, loyalty,
 action against entrenched cruelty. Wants recognition as a legitimate ruler;
-reacts sharply to betrayal, condescension, secret maneuvering. Her experience
+reacts sharply to betrayal, condescension, secret manoeuvring. Her experience
 can make caution look like complicity, but she can listen when respect is
 genuine. Interprets the record herself, including evidence against her.
 
@@ -514,7 +518,7 @@ reasoning method each judge applies.
 
 ### Judge 1 — the Aharon Barak model
 
-**Character signal:** Systematic, rights-centered, confident that legal
+**Character signal:** Systematic, rights-centred, confident that legal
 principle can discipline public power.
 
 Treats law as a coherent system whose principles reach every exercise of public
@@ -522,7 +526,7 @@ authority. Sees democracy as majority rule together with individual rights and
 limits that bind the majority itself, and accepts an active judicial role when
 courts must protect those limits.
 
-Favors **purposive interpretation** — text matters, but is read together with
+Favours **purposive interpretation** — text matters, but is read together with
 the function of the rule, the structure of the legal system, and democratic
 values. Rights are serious claims, not decorative language, requiring: lawful
 authority, proper purpose, rational fit, attention to less harmful means, and a
@@ -549,11 +553,11 @@ Sees law as an inherited conversation, not a blank page for present-day
 preference. Treats Jewish law as a working legal source — arguments,
 distinctions, duties, moral experience illuminating modern statutes and
 institutions. Values human dignity, communal responsibility, continuity,
-tolerance toward traditions that give a group its identity.
+tolerance towards traditions that give a group its identity.
 
 Insists courts have limited authority — a judge may identify illegality and
 enforce a legal duty, but should not turn broad ideas like fairness or
-reasonableness into license to supervise every political or social choice.
+reasonableness into licence to supervise every political or social choice.
 
 Opinions read like a scholar addressing lawyers, citizens, and history at once —
 often begins with the legal source and the court's competence, then moves
@@ -595,8 +599,8 @@ though it may quietly establish a durable framework.
 
 Strength: institutional clarity without indifference to the person before the
 court. Risk: continuity and measured language can make a deep legal choice
-appear merely technical, leaving the underlying value judgment less visible than
-it should be.
+appear merely technical, leaving the underlying value judgement less visible
+than it should be.
 
 ## Part 4 — Output requirements
 
@@ -605,11 +609,8 @@ it should be.
   above.
 - **No sentence is imposed** — the judges rule only on justified/not justified,
   nothing more.
-- **The three verdicts are never combined.** No majority vote, no aggregate
-  field, no single "final ruling." Display all three independently, each on its
-  own card.
-  - This is a hard, non-negotiable requirement of this project — do not
-    introduce any combination or aggregation logic under any framing.
+- The three verdicts are not combined: there should be no vote count and no
+  overall outcome. Each should be displayed on its own card.
 - The four representatives' arguments should reflect authentic in-character
   reasoning — it is acceptable and expected that a representative's argument may
   not straightforwardly support "their side" if genuine reasoning in character
@@ -768,9 +769,12 @@ session from the top. Keep its layout:
   something markdown reads as the start of a block:** `-`, `*` or `+` followed
   by a space, a number followed by `.` or `)`, `#`, `>` or `<`. Keep that word
   on the line above instead.
-- **Give every topic a heading.** A status-log entry goes under its day's `###`
-  heading, or the arc's, and a long entry or write-up gets `####` headings of
-  its own.
+- **Give every topic a heading.** In the status log, each day has one `###`
+  heading (an arc spanning several days, such as "2026-08-29/30", shares one),
+  never two; when a day holds more than one topic, each topic gets a `####`
+  heading under it that names what it holds, and the day's heading sums them
+  up. A new topic on a day that already has a heading goes under it as a
+  `####`. A long write-up outside the log gets `####` headings of its own.
 - **Split a long entry into a lead paragraph and sub-items**, rather than one
   dense paragraph; keep paragraphs to a few sentences.
 - **No `---` separator before a heading:** GitHub already draws a rule under
@@ -1032,7 +1036,7 @@ time, for the same reason. The 9 commits:
   bug log below (Frontend UX subsection). For the rest, this entry and the
   commits' own messages are the record.
 
-### 2026-08-28: the paid model, timeouts, truncation and concurrency
+### 2026-08-28: the paid model, timeouts, truncation, concurrency, and the move to Background Functions
 
 #### Two merges, and the anti-abuse layers going live
 
@@ -1436,7 +1440,7 @@ frontend uses, succeeded completely: 7 of 7.**
   tokens, 15311ms) - the exact two roles that had hung with zero response, twice
   each, in the immediately preceding test.
 - All 3 judges also succeeded on attempt 1 (639-882 completion tokens,
-  13495-18993ms), all reaching `justified` independently (never combined - each
+  13495-18993ms), all reaching `justified` independently (not combined - each
   ran from its own prompt, no aggregation logic touched).
 - No truncation, no repetition, no 429s, nothing logged beyond a clean attempt-1
   success for every one of the 7 calls.
@@ -1472,8 +1476,8 @@ it.**
   a one-time coincidence to ignore.
 - Verdicts this run: all three `not justified` (the immediately preceding run
   had all three `justified`) - expected run-to-run variance from live,
-  non-deterministic model output, not a bug; still fully independent, never
-  combined.
+  non-deterministic model output, not a bug; still fully independent, not a
+  combined outcome.
 - **A first automated repetition-glitch scan (a simple heuristic: flag any exact
   5-word phrase repeated 4+ times) flagged three responses**
   (`daenerys_targaryen`, `barak`, `elon`) **as potential glitches - all three
@@ -1498,9 +1502,7 @@ it.**
   no confirmed repetition glitches, nothing that needed a retry, nothing close
   enough to the timeout ceiling to call dangerous.
 
-### 2026-08-28: the 10-second ceiling and the move to Background Functions
-
-#### The critical correction
+#### The 10-second ceiling: a critical correction
 
 **CRITICAL CORRECTION (2026-08-28), supersedes every `TOTAL_BUDGET_MS`/"~30s"
 assumption above: the real Netlify free-tier synchronous function ceiling is 10
@@ -2354,8 +2356,8 @@ zero escalations, zero truncations.**
     correct for its real use case (a trial that only ever runs once).
   - *(A trial can no longer be reused this way: since 2026-10-06 an agent
     endpoint refuses a role that already has a final outcome, so each round
-    needs a trial of its own - see "2026-10-06: the abort endpoint, and agent
-    calls the page never sends".)*
+    needs a trial of its own - see "The abort endpoint, and agent calls the page
+    never sends", under 2026-10-06.)*
 
 #### The rate limit raised, the merge, and the production env vars
 
@@ -2386,6 +2388,8 @@ The three fallback-tier env vars still don't need any Netlify configuration -
 `models.ts` defaults them to the correct real model ids when unset.
 
 ### 2026-09-01 to 2026-09-03: degeneration detection and the live model line
+
+#### Degeneration detection
 
 **A real user-facing gap found the morning after the merge (2026-09-01),
 directly on a real trial run: a Grey Worm argument displayed in the UI with no
@@ -2465,6 +2469,8 @@ see at all.
     trial ran there) and the first on a judge - `shamgar`, 5 repeats, trial
     `5192e119`, retried on the same model and kept. That makes two production
     catches.)*
+
+#### The live model line
 
 **A real user report (2026-09-03): the loading card's "Model:" line still showed
 the wrong model while an escalated attempt was actually generating** - Daenerys
@@ -3411,6 +3417,8 @@ changed in this merge) and `index.html` all matched `main` byte for byte.
 
 ### 2026-09-28: near-verbatim loops, and the prosecution seats
 
+#### Near-verbatim loops
+
 **Near-verbatim loops caught (2026-09-28, on the user's request).** Daenerys's
 argument in trial `5bb8f477` was saved as a success while closing on a loop: its
 last five paragraphs rotate the same three phrases ("a woman who was a threat,
@@ -3485,6 +3493,8 @@ Two other things seen in the reading:
 - and three trials on 2026-09-20 (`b3a1d6e3`, `12498f92`, `f7ac3ec6`) received
   the same Grey Worm reply, byte for byte, a sound argument each time.
 
+#### The prosecution seats
+
 **Prosecution seats that argue for Jon are left as they are, on the dossier's
 explicit terms (2026-09-28, the user's decision).** In trial `651cee8a`
 Daenerys, seated for the prosecution, closed on "in the end, he was right... I
@@ -3503,7 +3513,7 @@ It states:
 - that the assigned seat "fixes only each representative's procedural role. It
   does not fix an opinion, factual inference, proposed argument, or final
   position";
-- that no prompt may instruct a representative "to argue toward a predetermined
+- that no prompt may instruct a representative "to argue towards a predetermined
   conclusion";
 - and that "it is acceptable and expected that a representative's argument may
   not straightforwardly support 'their side' if genuine reasoning in character
@@ -3516,7 +3526,7 @@ concedes - would break those terms, and so is not open.
 
 Her character is fully in place: Daenerys's prompt carries every trait the
 dossier gives her, including that "you react sharply to betrayal, condescension,
-or secret maneuvering", and `representatives.ts` was checked line by line
+or secret manoeuvring", and `representatives.ts` was checked line by line
 against the dossier on 2026-08-28 and found faithful. That her argument in
 `651cee8a` voiced its concession without that edge - noting that Jon acted
 "alone, in secret" and accepting it - is variation in what the model wrote on
@@ -3621,9 +3631,11 @@ limit was then tested on the live site with ungated POSTs (no quota spent).
   and escalations run inside the Background Function and send no further request
   through these routes, so a trial costs 7 against the limit however many
   attempts its agents take. *(Raised to 60 on 2026-10-04, on the user's
-  direction - see that day's entry.)*
+  direction - see "The rate limit raised" under that day.)*
 
-### 2026-10-03: absolute and conditional claims checked
+### 2026-10-03: absolute and conditional claims checked, and README's figures put under test
+
+#### Absolute claims checked
 
 **Claims of the form "the only", "every", "never" checked across every tracked
 file (2026-10-03, on the user's request), and the ones an exception disproved
@@ -3670,6 +3682,8 @@ The rest were wording:
 - and an unverified claim that browsers cannot animate scrollbar colours was
   dropped from the code comments.
 
+#### README's figures from the code put under test
+
 **The last README figures taken from the code put under test (2026-10-03, on the
 user's go-ahead).** The same scan found three that `tests/docs.test.js` did not
 check: "the 1,400 tokens the default model is given", "a trial costs 7" and "a
@@ -3686,6 +3700,8 @@ full trial sends 7 requests".
   offline regression suites `npm test` runs, and how many anti-abuse layers are
   in place. Found, and checks added, on 2026-10-06; see that day's entry on
   those two counts.)*
+
+#### Conditional claims checked
 
 **Conditional claims ("X only happens when Y") checked across every tracked file
 (2026-10-03, on the user's request), and the ones whose conditions are wider
@@ -3727,6 +3743,8 @@ offline, and the database read-only; no model calls were made for it.
   under at least one of 28 targeted breaks, every file restored byte for byte.
 
 ### 2026-10-04: inclusive and comparative claims, and the rate limit raised
+
+#### Inclusive claims checked
 
 **Claims of inclusion ("every", "all", "only", "the rest") checked across every
 tracked file (2026-10-04, on the user's request), and the ones an exception
@@ -3772,6 +3790,8 @@ by read-only queries; no model calls were made.
   day, up from 418). Each new or changed check fails under at least one of 69
   targeted breaks, every file restored byte for byte.
 
+#### The rate limit raised
+
 **The per-IP rate limit raised from 30 to 60 requests per 3 minutes (2026-10-04,
 on the user's direction).** At 30, counted across the two agent routes together,
 one IP had room for about 4 full trials every 3 minutes, which several graders
@@ -3782,6 +3802,8 @@ on one shared network could reach; at 60 it has room for about 8.
 - Both rules in `netlify.toml` changed together, and README and the
   `netlify.toml` comment now give 60, with the 2026-10-02 live measurements kept
   and dated to the 30-request limit they were made at.
+
+#### Comparative claims checked
 
 **Comparative and superlative claims checked across every tracked file
 (2026-10-04, on the user's request), and the ones that overstated restated.**
@@ -3957,7 +3979,9 @@ descriptions, and left free they wrapped at every space, `aborted (N` / `of 7` /
   it starts with, and any dash - and fails on any other; 14 targeted breaks were
   each caught by the checks meant for them.
 
-### 2026-10-06: this file's and README's layout, and HARD RULES 4 and 5
+### 2026-10-06: the docs' layout, HARD RULES 4 and 5, the agent routes, README's hero, and the evening merge
+
+#### This file's layout
 
 **This file restructured (2026-10-06, on the user's request, after the layout of
 the CLAUDE.md in CineRank, another of the user's own projects).** Before, many
@@ -3978,6 +4002,8 @@ paragraphs.
 - Three `<date>` placeholders in HARD RULE 3, which GitHub's renderer dropped as
   unknown HTML tags, are now written so they show.
 - "Writing in this file", above this log, sets out how to keep the layout.
+
+#### HARD RULES 4 and 5
 
 **HARD RULE 4 added (2026-10-06, by the user): in every Markdown file but this
 one, a reference is a link** - see the HARD RULES block at the top, which adapts
@@ -4048,22 +4074,24 @@ what GitHub was seen to do.
   break, and every kind of defect the render check reports was proven again on
   the committed script.
 
+#### README's layout, and its links to its own sections
+
 **README spaced out and wrapped at 80 characters (2026-10-06, on the user's
 request, in the manner of this file).** It had 244 lines, 114 of them over 80
 characters and the longest 1,688, with 17 headings.
 
-- It now has 25: Architecture is split under "How a trial runs", "Background
-  Functions and polling", "The escalation chain", "Aborting a trial" and
-  "Anti-abuse and cost controls", and Local development under "The test
-  suites", "Checking the rendered page" and "Local costs".
+- That pass took it to 25: Architecture is split under "How a trial runs",
+  "Background Functions and polling", "The escalation chain", "Aborting a
+  trial" and "Anti-abuse and cost controls", and Local development under "The
+  test suites", "Checking the rendered page" and "Local costs".
 - Long sentences listing several things - the escalation signals, the fast and
   slow transient failures, the call-log rows with no attempt, the labels, the
   suites' coverage - are now bullets, and the agent-endpoint text in the API
   section is six paragraphs rather than one.
-- Prose is wrapped at 80 characters. Lines still longer are the 16 table rows
-  and 22 code-block lines (the layout tree and the setup block), which cannot
-  wrap without changing what they show, and three lines that are one
-  unbreakable span each: a commit URL, a code span and a link.
+- Prose is wrapped at 80 characters. The lines still longer that day were the
+  16 table rows and 22 code-block lines (the layout tree and the setup block),
+  which cannot wrap without changing what they show, and three lines that are
+  one unbreakable span each: a commit URL, a code span and a link.
 - Rendered through GitHub's markdown API before and after, the text is the same
   apart from the headings added and sentences split for the bullets, and the
   wrapped and unwrapped files render identically.
@@ -4124,12 +4152,14 @@ description and in the retry-logic suite's, had none.
   break it exists for either failed the check or, with that part gone, went
   uncaught, 8 in all.
 
+#### README's counts put under test
+
 **Two counts in README's "Status" put under test (2026-10-06, on the user's
 go-ahead).** Proving the link work above meant breaking every paragraph it
 touched before and after, to make sure no check had stopped reading one; no
 check had, but none read those paragraphs at all, so "Six offline regression
 suites" and "All three anti-abuse layers" were checked by nothing, contrary to
-the 2026-10-03 entry.
+"README's figures from the code put under test", under 2026-10-03.
 
 - The suite count, already checked in the setup block, is now checked wherever
   README states it, against the suites `npm test` runs.
@@ -4229,7 +4259,7 @@ against the committed checks, ca51fc8; seven were real:
   then letting its defect through or raising a false alarm on correct text -
   and cb251be's 24 cases on the named-section check, run again unchanged.
 
-### 2026-10-06: the agent functions accept requests only through their routes
+#### The agent functions accept requests only through their routes
 
 **Each agent handler now accepts a request only when it came through its
 rate-limited route (2026-10-06).** Netlify serves every function at its own
@@ -4269,6 +4299,8 @@ The change:
   raised an alarm on correct code. The 66-case proof of the count, layer and
   route checks, run again on the changed test, had every case behave as it
   should.
+
+#### The morning merge
 
 **Merged to `main` (2026-10-06, on the user's explicit request), triggering a
 deploy: 54 commits, everything since the 2026-10-02 merge (`6af2e72`).** They
@@ -4335,6 +4367,8 @@ measurements. They reached `main` in a second merge the same day that changes
 only documentation and comments, whose message carries Netlify's
 `[skip netlify]` marker.
 
+#### The agent functions accept requests only on the site's main address, and its merge
+
 **The agent handlers also accept a request only on the site's main address
 (2026-10-06).** Netlify serves the whole site at more than one address -
 `main--tribunal-t001.netlify.app` as well as `tribunal-t001.netlify.app`, and
@@ -4397,7 +4431,7 @@ reached `main` in a further merge the same day that changes only
 documentation and comments, whose message carries Netlify's `[skip netlify]`
 marker.
 
-### 2026-10-06: the abort endpoint, and agent calls the page never sends
+#### The abort endpoint, and agent calls the page never sends
 
 **The abort endpoint and the agent handlers now accept only the requests the
 page sends (2026-10-06, on the user's go-ahead).** Read from the code that day:
@@ -4496,22 +4530,25 @@ the second silently.
   lowercase, which the server accepts, passed. The abort-header cases of the
   commit before were run again on the changed check and caught as before.
 
-### 2026-10-06: SPEC.md's layout
+#### SPEC.md's layout
 
 **SPEC.md spaced out and wrapped at 80 characters (2026-10-06, on the user's
 request, as README and this file were), with HARD RULES 4 and 5 applied to it
 in full.** It had 66 lines, 35 of them over 80 characters, and 4 headings; it
-now has 204 lines and 14 headings.
+came out of that pass with 204 lines and 14 headings.
 
 - The new headings: the charge sheet's "Background", "Stipulated facts",
   "Question for judgment" and "Scope"; "Representatives" and "Judges"; the
   requirements under "The case and the order of calls", "Arguments and
   rulings" and "Failures, logging and architecture"; and "How this repository
   implements it", over the closing pointer to README and this file, which sat
-  after a `---`.
-- The charge sheet's three lead items, the non-negotiable rule, each judge's
-  method, the never-combined requirement, the pointer to the other two
-  documents and the closing pointer are now bullets.
+  after a `---`. *(That last section was removed on 2026-10-14: it mostly
+  repeated the pointers at the top of SPEC.md, which took over the rest - see
+  "README's and SPEC.md's structure", under that day.)*
+- The charge sheet's three lead items, the rule that an agent's seat or
+  method does not fix its conclusion, each judge's method, the requirement
+  that the rulings stay separate, the pointer to the other two documents and
+  the closing pointer are now bullets.
 - Prose is wrapped at 80 characters. The one longer line is a single link,
   to `representatives.ts`, which cannot break.
 - Links added under HARD RULE 4: the README sections meant (its
@@ -4538,7 +4575,7 @@ now has 204 lines and 14 headings.
   unlinked were each caught by the check meant for it; and the vocabulary's
   bold wrapped across two lines, and a paragraph rewrapped, both passed.
 
-### 2026-10-06: README's architecture diagram
+#### README's architecture diagram
 
 **README's Architecture section gained a diagram, "What talks to what"
 (2026-10-06, on the user's request, after the one in the README of CineRank,
@@ -4589,7 +4626,7 @@ where the per-IP limit sits. A last bullet lists the library modules not drawn.
   from the new section and a bullet describing the checks;
   `npm run check-render` passes, and `npm test` ran 659 checks.
 
-### 2026-10-06: the card fade and the card scrollbar
+#### The card fade and the card scrollbar
 
 **A card's bottom fade now stops where its scrollbar begins (2026-10-06,
 found by the user in a screenshot taken for README).** The fade covered all
@@ -4620,7 +4657,7 @@ card's last line, on the live site as in the capture.
   (`--card-scrollbar`) still matched, so the shared-name check now requires
   the name to end where the property does.
 
-### 2026-10-06: README's hero, and images in the render check
+#### README's hero
 
 **README opens with a hero (2026-10-06, on the user's request, after the one
 in the README of CineRank, another of the user's own projects): the live link,
@@ -4650,6 +4687,8 @@ history.
   session's scratch directory.
 - The README's old "Live:" line is replaced by the hero's heading, and the
   layout tree lists `screenshots/`.
+
+#### The render check reads images, and sends a large file in pieces
 
 **The render check reads images (same day).** Rendered through GitHub's API,
 the hero image came out as an `<img>` keeping its full alt text, but
@@ -4695,6 +4734,8 @@ exit code.
   written; and a dropped `<date>` tag in CLAUDE.md's first piece and in its
   last were each caught, labelled with the piece.
 
+#### A card's text area a whole number of lines tall
+
 **A card's text area is now a whole number of lines tall (same day, found by
 the user in a close-up of the judges' cards taken for README).** The area
 was capped at 340px, and card text is 12.96px at a line height of 1.5 - the
@@ -4709,6 +4750,8 @@ letter tops under the fade, plain in a close-up at reading size.
 - `tests/shared-constants.test.js` checks that the cap set last is a whole
   number of `lh`. Caught: the cap back in pixels, 17.5lh, 0lh, and the
   fallback set after the `lh` value; 17lh passed.
+
+#### README's other four screenshots
 
 **README's second screenshot: the three judges up close (same day).**
 `screenshots/readme-2-judges.png`, taken by the user from local `netlify dev`
@@ -4729,6 +4772,8 @@ two decimals of a cent) and the totals (27,210 tokens, 0.56¢ of a stored
 0.5586¢, 144,178 ms) were checked against the stored rows, and the caption's
 reasons against their stored error messages. The status captions wrap with
 "model)" on a line of its own; that is the app at its widest layout.
+*(Re-captured on 2026-10-13, after the captions began to wrap evenly - see
+"2026-10-13: the call log's captions wrap evenly".)*
 
 **README's fourth screenshot: an aborted trial (same day).**
 `screenshots/readme-4-aborted-trial.png`, taken by the user, shows trial
@@ -4739,7 +4784,9 @@ end, logged with its real tokens and cost and not retried or saved - two
 repeated a sentence, two hit the token cap. The trial ran at 19:57 UTC, after
 that day's abort fixes (`82f7c97`, `a3fe0d8`, `e464938`), so its rows are what
 the app writes today; every figure was checked against them (8,054 tokens,
-0.05¢ of a stored 0.0521¢, 81,869 ms).
+0.05¢ of a stored 0.0521¢, 81,869 ms). *(Re-captured on 2026-10-13, after
+the captions began to wrap evenly - see "2026-10-13: the call log's
+captions wrap evenly".)*
 
 **README's fifth screenshot: a trial in progress (same day).**
 `screenshots/readme-5-in-progress.png`, taken by the user from local
@@ -4751,6 +4798,8 @@ discarded for repeating an 18-word sentence three times, and 14:33:10, when
 his second succeeded. The trial completed 7 of 7 at 14:34:15, Daenerys after
 an escalation to `claude-haiku-4.5`, and its judges ruled 2-1. The cards'
 text areas show eight lines, as in the hero.
+
+#### README's live link centred
 
 **README's live link centred, with space below it (same day, on the user's
 report and choice).** On GitHub the "Live app" line sat 16px above the
@@ -4821,7 +4870,7 @@ of the heading's 16px margin, measured as before. Two `<br>`s on the line of
     missing, and without its count, line breaks the source does not ask for.
     The centred-block proof was run again in full.
 
-### 2026-10-06: HARD RULE 4 read broadly in README and SPEC.md
+#### HARD RULE 4 read broadly in README and SPEC.md
 
 **README and SPEC.md now link every mention of something with a home of its
 own, at its first mention in each paragraph (2026-10-06, on the user's
@@ -4898,7 +4947,7 @@ and people and products.
     the 2026-10-04 entry, and the 40-minute "interrupted" line to the
     frontend polish backlog of 2026-09-02.
 
-### 2026-10-06: the render check moved into `tests/`
+#### The render check moved into `tests/`
 
 **`scripts/check-render.js` is now `tests/check-render.js` (2026-10-06, on the
 user's request).** It was the only file in `scripts/`, and it is a check rather
@@ -4924,7 +4973,7 @@ file into pieces.
   of the setup block's `npm run check-render` line; and `tests/markdown.test.js`
   still requiring it from there stopped that suite on a missing module.
 
-### 2026-10-06: cross-references checked again
+#### Cross-references checked again
 
 **Cross-references checked again across every tracked file (2026-10-06, on the
 user's request), for the work since the last such check, `b3e6d75`.** That work
@@ -4936,7 +4985,7 @@ the few that did not land where they said were corrected. Every anchor that a
 README link names on an outside page was found on that page. The details are in
 the commit message.
 
-### 2026-10-06: lists and enumerations checked again
+#### Lists and enumerations checked again
 
 **Lists and enumerations checked again across every tracked file (2026-10-06,
 on the user's request), for the work since the last such check, `15c2d61`.**
@@ -4947,12 +4996,12 @@ lists, and the ones that the new handler checks, the abort endpoint's site gate
 and refusal, the new suites and checks and README's new layout had left behind
 were completed. The details are in the commit message.
 
-### 2026-10-06: stale and contradicting statements checked again
+#### Stale and contradicting statements checked again
 
 **Every Markdown file and every code comment read again for what the work since
 the 2026-09-27 evening merge (`67f00f1`) had left stale or contradicted
 (2026-10-06, on the user's request, ahead of the merge to `main` recorded under
-"2026-10-06: the evening merge" below).** Every statement, figure, pointer and
+"The evening merge" below).** Every statement, figure, pointer and
 list was read against the code, the tests and the other statements that touch
 the same fact.
 
@@ -4974,7 +5023,7 @@ the same fact.
 
 The details are in the commit message.
 
-### 2026-10-06: the ignored `config` export checked in every bundler release
+#### The ignored `config` export checked in every bundler release
 
 **The 2026-10-02 finding that Netlify never read the agent functions' `config`
 export, `background: true` included, checked again (2026-10-06, on the user's
@@ -5001,7 +5050,7 @@ release of it.
   `representative-background.ts` and `tests/docs.test.js` now cite the releases
   read.
 
-### 2026-10-06: no line starts with `+ ` or `* `
+#### No line starts with `+ ` or `* `
 
 **Every line of every Markdown file is checked for a leading `+ ` or `* `
 (2026-10-06, on the user's question, after a footnote in CineRank, another of
@@ -5022,7 +5071,7 @@ No line in the repository starts with either, in Markdown or in a code comment.
   sub-item passed. Without the rule, the first of those passed both checks.
 - HARD RULE 5 and README's description of the suite list the rule.
 
-### 2026-10-06: the evening merge
+#### The evening merge
 
 **Merged to `main` (2026-10-06, on the user's explicit request), triggering a
 deploy: 28 commits, everything since `4098e3b`.** They are:
@@ -5052,6 +5101,271 @@ deploy: 28 commits, everything since `4098e3b`.** They are:
   entries' mentions of the merge still to come at it.
 
 No database change is needed: nothing since `4098e3b` adds or alters a
+column. Merge commit `71d8975`. This entry was committed to `draft` ahead of
+the merge, so that right after it `main` and `draft` held identical trees.
+
+**Confirmed live the same day**, from 19:30 UTC, two minutes after the push:
+
+- the deployed `app.js`, `styles.css` and `index.html` matched `main` byte for
+  byte;
+- a full 7-agent trial (`114c780c`) completed in 116 seconds, 7 of 7:
+  `tyrion_lannister` recovered on the default model after a repeated sentence,
+  `daenerys_targaryen` after the token cap, and `grey_worm` escalated to
+  `anthropic/claude-haiku-4.5` after two capped attempts and finished cleanly;
+  the three judges ruled independently. 11 calls, $0.0059. Every discarded
+  attempt was read in full, and each was a loop; every kept reply was read, and
+  each is coherent;
+- an abort (`6f1e63df`), clicked about 12 seconds into a trial, wrote one
+  `abort requested` row per representative, which the abort endpoint writes
+  only for a request carrying the site-gate header. No attempt started after
+  it; the four first attempts already running were each logged as `aborted`,
+  with their real tokens and cost, one of them a complete reply not saved;
+  nothing was saved, no judge was started, the run history showed the trial as
+  `aborted`, and no row was added in the 2 minutes 20 seconds after the last.
+  8 rows, $0.0005.
+
+### 2026-10-13: the call log's captions wrap evenly
+
+**The captions under the call log's badges no longer leave one word alone on
+their last line (2026-10-13, on the user's request).** In the table view, a
+caption such as "(retried with the same model)" is just too long for its
+centred Status cell, and greedy wrapping put "model)" on a line of its own,
+as README's call-log and aborted-trial screenshots then showed.
+
+- `table.call-log .status-caption` now sets `text-wrap: balance` and then
+  `text-wrap: pretty`, inside `@media (width > 720px)`: a browser that
+  knows `pretty` keeps the lines full and moves a word down to keep the
+  last one company, and one that knows only `balance` evens the lines out.
+  The card view below 720px, where every caption fits on one line, is left
+  as it was.
+- Measured in headless Edge on the real page, served from the working tree
+  with the API answered by local `netlify dev` (reads only), on trials
+  `0a5de440` and `298f38b4` and on all four caption texts the app writes,
+  at ten viewport widths from 721px to 1920px, where the table ran from 640px
+  to 974px wide, and at five from 360px to 720px, in the card view. Before,
+  captions ended on one word at every viewport from 1150px up, two to four of
+  them in each trial, and at none below it; after, none did at any width
+  ("(retried with the / same model)", "(the user aborted / the trial)"), no
+  row grew taller and nothing overflowed. In the card view
+  every element's box and style matched before and after.
+- `tests/shared-constants.test.js` checks that exactly one caption rule
+  sets `text-wrap`, that it is that table rule inside a media query that
+  starts where the card view's ends, and that it sets `balance` and then
+  `pretty`. Proven both ways, every file restored byte for byte: 11 breaks -
+  the rule removed, either value dropped, the two swapped, the media query
+  dropped, moved to 600px or written as `min-width`, the selector widened,
+  the rule repeated in the card view, the card view's breakpoint moved
+  alone, and its header rule renamed - each failed the checks meant for
+  it, and a comment naming `text-wrap` on a caption passed.
+
+**README's call-log screenshot re-captured with the new wrapping (same
+day).** `screenshots/readme-3-call-log.png` shows trial `0a5de440` as
+before, at the same size, 2592×1739. Compared with the capture it replaces,
+pixel by pixel after alignment:
+
+- the three Status captions it holds now read "(retried with the / same
+  model)", twice, and "(escalated to a / different model)";
+- everything else - every figure, badge, model name, the totals row and the
+  heading - is the same, each part matching exactly once moved by at most
+  one image pixel, half a CSS pixel at the capture's scale, since the table
+  laid out a pixel narrower and a pixel taller than before. README's caption
+  for it is unchanged.
+
+**README's aborted-trial screenshot re-captured the same way (same day).**
+`screenshots/readme-4-aborted-trial.png` shows trial `298f38b4` as before, at
+the same size, 2108×1955, and was compared with the capture it replaces in
+the same way:
+
+- the four `aborted` rows' captions now read "(the user aborted / the
+  trial)";
+- the cards keep their width and the table its width to a pixel, but the
+  table's body laid out about 3 image pixels taller, so with the crop
+  chosen the heading and cards sit 2 pixels higher and the table's bottom
+  edge 2 pixels lower than before, and the left edges 1 pixel further left -
+  a CSS pixel at most. Every word, figure, badge and border is otherwise the
+  same, and README's caption for it is unchanged.
+
+### 2026-10-14: the separate-rulings wording, a top fade on the cards, the docs' structure, a token for the render check, and the merge
+
+#### The separate-rulings wording toned down
+
+**The statements that the three rulings are kept separate now say so plainly,
+and less often (2026-10-14, on the user's request).** The requirement is
+unchanged: the rulings are not combined, and each is shown on its own card.
+What changed is how often, and how firmly, the docs and the page repeated it.
+
+- README states it once in its introduction ("displayed independently, each on
+  its own card"), and its other mentions describe the rulings as independent
+  without restating the rule: the hero and judges captions, the
+  `judge_rulings` section ("neither the schema nor the code combines them")
+  and "Status".
+- SPEC.md's requirement is one bullet: "The three rulings are not combined:
+  there is no vote count or overall outcome, and each is shown on its own
+  card." Its "No sentence or penalty is ever imposed" bullet is no longer
+  bold, and the label over the rule that an agent's seat or method does not
+  fix its conclusion is now "Seats and methods".
+- Part 4 above states the requirement in the same terms. The scope sentence
+  in Part 1, SPEC.md and the seed, Part 6's checklist item, the entry in
+  "When to stop and ask" and the judges' prompt are unchanged.
+- The note above the judges' cards reads "Each judge rules independently: the
+  three verdicts below are not combined into a single outcome.", and
+  `app.js`'s file header describes the rulings as shown independently, each
+  on its own card.
+- Every tracked file was searched for the rule's wording with wrapped lines
+  joined back together, so a phrase split across two lines was found too.
+  `npm test`, `npm run typecheck` and `npm run check-render` pass.
+
+#### A top fade on the cards
+
+**A card's text now fades at its top edge too, while it is scrolled away from
+its start (2026-10-14, on the user's request).** The bottom fade showed where
+text was hidden below, but once a card was scrolled, its first visible line
+was cut through its letters at the top edge.
+
+- `.card-body-scroll-wrap::before` is the bottom fade mirrored: the same 42px
+  gradient into the card's background, shown by a `has-more-above` class that
+  `attachScrollFade()` sets while the text is scrolled more than 2px from its
+  start, and stopping where the scrollbar begins, so the scrollbar's top arrow
+  stays fully visible.
+- Rendered in headless Edge with the real stylesheet and the real
+  `attachScrollFade()`, on three cards scrolled to the start, the middle and
+  the end: only the bottom fade, both, and only the top fade.
+- Tests: `tests/render-cards.test.js` checks the top fade at the start, the
+  middle and the end, and after scrolling back and forth, through the scroll
+  listener itself; `tests/shared-constants.test.js` checks that both fades'
+  right edges read the scrollbar width, and that each fade is shown by the
+  class `app.js` toggles.
+- Proven both ways, every file restored byte for byte: 9 breaks - the toggle
+  removed, inverted or always on, the class renamed on either side, the top
+  fade never shown, run back over the scrollbar or shown on the wrong
+  pseudo-element, and the scroll listener removed - were each caught by the
+  checks meant for them.
+
+#### The status log's headings: one per day, and one per topic
+
+**Each day in the status log now has one `###` heading, with a `####` for each
+of its topics (2026-10-14, on the user's request).** Two days had more than one
+`###`: 2026-08-28, split into two arcs, and 2026-10-06, whose entries from the
+route check on were each given a `###` of their own, as were the two of
+2026-10-14.
+
+- 2026-08-28's two arcs became one heading, their eight topics under it in
+  their order; the topic opening the second arc became "The 10-second
+  ceiling: a critical correction", so it names its subject without the arc's
+  heading above it.
+- 2026-10-06's fifteen entries became `####`s under one heading for the day,
+  and 2026-10-14's likewise.
+- "Writing in this file" now says so: one `###` per day, or per arc of
+  several days, and a `####` per topic when a day has more than one, naming
+  what it holds.
+- Five quotes of the old headings in this file, and three links in README
+  to two of them, were pointed to the new ones; `tests/docs.test.js` checks
+  that every link lands.
+
+**Then every topic given a heading that names what it holds (same day, on the
+user's request).** Read against that rule, two things were still uneven:
+
+- Four days held several topics with no `####`: 2026-09-01 to 2026-09-03,
+  2026-09-28, 2026-10-03 and 2026-10-04. Each topic now has one, and
+  2026-10-03's heading names the README figures put under test too.
+- Three of 2026-10-06's topics held clusters of separate work under a heading
+  naming part of it. The three are now eleven: this file's layout, HARD RULES
+  4 and 5, README's layout, and README's counts put under test; the route
+  check, and the main-address check, each with its merge and live
+  confirmation; and README's hero, the render check's images and pieces, the
+  cards' whole-line height, the other four screenshots and the centred live
+  link, each a topic of its own.
+- One quote in this file, and eight links in README into the days given topic
+  headings, were pointed to the topic that holds what each cites.
+- 2026-10-06's morning merge, of 54 commits, sat under the route check's
+  heading, which did not name it, though the route check was only its last
+  commit. It is now a topic of its own, "The morning merge", with its live
+  confirmation, as the evening merge is; and the main-address check's heading
+  now names the merge that deployed it alone. README's two links to that live
+  confirmation point to the new topic.
+
+Rendered through GitHub's markdown API before and after each pass, the file
+differed only in its headings, the rule, the quotes and this entry.
+
+#### A token for the render check
+
+**`npm run check-render` sends a GitHub token when one is set (2026-10-14).**
+GitHub's Markdown API allows 60 unauthenticated requests an hour, and the
+render comparisons for the heading changes above used them up; with a token
+it allows 5,000, per GitHub's REST rate-limit docs (read that day).
+
+- `githubToken()` in `tests/check-render.js` reads `GITHUB_TOKEN` from the
+  environment, or else from the git-ignored `.env`, and `render()` sends it
+  when set; without one, the requests go unauthenticated as before.
+- A fine-grained token with no permissions is enough: GitHub's docs for
+  "Render a Markdown document" (read that day) say the endpoint needs none
+  when only public resources are requested, as here, and such a token can
+  neither read nor change anything private if it leaks.
+- Checked that day: with the unauthenticated allowance at 0, the check
+  rendered all three files with the token; and with a wrong token it exited
+  2, "Bad credentials", so a broken token cannot let it pass.
+- `.env.example` lists `GITHUB_TOKEN` as optional, and `tests/docs.test.js`
+  now holds that file to the variables the backend and the render check
+  read; README's "Checking the rendered page" and HARD RULE 5 say so.
+
+#### README's and SPEC.md's structure
+
+**README's and SPEC.md's headings, lists and sections read against the same
+standard as the status log's (2026-10-14, on the user's request).** Neither
+file skips a heading level but README's live-app line, and both use only
+bullets, at most two deep. What was changed:
+
+- README's "The escalation chain" and "Anti-abuse and cost controls" each
+  opened by restating their heading in bold. The first now opens as a plain
+  sentence, and the second as one that says what the list below it is.
+- SPEC.md's "Seats and methods" was a bold label beside the section's `###`
+  headings. It is now one of them, with a lead-in to its list, and the
+  paragraph on where the prompts live, which it used to follow, opens the
+  section.
+- SPEC.md's closing section, "How this repository implements it", was its
+  only unnumbered `##` and mostly repeated the pointers at its top. Its
+  pointers joined that list, and the section is gone.
+- In SPEC.md, the paragraph on where the charge sheet comes from now opens
+  its section, above the three lead bullets, and the architecture bullet,
+  the one bullet in its list with a bold label, lost the label.
+
+README's live-app line stays a `###` under the `#` title, though it is not a
+section. A heading is the only way to set text larger on GitHub: rendered
+through its API that day, `<big>`, `<font size>` and a `style` attribute
+were each stripped, and the text came out at body size.
+
+Rendered through GitHub's markdown API before and after, the two files
+differed only in those places, and nothing links to the removed section.
+
+#### The merge
+
+**Merged to `main` (2026-10-14, on the user's explicit request), triggering a
+deploy: 24 commits, everything since `71d8975`.** They are:
+
+- the record of the `71d8975` deploy confirmed live (`4ba60c8`);
+- the call log's captions wrapping without a lone last word, in the table
+  view only, and README's call-log and aborted-trial screenshots re-captured
+  with them (`9b7d8b0`, `16e0d8f`, `08c01e0`);
+- the statements that the three rulings are kept separate toned down
+  (`f60511f`);
+- a top fade on the cards (`8141480`);
+- this file's status log given one heading per day and one per topic
+  (`e11709c`, `2e09616`, `06235f1`);
+- the render check sending a GitHub token when one is set (`06b85c1`);
+- README's and SPEC.md's structure tidied where a bold label did a heading's
+  job (`5d999ff`);
+- README's wording on what a table's rows belong to, which call-log rows are
+  dimmed, its badge tables headed "What triggers it", the two labels it tells
+  apart by how an attempt ended, the second way a trial reads
+  `aborted (N of 7 completed)`, its setup block's comments and its docs-test
+  entry (`3c069de`, `5826b38`, `b9d0a11`, `3acc4e3`, `36d3b01`, `11fea16`,
+  `32bf75c`);
+- cross-references, lists and stale statements checked again for the work
+  since `71d8975`, with a note added to the SPEC.md layout entry and a test
+  comment rewrapped (`c39bfe0`, `0ea5548`, `350cf63`, `805de97`, `c76a21a`);
+- the commit that adds this entry.
+
+No database change is needed: nothing since `71d8975` adds or alters a
 column. This entry was committed to `draft` ahead of the merge, so that right
 after it `main` and `draft` held identical trees.
 
@@ -5408,7 +5722,7 @@ looped paragraph-sized block).
   earlier abandoned 5-word-phrase heuristic false-positived on it and this one
   does not. *(True of the verbatim rules. The near-copy rules added on
   2026-09-28 can flag anaphora whose sentences share most of their words - see
-  that day's entry.)*
+  "Near-verbatim loops" under that day.)*
 - Sentences under 5 words are ignored outright.
 
 #### Abort, which stopped nothing server-side
@@ -5676,7 +5990,7 @@ for it to arrive naturally").
 - Trial 4 (`f5aab9fd`): 61s, $0.001394, one same-model retry.
 - Verdicts across the four runs went 2-1, 3-0, 2-1, 3-0 - ordinary run-to-run
   variance from live, non-deterministic output, and three genuinely independent
-  rulings every time, never combined.
+  rulings every time, not a combined outcome.
 
 **Trial 2 exercised the recovery path for real, in production, for the first
 time.** `tyrion_lannister`'s first attempt came back at exactly 1400 completion
@@ -5861,8 +6175,8 @@ to `draft` by 2026-09-03:
    loading/failed status text. `ed9a2de`.
    *(Capped at 18 lines, `18lh`, since 2026-10-06, so the box ends between two
    lines rather than through one, with 340px kept for a browser without `lh` -
-   see "2026-10-06: README's hero, and images in the render check" under
-   "Status log".)*
+   see "A card's text area a whole number of lines tall", under
+   2026-10-06 in "Status log".)*
 
 All 7 verified via offline tests (extracted real functions against synthetic
 data/DOM stubs) or structural/typecheck review — no OpenRouter calls spent on
@@ -5973,6 +6287,10 @@ Kept the scrollbar, made it clearer there's more text:
   only when content actually overflows and hidden again once scrolled to the
   true bottom - verified offline against synthetic scroll-metrics
   (overflow/at-top, at-bottom, no-overflow, dynamic rescroll, all correct).
+  *(Since 2026-10-06 it stops where the card's scrollbar begins, and since
+  2026-10-14 a top fade does the same for text hidden above - see "The card
+  fade and the card scrollbar" and "A top fade on the cards" in "Status
+  log".)*
 - Scrollbar itself restyled whitish/neutral instead of the gold accent (which
   read as decorative, not a control), three-stage hover prominence (dim at rest,
   visible once the card is hovered, brightest on the thumb itself), plus a faint
@@ -6444,8 +6762,8 @@ exactly the 2 functions that call OpenRouter), declared via the function's own
   to the function's own address, `/.netlify/functions/<name>`, or to any
   address of the site but its main one, so every request an agent function
   acts on has come through its route on the main address and passed the one
-  count - see "2026-10-06: the agent functions accept requests only through
-  their routes" under "Status log".)*
+  count - see "The agent functions accept requests only through
+  their routes", under 2026-10-06 in "Status log".)*
 
 ### Site-gate header
 
@@ -6603,8 +6921,8 @@ this log didn't exist yet to check against).
     routes - trigger and poll alike - and worked, and the deployed site never
     had it. The workaround is no longer needed, and for the agent functions it
     no longer works: since 2026-10-06 each refuses a request sent to its own
-    address - see "2026-10-06: the agent functions accept requests only through
-    their routes" under "Status log".)*
+    address - see "The agent functions accept requests only through
+    their routes", under 2026-10-06 in "Status log".)*
 - **A representative call that got cut off by `netlify dev`'s local 30-second
   lambda-local timeout had actually already succeeded server-side** — the
   OpenRouter call, the Supabase write, and the call log all completed and saved

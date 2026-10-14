@@ -3,7 +3,7 @@
 **[Case T-001: The Realm v. Jon Snow](#1-the-charge-sheet).** A fixed, canonical
 trial — not a general-purpose "submit any charge" tool — argued and ruled on by
 [seven independent AI agents](#2-the-seven-agents): [four
-representatives](#representatives) (two defense, two prosecution) and [three
+representatives](#representatives) (two defence, two prosecution) and [three
 judges](#judges), each modelled on a distinct real judicial reasoning method.
 
 This is the ASE course's shared "running project": every submission
@@ -13,19 +13,19 @@ not on the artefact alone.
 This document is the functional/requirements spec, sourced from the ASE Book
 "Case Design Dossier." Two other documents cover the rest:
 
-- [`README.md`](README.md): how this particular submission implements it
-  ([architecture](README.md#architecture), [live
-  deployment](https://tribunal-t001.netlify.app),
-  [setup](README.md#local-development));
-- [`CLAUDE.md`](CLAUDE.md): [the build history](CLAUDE.md#status-log) and the
-  engineering decisions behind it.
+- [`README.md`](README.md): how this particular submission implements it, as
+  it stands — [its architecture](README.md#architecture); the models used, and
+  the cost and reliability engineering, in [the escalation
+  chain](README.md#the-escalation-chain); [the anti-abuse
+  measures](README.md#anti-abuse-and-cost-controls); the database, defined in
+  [`supabase/schema.sql`](supabase/schema.sql) and [mapped in
+  `README.md`](README.md#database); [the live
+  deployment](https://tribunal-t001.netlify.app); and
+  [setup](README.md#local-development);
+- [`CLAUDE.md`](CLAUDE.md): [the build history](CLAUDE.md#status-log), as a
+  running log, and the engineering decisions behind it.
 
 ## 1. The charge sheet
-
-- **Accused:** Jon Snow
-- **Deceased:** Daenerys Targaryen
-- **Act alleged:** Jon intentionally killed Daenerys by stabbing her during a
-  private meeting in the throne room after the fall of King's Landing.
 
 This section is the case exactly as [the app](https://tribunal-t001.netlify.app)
 serves it — word for word [the record](README.md#case_definitions) seeded into
@@ -33,6 +33,11 @@ serves it — word for word [the record](README.md#case_definitions) seeded into
 [`supabase/schema.sql`](supabase/schema.sql). [The stipulated
 facts](#stipulated-facts) in particular are quoted, not paraphrased: they are
 what both sides accept, and a restatement can shift what was agreed.
+
+- **Accused:** Jon Snow
+- **Deceased:** Daenerys Targaryen
+- **Act alleged:** Jon intentionally killed Daenerys by stabbing her during a
+  private meeting in the throne room after the fall of King's Landing.
 
 ### Background
 
@@ -92,16 +97,6 @@ verdict.
 
 ## 2. The seven agents
 
-**Non-negotiable rule:**
-
-- a representative's seat (defense or prosecution) fixes only procedural role
-  — never an opinion, a factual inference, or a final position;
-- a judge's named model fixes the reasoning method it applies, never the
-  verdict;
-- no agent is instructed to argue toward a predetermined conclusion; each
-  reasons from its own character/method and may land anywhere, including
-  against "its side."
-
 Each agent's full system prompt (real depth, not a one-line trait) lives in
 [`netlify/functions/lib/representatives.ts`](netlify/functions/lib/representatives.ts)
 or [`judges.ts`](netlify/functions/lib/judges.ts), and
@@ -110,13 +105,25 @@ record](#1-the-charge-sheet) (for a judge, with [the
 representatives](#representatives)' arguments too). This section states identity
 and required reasoning approach, not the prompts themselves.
 
+### Seats and methods
+
+What an agent's seat or method fixes, and what it does not:
+
+- a representative's seat (defence or prosecution) fixes only procedural role
+  — never an opinion, a factual inference, or a final position;
+- a judge's named model fixes the reasoning method it applies, never the
+  verdict;
+- no agent is instructed to argue towards a predetermined conclusion; each
+  reasons from its own character/method and may land anywhere, including
+  against "its side."
+
 ### Representatives
 
-- **[Jon Snow](CLAUDE.md#jon-snow--defense-seat)** (defense) — plain-spoken,
+- **[Jon Snow](CLAUDE.md#jon-snow--defence-seat)** (defence) — plain-spoken,
   duty- and protection-driven; accepts blame readily; changes position when
-  honor or evidence requires it.
-- **[Tyrion Lannister](CLAUDE.md#tyrion-lannister--defense-seat)** (defense) —
-  quick, ironic, skeptical of purity and inherited power; favors persuasion and
+  honour or evidence requires it.
+- **[Tyrion Lannister](CLAUDE.md#tyrion-lannister--defence-seat)** (defence) —
+  quick, ironic, sceptical of purity and inherited power; favours persuasion and
   outcomes that leave people alive.
 - **[Daenerys Targaryen](CLAUDE.md#daenerys-targaryen--prosecution-seat)**
   (prosecution) — commanding, morally intense; prizes liberation and loyalty;
@@ -133,7 +140,7 @@ persona.
 
 - **Judge 1 — [the Aharon Barak
   model](CLAUDE.md#judge-1--the-aharon-barak-model).** Systematic and
-  rights-centered:
+  rights-centred:
   - purposive interpretation (text read against a rule's function, structure,
     and democratic values);
   - tests a rights claim through lawful authority, proper purpose, rational
@@ -144,7 +151,7 @@ persona.
   - treats Jewish law as a working legal source alongside comparative and
     historical material;
   - insists courts have limited authority — identifying illegality is not
-    license to supervise every political or social choice;
+    licence to supervise every political or social choice;
   - comfortable dissenting on the merits.
 - **Judge 3 — [the Meir Shamgar
   model](CLAUDE.md#judge-3--the-meir-shamgar-model).** Institutional and
@@ -171,14 +178,10 @@ persona.
 
 - Each judge returns one independent ruling — **justified** or **not
   justified** — with reasoning in its own voice/method.
-- **No sentence or penalty is ever imposed** — the Tribunal rules only on
+- No sentence or penalty is ever imposed — the Tribunal rules only on
   justified/not justified.
-- **The three rulings are never combined, aggregated, or reduced to a
-  majority/consensus.**
-  - No vote count, no aggregate field, no single "outcome" — all three are
-    shown independently, each on its own card.
-  - This is a hard requirement, not a default to optimise away under any
-    framing.
+- The three rulings are not combined: there is no vote count or overall
+  outcome, and each is shown on its own card.
 - A representative's argument must reflect authentic in-character reasoning;
   an argument landing against its seat's usual side is a valid, expected
   outcome, not a defect.
@@ -195,23 +198,10 @@ persona.
   completion tokens, total tokens, cost, status, and timestamp. Token counts
   are read from the API response's own usage data; cost is computed from
   [per-token pricing](netlify/functions/lib/pricing.ts).
-- **Architecture:** [three-tier](README.md#architecture) — [browser](public) /
+- The architecture is [three-tier](README.md#architecture): [browser](public) /
   [backend](netlify/functions) / [database](README.md#database). The backend
   alone holds the API key and orchestrates every model call; the database stores
   [the case record](README.md#case_definitions), every
   [argument](README.md#representative_arguments) and
   [ruling](README.md#judge_rulings), and [the full per-call
   log](README.md#api_call_logs).
-
-## How this repository implements it
-
-How this repository actually satisfies the above is documented in
-[`README.md`](README.md) (current state) and
-[`CLAUDE.md`](CLAUDE.md#status-log) (running log), not repeated here:
-
-- the specific model(s) used, and the cost and reliability engineering, in
-  [the escalation chain](README.md#the-escalation-chain);
-- the [anti-abuse measures](README.md#anti-abuse-and-cost-controls);
-- the database, defined in [`supabase/schema.sql`](supabase/schema.sql) and
-  [mapped in `README.md`](README.md#database);
-- and [the decisions behind them](CLAUDE.md#status-log).
