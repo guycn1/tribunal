@@ -30,11 +30,12 @@
  *      response" row says whether it was retried or escalated; the legacy
  *      "truncated" badge marks only rows saved before truncation became a
  *      failure; a retried attempt is dimmed, and the role's own aborted row
- *      and a call's final failure are not; an abort endpoint's row reads "abort requested", dimmed and
- *      uncaptioned, with its model printed as "n/a" rather than shortened like
- *      a model id; every cell carries its column name for the narrow card
- *      layout; the token breakdown can break only after its slash; and a model
- *      id is shortened by rule without losing the date stamp.
+ *      and a call's final failure are not; an abort endpoint's row reads
+ *      "abort requested", dimmed and uncaptioned, with its model printed as
+ *      "n/a" rather than shortened like a model id; every cell carries its
+ *      column name for the narrow card layout; the token breakdown can break
+ *      only after its slash; and a model id is shortened by rule without
+ *      losing the date stamp.
  *   5. Every badge label, on the agent cards as in the call log, reads in
  *      lowercase in the text itself.
  *   6. The banner above the judges names each representative whose
